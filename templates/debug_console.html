@@ -1,0 +1,299 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+
+  <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+    <h1 class="text-2xl font-bold text-white">API Debug Console</h1>
+    <p class="text-sm text-gray-400 mt-1">
+      Sends requests from the server (your token stays server-side). Base: <span class="font-mono text-gray-300">{{ base_url }}</span>
+    </p>
+  </div>
+
+  <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+    <div class="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-gray-300 font-semibold">Method</label>
+        <select id="method" class="p-2 bg-gray-700 rounded text-white border border-gray-600">
+          <option>GET</option>
+          <option>POST</option>
+          <option>PUT</option>
+          <option>PATCH</option>
+          <option>DELETE</option>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-gray-300 font-semibold">Use auth headers</label>
+        <input id="useAuth" type="checkbox" class="w-5 h-5" checked />
+        <span class="text-xs text-gray-500">(adds App_user_id, Token, Timestamp, Timezone, Utc_offset, ...)</span>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <label class="text-sm text-gray-300 font-semibold">URL</label>
+      <input id="url" class="mt-2 w-full p-3 bg-gray-900 rounded text-white border border-gray-700 font-mono text-sm"
+             placeholder="/api/app/templateReservation or https://api2.speediance.com/api/app/templateReservation" />
+      <p class="text-xs text-gray-500 mt-2">Tip: you can paste a full URL or just the path.</p>
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-gray-300 font-semibold">Extra Headers (JSON object)</label>
+          <button id="clearHeaders" class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded border border-gray-600">Clear</button>
+        </div>
+        <textarea id="headers" rows="10"
+          class="mt-2 w-full p-3 bg-gray-900 rounded text-white border border-gray-700 font-mono text-xs"
+          placeholder='{"Accept":"*/*","Versioncode":"40304"}'></textarea>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-gray-300 font-semibold">Body</label>
+          <div class="flex items-center gap-2 text-xs">
+            <label class="text-gray-400"><input type="radio" name="bodyMode" value="json" checked> JSON</label>
+            <label class="text-gray-400"><input type="radio" name="bodyMode" value="raw"> Raw</label>
+            <label class="text-gray-400"><input type="radio" name="bodyMode" value="none"> None</label>
+          </div>
+        </div>
+        <textarea id="body" rows="10"
+          class="mt-2 w-full p-3 bg-gray-900 rounded text-white border border-gray-700 font-mono text-xs"
+          placeholder='{"status":1,"deviceType":1,"thatDay":"2025-12-21","templateCode":"6948a5ca8f0855d7272ddd2a"}'></textarea>
+
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="presetTemplateReservation"
+                  class="text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded border border-purple-500">
+            Preset: Template Reservation
+          </button>
+          <button id="presetCalendar"
+                  class="text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded border border-purple-500">
+            Preset: Month Calendar
+          </button>
+          <button id="presetListWorkouts"
+                  class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded border border-blue-400">
+            List My Custom Workouts
+          </button>
+          <button id="presetWorkoutDetail"
+                  class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded border border-blue-400">
+            Get Workout Detail (Need Code)
+          </button>
+          <button id="presetExerciseLibrary"
+                  class="text-xs bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded border border-teal-400">
+            Get Exercise Library
+          </button>
+          <div class="w-full h-px bg-gray-700 my-2"></div>
+          <button id="presetTrainingRecords"
+                  class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded border border-green-500">
+            Get Training Records (Current Month)
+          </button>
+          <button id="presetTrainingRecordDetail"
+                  class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded border border-green-500">
+            Get Training Detail (Need ID)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <button id="sendBtn"
+        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-5 rounded">
+        Send
+      </button>
+      <button id="loadLastBtn"
+        class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-5 rounded border border-gray-600">
+        Load Last Response
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-white">Result</h2>
+      <button id="copyResult" disabled
+        class="text-xs bg-gray-500 text-gray-300 px-3 py-1.5 rounded border border-gray-600 cursor-not-allowed transition-colors duration-200">
+        Copy JSON
+      </button>
+    </div>
+    <pre id="result" class="bg-gray-900 border border-gray-700 rounded p-4 overflow-auto text-xs text-green-400 font-mono whitespace-pre-wrap">No request sent yet.</pre>
+  </div>
+
+</div>
+
+<script>
+  function getBodyMode() {
+    const checked = document.querySelector('input[name="bodyMode"]:checked');
+    return checked ? checked.value : "json";
+  }
+
+  function safeJsonParse(text, fallback) {
+    const t = (text || "").trim();
+    if (!t) return fallback;
+    try { return JSON.parse(t); } catch (e) { throw new Error(e.message); }
+  }
+
+  function setCopyButtonState(enabled) {
+    const btn = document.getElementById('copyResult');
+    if (enabled) {
+      btn.disabled = false;
+      btn.classList.remove('bg-gray-500', 'text-gray-300', 'cursor-not-allowed', 'border-gray-600');
+      btn.classList.add('bg-blue-600', 'hover:bg-blue-500', 'text-white', 'border-blue-400', 'cursor-pointer');
+    } else {
+      btn.disabled = true;
+      btn.classList.add('bg-gray-500', 'text-gray-300', 'cursor-not-allowed', 'border-gray-600');
+      btn.classList.remove('bg-blue-600', 'hover:bg-blue-500', 'text-white', 'border-blue-400', 'cursor-pointer');
+    }
+  }
+
+  async function sendRequest() {
+    const method = document.getElementById('method').value;
+    const url = document.getElementById('url').value.trim();
+    const useAuthHeaders = document.getElementById('useAuth').checked;
+    const headersText = document.getElementById('headers').value;
+    const bodyText = document.getElementById('body').value;
+    const bodyMode = getBodyMode();
+
+    let headersObj = {};
+    try {
+      headersObj = safeJsonParse(headersText, {});
+      if (headersObj && typeof headersObj !== 'object') throw new Error("Headers must be a JSON object");
+    } catch (e) {
+      alert("Headers JSON error: " + e.message);
+      return;
+    }
+
+    let jsonBody = null;
+    let rawBody = null;
+    if (bodyMode === "json") {
+      try {
+        jsonBody = safeJsonParse(bodyText, {});
+      } catch (e) {
+        alert("Body JSON error: " + e.message);
+        return;
+      }
+    } else if (bodyMode === "raw") {
+      rawBody = bodyText || "";
+    }
+
+    const payload = { method, url, useAuthHeaders, headers: headersObj, bodyMode, jsonBody, rawBody };
+    document.getElementById('result').textContent = "Sending...";
+    setCopyButtonState(false);
+
+    try {
+      const resp = await fetch('/debug/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      setCopyButtonState(true);
+    } catch (e) {
+      document.getElementById('result').textContent = "Request failed: " + e;
+    }
+  }
+
+  async function loadLast() {
+    document.getElementById('result').textContent = "Loading...";
+    const resp = await fetch('/debug/last_response');
+    const data = await resp.json();
+    document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+    setCopyButtonState(true);
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', sendRequest);
+  document.getElementById('loadLastBtn').addEventListener('click', loadLast);
+  document.getElementById('clearHeaders').addEventListener('click', () => {
+    document.getElementById('headers').value = "";
+  });
+
+  document.getElementById('copyResult').addEventListener('click', async () => {
+    const text = document.getElementById('result').textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      alert('Copied to clipboard!');
+    } catch (err) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        alert('Copied to clipboard (fallback)!');
+      } catch (e) {
+        alert('Copy failed. Please select the text manually.');
+      }
+      document.body.removeChild(textArea);
+    }
+  });
+
+  // --- Presets ---
+  document.getElementById('presetTemplateReservation').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('method').value = "POST";
+    document.getElementById('url').value = "/api/app/templateReservation";
+    document.getElementById('body').value = JSON.stringify({
+      status: 1, deviceType: 1,
+      thatDay: new Date().toISOString().split('T')[0],
+      templateCode: "PASTE_CODE_HERE"
+    }, null, 2);
+    document.querySelector('input[name="bodyMode"][value="json"]').checked = true;
+  });
+
+  document.getElementById('presetCalendar').addEventListener('click', (e) => {
+    e.preventDefault();
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = `/api/app/v5/trainingCalendar/monthNew?date=${ym}&selectedDeviceType=0`;
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+
+  document.getElementById('presetListWorkouts').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = "/api/app/v4/customTrainingTemplate/appPage?pageNo=1&pageSize=-1&deviceTypes=1";
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+
+  document.getElementById('presetWorkoutDetail').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = "/api/app/v3/customTrainingTemplate/detailByCode?code=PASTE_CODE_HERE";
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+
+  document.getElementById('presetExerciseLibrary').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = "/api/app/actionLibraryTab/list?deviceType=1";
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+
+  document.getElementById('presetTrainingRecords').addEventListener('click', (e) => {
+    e.preventDefault();
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = `/api/mobile/v2/report/userTrainingDataRecord?startDate=${year}-${month}-01&endDate=${year}-${month}-${lastDay}`;
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+
+  document.getElementById('presetTrainingRecordDetail').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('method').value = "GET";
+    document.getElementById('url').value = "/api/app/trainingInfo/cttTrainingInfoDetail/PASTE_RECORD_ID_HERE";
+    document.getElementById('body').value = "";
+    document.querySelector('input[name="bodyMode"][value="none"]').checked = true;
+  });
+</script>
+{% endblock %}

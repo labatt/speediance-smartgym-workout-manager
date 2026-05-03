@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  smart-gym-app:
+    image: python:3.11-slim
+    container_name: smart_gym_workout_manager
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      # Set this to the folder where you unzipped / cloned the repository files.
+      # Example (Windows): /c/Users/yourname/Downloads/SmartGymWorkoutManager
+      # Example (Linux/NAS): /volume1/docker/smart-gym-app
+      - /path/to/your/app:/app
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ}
+    command: >
+      sh -c "apt-get update && apt-get install -y tzdata python3-tk libtk8.6 &&
+             pip install --no-cache-dir -r requirements.txt && python app.py"

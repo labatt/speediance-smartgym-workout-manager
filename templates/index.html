@@ -1,0 +1,601 @@
+{% extends "layout.html" %}
+{% block content %}
+<!-- Workouts Section -->
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold text-white">My Workouts <span class="text-lg font-normal {% if workouts | length >= 50 %}text-red-400{% elif workouts | length >= 40 %}text-yellow-400{% else %}text-gray-400{% endif %}">({{ workouts | length }} / 50)</span></h1>
+    <div class="flex gap-2 items-center">
+        <button id="selectModeBtn" onclick="toggleSelectMode()" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded transition text-sm">Select</button>
+        <button id="exportSelectedBtn" onclick="exportSelectedWorkouts()" class="hidden bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition text-sm">Export Selected (0)</button>
+        <a href="/create" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow hover:shadow-lg transition">New Workout</a>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12" id="workout-grid">
+    {% for w in workouts %}
+    <div class="bg-gray-800 rounded-lg overflow-hidden border border-gray-700 relative group workout-card transition-colors duration-200"
+         id="card-{{ w.code }}"
+         data-code="{{ w.code }}"
+         data-name="{{ w.name }}">
+
+        <!-- Selection checkbox (hidden in drag mode, shown in select mode) -->
+        <div class="select-overlay hidden absolute top-2 left-2 z-10">
+            <input type="checkbox" class="workout-checkbox w-5 h-5 accent-green-500 cursor-pointer"
+                   data-code="{{ w.code }}" onchange="updateExportCount()">
+        </div>
+
+        <div class="p-5 cursor-move drag-handle" draggable="true" ondragstart="drag(event)"
+             data-code="{{ w.code }}" data-name="{{ w.name }}">
+            <div class="flex justify-between items-start">
+                <h3 class="text-xl font-bold text-white mb-2 truncate pr-2">{{ w.name }}</h3>
+                <span class="drag-label text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Drag me</span>
+            </div>
+            <div class="text-sm text-gray-400">
+                <p>{{ w.totalCapacity }} {{ 'lbs' if unit == 1 else 'kg' }} &bull; ~{{ w.durationMinute }} min &bull; {{ w.actionNum }} exercises</p>
+            </div>
+            <div class="mt-4 flex space-x-2">
+                <a href="/delete/{{ w.id }}" onclick="return confirm('Really delete?')" class="text-red-400 hover:text-red-300 text-sm">Delete</a>
+                <a href="/edit/{{ w.code }}" class="text-blue-400 hover:text-blue-300 text-sm">Edit</a>
+            </div>
+        </div>
+        <div class="bg-gray-900 p-2 flex space-x-2 overflow-hidden h-16 opacity-50 group-hover:opacity-100 transition">
+            {% for group in w.actionInfoList %}
+                {% if group[0] is defined %}
+                    <img src="{{ group[0].img }}" class="h-full rounded object-cover w-12">
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <p class="text-gray-500 col-span-full text-center py-10">No workouts found. Create one to get started!</p>
+    {% endfor %}
+</div>
+
+
+<!-- Calendar Section -->
+<div class="mb-10">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+            <span>📅</span> Training Calendar
+        </h2>
+        <div class="flex items-center space-x-4 bg-gray-800 p-2 rounded-lg">
+            <button id="prevMonth" class="text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded transition">
+                &lt; Prev
+            </button>
+            <span id="currentMonthLabel" class="text-xl font-semibold text-white min-w-[150px] text-center"></span>
+            <button id="nextMonth" class="text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded transition">
+                Next &gt;
+            </button>
+            <button id="toggleFirstDay" onclick="toggleFirstDayOfWeek()" class="text-xs text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded border border-gray-600 transition" title="Toggle week start day"></button>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-700">
+        <!-- Weekday Headers (rendered dynamically by JS based on firstDayOfWeek setting) -->
+        <div id="weekdayHeaders" class="grid grid-cols-7 gap-2 mb-2 text-center text-gray-400 font-bold uppercase text-sm tracking-wider">
+        </div>
+
+        <!-- Calendar Grid -->
+        <div id="calendarGrid" class="grid grid-cols-7 gap-2 auto-rows-fr">
+            <!-- Calendar days will be injected here -->
+        </div>
+    </div>
+</div>
+
+<!-- Instructions Section -->
+<div class="bg-gray-800 rounded-lg p-6 mb-8 border border-gray-700 shadow-lg">
+    <div class="flex items-start gap-4">
+        <div class="bg-blue-600/20 p-3 rounded-full text-blue-400">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </div>
+        <div class="space-y-3">
+            <div>
+                <h3 class="text-lg font-bold text-white mb-1">How to Schedule</h3>
+                <p class="text-gray-400 text-sm leading-relaxed">
+                    <span class="text-white font-semibold">Add:</span> Drag any workout card from the list above and drop it onto a date.
+                    <br>
+                    <span class="text-white font-semibold">Move:</span> Drag a scheduled workout from one date to another to reschedule it.
+                    <br>
+                    <span class="text-white font-semibold">Remove:</span> Click the <span class="text-red-400 font-bold px-1">&times;</span> icon on a calendar entry.
+                </p>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-white mb-1">Workout Types</h3>
+                <ul class="text-gray-400 text-sm list-disc list-inside space-y-1">
+                    <li>
+                        <span class="text-white">White entries:</span> Custom workouts you scheduled. These can be moved or deleted.
+                    </li>
+                    <li>
+                        <span class="text-blue-300">Blue entries:</span> Official Speediance Programs (future). These are fixed by the system and cannot be moved or deleted here.
+                    </li>
+                    <li>
+                        <span class="text-gray-400">Gray entries:</span> Past completed workouts (custom or official). These are historical records and cannot be moved.
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .calendar-day {
+        min-height: 120px;
+        transition: all 0.2s;
+    }
+    .calendar-day.drag-over {
+        background-color: rgba(59, 130, 246, 0.2); /* blue-500 with opacity */
+        border-color: #3b82f6;
+    }
+    .calendar-day.today {
+        background-color: rgba(55, 65, 81, 0.8); /* gray-700 */
+        border: 1px solid #4b5563; /* gray-600 */
+    }
+    .workout-pill {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background-color: #1f2937; /* gray-800 */
+        border: 1px solid #374151; /* gray-700 */
+        margin-bottom: 2px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: default;
+    }
+    .workout-pill:hover {
+        background-color: #374151; /* gray-700 */
+    }
+    .delete-schedule-btn {
+        opacity: 0;
+        color: #ef4444; /* red-500 */
+        cursor: pointer;
+        margin-left: 4px;
+        font-weight: bold;
+    }
+    .workout-pill:hover .delete-schedule-btn {
+        opacity: 1;
+    }
+</style>
+
+<script>
+    let currentDate = new Date();
+
+    // --- First Day of Week (0=Sunday, 1=Monday) stored in localStorage ---
+    let firstDayOfWeek = parseInt(localStorage.getItem('firstDayOfWeek') || '1', 10);
+
+    // --- Bulk Export ---
+    let selectModeActive = false;
+
+    function toggleSelectMode() {
+        selectModeActive = !selectModeActive;
+        const btn = document.getElementById('selectModeBtn');
+        const exportBtn = document.getElementById('exportSelectedBtn');
+        const overlays = document.querySelectorAll('.select-overlay');
+        const dragHandles = document.querySelectorAll('.drag-handle');
+        const dragLabels = document.querySelectorAll('.drag-label');
+
+        if (selectModeActive) {
+            btn.textContent = 'Cancel';
+            btn.className = 'bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded transition text-sm';
+            overlays.forEach(el => el.classList.remove('hidden'));
+            dragLabels.forEach(el => el.classList.add('hidden'));
+            dragHandles.forEach(el => { el.draggable = false; el.style.cursor = 'default'; });
+            exportBtn.classList.remove('hidden');
+        } else {
+            btn.textContent = 'Select';
+            btn.className = 'bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded transition text-sm';
+            overlays.forEach(el => el.classList.add('hidden'));
+            dragLabels.forEach(el => el.classList.remove('hidden'));
+            dragHandles.forEach(el => { el.draggable = true; el.style.cursor = 'move'; });
+            exportBtn.classList.add('hidden');
+            document.querySelectorAll('.workout-checkbox').forEach(cb => cb.checked = false);
+        }
+        updateExportCount();
+    }
+
+    function updateExportCount() {
+        const count = document.querySelectorAll('.workout-checkbox:checked').length;
+        const btn = document.getElementById('exportSelectedBtn');
+        btn.textContent = `Export Selected (${count})`;
+        btn.disabled = count === 0;
+        btn.className = count === 0
+            ? 'hidden bg-green-600 text-white px-4 py-2 rounded transition text-sm opacity-50 cursor-not-allowed'
+            : 'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition text-sm';
+        if (selectModeActive) btn.classList.remove('hidden');
+    }
+
+    async function exportSelectedWorkouts() {
+        const checked = document.querySelectorAll('.workout-checkbox:checked');
+        if (checked.length === 0) return alert('No workouts selected.');
+
+        const codes = Array.from(checked).map(cb => cb.dataset.code);
+        const exportBtn = document.getElementById('exportSelectedBtn');
+        exportBtn.textContent = 'Fetching...';
+        exportBtn.disabled = true;
+
+        try {
+            const results = await Promise.all(codes.map(async code => {
+                const resp = await fetch(`/api/workout/${code}`);
+                if (!resp.ok) throw new Error(`Failed to fetch workout ${code}`);
+                return resp.json();
+            }));
+
+            // Convert API format to the same JSON export format used in create.html
+            const exportArr = results.map(detail => {
+                if (!detail) return null;
+                return {
+                    name: detail.name || 'Unknown',
+                    exercises: (detail.actionLibraryList || []).map(ex => {
+                        const presetId = parseInt(ex.templatePresetId ?? -1);
+                        const isRM = presetId !== -1;
+                        const reps = (ex.setsAndReps || '').split(',');
+                        const weights = (ex.weights || '').split(',');
+                        const counters = (ex.counterweight2 || '').split(',');
+                        const modes = (ex.sportMode || '').split(',');
+                        const breaks = (ex.breakTime2 || '').split(',');
+                        const leftRights = (ex.leftRight || '').split(',');
+                        const isUnilateral = leftRights.some(lr => lr === '1' || lr === '2');
+                        return {
+                            id: ex.groupId,
+                            title: ex.title,
+                            preset: presetId,
+                            isUnilateralExpanded: isUnilateral,
+                            sets: reps.map((rep, i) => ({
+                                reps: parseInt(rep) || 0,
+                                weight: isRM ? (parseInt(counters[i]) || 0) : (parseFloat(weights[i]) || 0),
+                                mode: parseInt(modes[i]) || 1,
+                                rest: parseInt(breaks[i]) || 60
+                            }))
+                        };
+                    })
+                };
+            }).filter(Boolean);
+
+            const jsonStr = JSON.stringify(exportArr, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `workouts_export_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            toggleSelectMode(); // Exit select mode after export
+        } catch (err) {
+            console.error(err);
+            alert('Export failed: ' + err.message);
+        } finally {
+            updateExportCount();
+        }
+    }
+
+    const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    function renderWeekdayHeaders() {
+        const container = document.getElementById('weekdayHeaders');
+        container.innerHTML = '';
+        for (let i = 0; i < 7; i++) {
+            const dayIndex = (firstDayOfWeek + i) % 7;
+            const div = document.createElement('div');
+            div.textContent = WEEKDAY_NAMES[dayIndex];
+            container.appendChild(div);
+        }
+        const btn = document.getElementById('toggleFirstDay');
+        if (btn) btn.textContent = firstDayOfWeek === 1 ? 'Week: Mon–Sun' : 'Week: Sun–Sat';
+    }
+
+    function toggleFirstDayOfWeek() {
+        firstDayOfWeek = firstDayOfWeek === 0 ? 1 : 0;
+        localStorage.setItem('firstDayOfWeek', String(firstDayOfWeek));
+        renderWeekdayHeaders();
+        fetchCalendarData();
+    }
+
+    function initCalendar() {
+        renderWeekdayHeaders();
+        renderCalendarHeader();
+        fetchCalendarData();
+    }
+
+    function renderCalendarHeader() {
+        const options = { year: 'numeric', month: 'long' };
+        document.getElementById('currentMonthLabel').textContent = currentDate.toLocaleDateString('en-US', options);
+    }
+
+    function getMonthString(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}`;
+    }
+
+    async function fetchCalendarData() {
+        const dateStr = getMonthString(currentDate);
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '<div class="col-span-7 text-center text-gray-500 py-10">Loading...</div>';
+
+        try {
+            const response = await fetch(`/api/calendar?date=${dateStr}`);
+            const payload = await response.json();
+
+            if (response.status === 401) {
+                window.location.href = '/settings';
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error(payload.error || `Failed to load calendar (${response.status})`);
+            }
+
+            renderCalendarGrid(payload);
+        } catch (error) {
+            console.error('Error fetching calendar:', error);
+            grid.innerHTML = `<div class="col-span-7 text-center text-red-500 py-10">${error.message}</div>`;
+        }
+    }
+
+    function renderCalendarGrid(daysData) {
+        const grid = document.getElementById('calendarGrid');
+        grid.innerHTML = '';
+
+        if (!daysData || daysData.length === 0) return;
+
+        // Determine start day of the week, adjusted for firstDayOfWeek setting
+        const [fy, fm, fd] = daysData[0].date.split('-').map(Number);
+        const firstDayDate = new Date(fy, fm - 1, fd);
+        const startDay = firstDayDate.getDay(); // 0=Sunday
+        const offset = (startDay - firstDayOfWeek + 7) % 7;
+
+        // Add empty cells for previous month days
+        for (let i = 0; i < offset; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'bg-transparent p-2';
+            grid.appendChild(emptyCell);
+        }
+
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        daysData.forEach(day => {
+            const cell = document.createElement('div');
+            const isToday = day.date === todayStr;
+            
+            cell.className = `calendar-day bg-gray-700/30 rounded border border-gray-700/50 p-2 flex flex-col ${isToday ? 'today' : ''}`;
+            cell.setAttribute('ondragover', 'allowDrop(event)');
+            cell.setAttribute('ondrop', 'drop(event)');
+            cell.setAttribute('ondragleave', 'dragLeave(event)');
+            cell.dataset.date = day.date;
+
+            // Date number — parse as local date to avoid UTC offset issues
+            const dateNum = parseInt(day.date.split('-')[2], 10);
+            cell.innerHTML = `<div class="text-right text-sm ${isToday ? 'text-blue-400 font-bold' : 'text-gray-400'} mb-1">${dateNum}</div>`;
+
+            // Workouts list
+            const workoutsContainer = document.createElement('div');
+            workoutsContainer.className = 'flex-1 flex flex-col gap-1 overflow-y-auto max-h-[100px]';
+            
+            if (day.trainingPlanList && day.trainingPlanList.length > 0) {
+                day.trainingPlanList.forEach(plan => {
+                    const pill = document.createElement('div');
+                    const isPast = day.date < todayStr;
+                    // isReservation===false means either an official program (future) or a past completed workout
+                    const isNotReservation = plan.isReservation === false;
+                    const isPastEntry = isNotReservation && isPast;
+                    const isProgram = isNotReservation && !isPast;
+
+                    if (isPastEntry) {
+                        // Style for past completed workouts (gray, no delete/drag)
+                        pill.className = 'workout-pill text-xs text-gray-400 bg-gray-700/40 border-gray-600/50 truncate';
+                        pill.title = `Completed: ${plan.title}`;
+                    } else if (isProgram) {
+                        // Style for future official Programs (Blue-ish, no delete)
+                        pill.className = 'workout-pill text-xs text-blue-200 bg-blue-900/40 border-blue-800/50 truncate';
+                        pill.title = `Program: ${plan.exclusivePlanName || plan.title}`;
+                    } else {
+                        // Style for Custom Scheduled (Standard, with delete)
+                        pill.className = 'workout-pill text-xs text-white truncate cursor-move';
+                        pill.title = plan.title;
+                        pill.draggable = true;
+                        pill.ondragstart = (e) => dragExisting(e, day.date, plan.code || plan.templateCode, plan.title);
+                    }
+                    
+                    const titleSpan = document.createElement('span');
+                    titleSpan.textContent = plan.title;
+                    titleSpan.className = 'truncate flex-1';
+                    
+                    pill.appendChild(titleSpan);
+
+                    // Only add delete button for active (non-past) user reservations
+                    if (!isProgram && !isPastEntry) {
+                        const delBtn = document.createElement('span');
+                        delBtn.innerHTML = '&times;';
+                        delBtn.className = 'delete-schedule-btn hover:text-red-300';
+                        delBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            deleteScheduledWorkout(day.date, plan.code || plan.templateCode); // API might return code or templateCode
+                        };
+                        pill.appendChild(delBtn);
+                    }
+
+                    workoutsContainer.appendChild(pill);
+                });
+            }
+            
+            cell.appendChild(workoutsContainer);
+            grid.appendChild(cell);
+        });
+    }
+
+    // --- Drag and Drop Logic ---
+
+    function drag(ev) {
+        ev.dataTransfer.setData("text/plain", JSON.stringify({
+            type: 'new',
+            code: ev.target.dataset.code,
+            name: ev.target.dataset.name
+        }));
+        ev.dataTransfer.effectAllowed = "copy";
+
+        // Auto-scroll to calendar so drop target is visible
+        setTimeout(() => {
+            document.getElementById('calendarGrid').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    }
+
+    function dragExisting(ev, date, code, name) {
+        ev.dataTransfer.setData("text/plain", JSON.stringify({
+            type: 'move',
+            originalDate: date,
+            code: code,
+            name: name
+        }));
+        ev.dataTransfer.effectAllowed = "move";
+        ev.stopPropagation();
+    }
+
+    function allowDrop(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.add('drag-over');
+    }
+
+    function dragLeave(ev) {
+        ev.currentTarget.classList.remove('drag-over');
+    }
+
+    async function drop(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+        
+        const dataStr = ev.dataTransfer.getData("text/plain");
+        if (!dataStr) return;
+        
+        const data = JSON.parse(dataStr);
+        const targetDate = ev.currentTarget.dataset.date;
+        
+        if (!targetDate || !data.code) return;
+
+        // Prevent scheduling in the past
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+
+        if (targetDate < todayStr) {
+            alert('Cannot schedule or move workouts to a past date.');
+            return;
+        }
+
+        if (data.type === 'move') {
+            if (data.originalDate === targetDate) return; // Dropped on same day
+
+            // 1. Delete from old date
+            try {
+                const delResp = await fetch('/api/schedule', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: data.originalDate,
+                        templateCode: data.code,
+                        status: 0 // Remove
+                    })
+                });
+                const delResult = await delResp.json();
+                if (!delResult.success) {
+                    alert('Failed to move workout (could not remove from original date): ' + (delResult.error || 'Unknown error'));
+                    return;
+                }
+
+                // 2. Add to new date
+                const addResp = await fetch('/api/schedule', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: targetDate,
+                        templateCode: data.code,
+                        status: 1 // Add
+                    })
+                });
+                const addResult = await addResp.json();
+                
+                if (addResult.success) {
+                    fetchCalendarData();
+                } else {
+                    alert('Failed to move workout (removed from old date but failed to add to new): ' + (addResult.error || 'Unknown error'));
+                    fetchCalendarData(); // Refresh anyway
+                }
+
+            } catch (error) {
+                console.error('Error moving workout:', error);
+                alert('Error moving workout');
+            }
+
+        } else {
+            // New schedule
+            try {
+                const response = await fetch('/api/schedule', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: targetDate,
+                        templateCode: data.code,
+                        status: 1 // Add
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    fetchCalendarData(); // Reload calendar
+                } else {
+                    alert('Failed to schedule workout: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error scheduling:', error);
+                alert('Error scheduling workout');
+            }
+        }
+    }
+
+    async function deleteScheduledWorkout(date, templateCode) {
+        if (!confirm('Remove this workout from the schedule?')) return;
+
+        try {
+            const response = await fetch('/api/schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: date,
+                    templateCode: templateCode,
+                    status: 0 // Remove
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                fetchCalendarData(); // Reload calendar
+            } else {
+                alert('Failed to remove workout: ' + (result.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Error removing workout:', error);
+            alert('Error removing workout');
+        }
+    }
+
+    // --- Navigation ---
+
+    document.getElementById('prevMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        initCalendar();
+    });
+
+    document.getElementById('nextMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        initCalendar();
+    });
+
+    // Initialize
+    initCalendar();
+</script>
+{% endblock %}

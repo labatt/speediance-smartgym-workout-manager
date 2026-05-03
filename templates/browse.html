@@ -1,0 +1,570 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-white mb-4">Browse Workouts & Programs</h1>
+
+    <!-- Equipment filter banner -->
+    <div id="equipmentBanner" class="hidden bg-blue-900/30 border border-blue-600 p-3 rounded mb-4 text-sm text-blue-200 flex items-center justify-between">
+        <span id="equipmentBannerText"></span>
+        <a href="/settings" class="text-blue-400 hover:text-blue-300 underline ml-2 flex-shrink-0">Change in Settings</a>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-6 bg-gray-800 rounded-lg p-1 w-fit">
+        <button id="tabWorkouts" onclick="switchTab('workouts')" class="px-5 py-2 rounded-md text-sm font-medium transition">Workouts</button>
+        <button id="tabPrograms" onclick="switchTab('programs')" class="px-5 py-2 rounded-md text-sm font-medium transition">Programs</button>
+    </div>
+
+    <!-- Workouts Tab Content -->
+    <div id="workoutsContent" class="hidden">
+        <div id="courseFilters" class="flex gap-2 mb-4 flex-wrap"></div>
+        <div class="text-xs text-gray-500 mb-3" id="courseCount"></div>
+        <div id="courseGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+        <div id="courseLoading" class="text-center text-gray-500 py-10">Loading workouts...</div>
+    </div>
+
+    <!-- Programs Tab Content -->
+    <div id="programsContent" class="hidden">
+        <div id="programFilters" class="flex gap-2 mb-4 flex-wrap"></div>
+        <div class="text-xs text-gray-500 mb-3" id="programCount"></div>
+        <div id="programGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        <div id="programLoading" class="text-center text-gray-500 py-10 hidden">Loading programs...</div>
+    </div>
+</div>
+
+<!-- Course Detail Modal -->
+<div id="courseModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl border border-gray-700 shadow-2xl flex flex-col max-h-[85vh] mx-4">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+            <div class="min-w-0 mr-4">
+                <h3 class="text-xl font-bold text-white truncate" id="courseModalTitle"></h3>
+                <p class="text-sm text-gray-400" id="courseModalSub"></p>
+            </div>
+            <button onclick="closeModal('courseModal')" class="text-gray-400 hover:text-white flex-shrink-0">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div id="courseModalStats" class="grid grid-cols-3 gap-3 mb-4">
+            <div class="bg-gray-900 rounded p-3 text-center">
+                <p class="text-xs text-gray-400">Duration</p>
+                <p id="courseModalDuration" class="text-lg font-bold text-blue-400">-</p>
+            </div>
+            <div class="bg-gray-900 rounded p-3 text-center">
+                <p class="text-xs text-gray-400">Calories</p>
+                <p id="courseModalCalories" class="text-lg font-bold text-orange-400">-</p>
+            </div>
+            <div class="bg-gray-900 rounded p-3 text-center">
+                <p class="text-xs text-gray-400">Volume</p>
+                <p id="courseModalVolume" class="text-lg font-bold text-green-400">-</p>
+            </div>
+        </div>
+        <div class="overflow-y-auto flex-grow">
+            <div id="courseModalLoading" class="text-center py-8 text-gray-500">Loading...</div>
+            <div id="courseModalExercises" class="space-y-2"></div>
+        </div>
+        <div id="courseModalActions" class="mt-4 pt-3 border-t border-gray-700">
+            <button id="scheduleBtn" onclick="showScheduleDate()"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                Schedule Workout
+            </button>
+            <div id="scheduleDatePicker" class="hidden">
+                <label class="text-sm text-gray-300 mb-2 block">Select date:</label>
+                <div class="flex gap-2">
+                    <input type="date" id="scheduleDate" class="flex-grow p-2 bg-gray-700 rounded text-white border border-gray-600">
+                    <button onclick="confirmSchedule()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Confirm</button>
+                    <button onclick="cancelSchedule()" class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded border border-gray-600">Cancel</button>
+                </div>
+            </div>
+            <div id="scheduleResult" class="hidden mt-2 text-sm text-center"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Program Detail Modal -->
+<div id="programModal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 p-6 rounded-lg w-full max-w-3xl border border-gray-700 shadow-2xl flex flex-col max-h-[85vh] mx-4">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+            <div class="min-w-0 mr-4">
+                <h3 class="text-xl font-bold text-white truncate" id="programModalTitle"></h3>
+                <p class="text-sm text-gray-400" id="programModalSub"></p>
+            </div>
+            <button onclick="closeModal('programModal')" class="text-gray-400 hover:text-white flex-shrink-0">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div id="programModalDesc" class="text-gray-300 text-sm mb-4"></div>
+        <div class="bg-blue-900/30 border border-blue-600 p-3 rounded mb-3 text-sm text-blue-200 flex items-center gap-2">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            Programs can only be scheduled through the Speediance app.
+        </div>
+        <div class="overflow-y-auto flex-grow">
+            <div id="programModalLoading" class="text-center py-8 text-gray-500">Loading...</div>
+            <div id="programModalWeeks" class="space-y-4"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const unit = {{ unit }};
+    const unitLabel = unit === 1 ? 'lbs' : 'kg';
+    const DIFF_MAP = { 1: 'Beginner', 2: 'Intermediate', 3: 'Advanced' };
+    const DIFF_COLOR = { 1: 'text-green-400', 2: 'text-yellow-400', 3: 'text-red-400' };
+    const ownedAccessories = new Set({{ owned_accessories | tojson }});
+    const ownedDevices = new Set({{ owned_devices | tojson }});
+
+    function passesAccessoryFilter(accessoriesStr) {
+        if (ownedAccessories.size === 0) return true;
+        if (!accessoriesStr || accessoriesStr === '') return true;
+        const required = String(accessoriesStr).split(',').map(s => s.trim()).filter(Boolean);
+        if (required.length === 0) return true;
+        return required.every(id => ownedAccessories.has(parseInt(id)));
+    }
+
+    function passesDeviceFilter(deviceType) {
+        if (ownedDevices.size === 0) return true;
+        return ownedDevices.has(deviceType);
+    }
+
+    function passesAllFilters(item) {
+        return passesAccessoryFilter(item.accessories) && passesDeviceFilter(item.deviceType);
+    }
+
+    let equipmentHiddenCount = 0;
+    function updateEquipmentBanner(total, visible) {
+        const hidden = total - visible;
+        equipmentHiddenCount += hidden;
+        const banner = document.getElementById('equipmentBanner');
+        if ((ownedAccessories.size > 0 || ownedDevices.size > 0) && equipmentHiddenCount > 0) {
+            document.getElementById('equipmentBannerText').textContent =
+                `Filtered by your equipment — ${equipmentHiddenCount} item(s) hidden`;
+            banner.classList.remove('hidden');
+            banner.classList.add('flex');
+        }
+    }
+
+    // ── State ────────────────────────────────────────────────
+    let allCourses = [];
+    let allPrograms = [];
+    let coursesLoaded = false;
+    let programLoaded = false;
+    let activeCourseFilter = 'All';
+    let activeProgramFilter = 'All';
+    let courseCategories = new Map(); // name -> count
+    let programDifficulties = new Map();
+
+    // ── Tab switching ────────────────────────────────────────
+    function switchTab(tab) {
+        document.getElementById('tabWorkouts').className = tab === 'workouts'
+            ? 'px-5 py-2 rounded-md text-sm font-medium transition bg-blue-600 text-white'
+            : 'px-5 py-2 rounded-md text-sm font-medium transition text-gray-400 hover:text-white';
+        document.getElementById('tabPrograms').className = tab === 'programs'
+            ? 'px-5 py-2 rounded-md text-sm font-medium transition bg-blue-600 text-white'
+            : 'px-5 py-2 rounded-md text-sm font-medium transition text-gray-400 hover:text-white';
+
+        document.getElementById('workoutsContent').classList.toggle('hidden', tab !== 'workouts');
+        document.getElementById('programsContent').classList.toggle('hidden', tab !== 'programs');
+
+        if (tab === 'workouts' && !coursesLoaded) fetchCourses();
+        if (tab === 'programs' && !programLoaded) fetchPrograms();
+    }
+
+    // ── Courses ─────────────────────────────────────────────
+    async function fetchCourses() {
+        document.getElementById('courseLoading').classList.remove('hidden');
+        try {
+            const resp = await fetch('/api/browse/courses');
+            if (resp.status === 401) { window.location.href = '/settings'; return; }
+            const data = await resp.json();
+            allCourses = data.courses || [];
+            coursesLoaded = true;
+
+            // Count categories from filtered courses only
+            const visibleCourses = allCourses.filter(c => passesAllFilters(c));
+            courseCategories.clear();
+            visibleCourses.forEach(c => {
+                (c.categoryList || []).forEach(cat => {
+                    if (cat.categoryName) courseCategories.set(cat.categoryName, (courseCategories.get(cat.categoryName) || 0) + 1);
+                });
+            });
+
+            // Show equipment banner
+            updateEquipmentBanner(allCourses.length, visibleCourses.length);
+
+            document.getElementById('courseLoading').classList.add('hidden');
+            renderCourseFilters();
+            renderCourses();
+        } catch (err) {
+            document.getElementById('courseLoading').textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderCourseFilters() {
+        const container = document.getElementById('courseFilters');
+        // Sort categories by count descending
+        const sorted = [...courseCategories.entries()].sort((a, b) => b[1] - a[1]);
+        const visibleTotal = allCourses.filter(c => passesAllFilters(c)).length;
+        let html = `<button onclick="setCourseFilter('All')" class="px-3 py-1 rounded-full text-xs font-medium ${activeCourseFilter === 'All' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}">All (${visibleTotal})</button>`;
+        sorted.forEach(([name, count]) => {
+            const active = activeCourseFilter === name;
+            html += `<button onclick="setCourseFilter('${name.replace(/'/g, "\\'")}')" class="px-3 py-1 rounded-full text-xs font-medium ${active ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}">${name} (${count})</button>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function setCourseFilter(name) {
+        activeCourseFilter = name;
+        renderCourseFilters();
+        renderCourses();
+    }
+
+    function renderCourses() {
+        const grid = document.getElementById('courseGrid');
+        let filtered = allCourses.filter(c => passesAllFilters(c));
+        if (activeCourseFilter !== 'All') {
+            filtered = filtered.filter(c => (c.categoryList || []).some(cat => cat.categoryName === activeCourseFilter));
+        }
+
+        document.getElementById('courseCount').textContent = `Showing ${filtered.length} of ${allCourses.length} workouts`;
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<p class="text-gray-500 col-span-full text-center py-8">No workouts found.</p>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map(c => {
+            const img = c.courseImg || c.appShortBackgroundImage || '';
+            const diff = DIFF_MAP[c.difficultyId] || '';
+            const diffColor = DIFF_COLOR[c.difficultyId] || 'text-gray-400';
+            const cats = (c.categoryList || []).map(cat => cat.categoryName).filter(Boolean).join(', ');
+            return `
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden cursor-pointer hover:border-gray-500 transition" onclick="openCourseDetail(${c.id})">
+                    ${img ? `<div class="h-40 bg-gray-900 overflow-hidden"><img src="${img}" class="w-full h-full object-cover" loading="lazy"></div>` : '<div class="h-40 bg-gray-900 flex items-center justify-center text-gray-600">No Image</div>'}
+                    <div class="p-3">
+                        <h3 class="font-bold text-white text-sm mb-1 line-clamp-2">${c.courseTitle}</h3>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="text-blue-300">${c.durationMinute} min</span>
+                            <span class="${diffColor}">${diff}</span>
+                            ${cats ? `<span class="text-gray-400">${cats}</span>` : ''}
+                        </div>
+                        ${c.trainedUserCount ? `<span class="text-xs text-gray-500">${c.trainedUserCount.toLocaleString()} trained</span>` : ''}
+                        ${c.isNew ? ' <span class="inline-block px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">NEW</span>' : ''}
+                        ${c.isHot ? ' <span class="inline-block px-1.5 py-0.5 bg-red-600 text-white text-[10px] rounded">HOT</span>' : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    let currentCourseId = null;
+
+    async function openCourseDetail(courseId) {
+        const c = allCourses.find(x => x.id === courseId) || {};
+        const modal = document.getElementById('courseModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        document.getElementById('courseModalTitle').textContent = c.courseTitle || 'Workout';
+        const diff = DIFF_MAP[c.difficultyId] || '';
+        const cats = (c.categoryList || []).map(x => x.categoryName).filter(Boolean).join(', ');
+        document.getElementById('courseModalSub').textContent = [diff, cats, `${c.durationMinute} min`].filter(Boolean).join(' · ');
+        document.getElementById('courseModalLoading').classList.remove('hidden');
+        document.getElementById('courseModalExercises').innerHTML = '';
+        document.getElementById('courseModalDuration').textContent = `${c.durationMinute || '?'} min`;
+        document.getElementById('courseModalCalories').textContent = '-';
+        document.getElementById('courseModalVolume').textContent = '-';
+        currentCourseId = courseId;
+        resetScheduleUI();
+
+        try {
+            const resp = await fetch(`/api/browse/course/${courseId}`);
+            const data = await resp.json();
+            document.getElementById('courseModalLoading').classList.add('hidden');
+            renderCourseDetail(data);
+        } catch (err) {
+            document.getElementById('courseModalLoading').textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderCourseDetail(data) {
+        if (data.estimatedCalorie) {
+            document.getElementById('courseModalCalories').textContent = `${data.estimatedCalorie} kcal`;
+        }
+        if (data.estimatedCapacity) {
+            const vol = unit === 1 ? Math.round(data.estimatedCapacity * 2.2) : data.estimatedCapacity;
+            document.getElementById('courseModalVolume').textContent = `${Math.round(vol).toLocaleString()} ${unitLabel}`;
+        }
+
+        const container = document.getElementById('courseModalExercises');
+        const exercises = data.actionLibraryList || [];
+
+        if (exercises.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-4">No exercise details available.</p>';
+            return;
+        }
+
+        container.innerHTML = exercises.map(ex => {
+            const setsReps = ex.setsAndReps || '';
+            let setsInfo = '';
+            if (ex.completionMethod === 4) {
+                // Video follow-along (Yoga, etc.)
+                const secs = parseInt(ex.burningTimes) || 0;
+                const mins = Math.round(secs / 60);
+                setsInfo = mins > 0
+                    ? `<span class="text-purple-300">${mins} min follow-along</span>`
+                    : `<span class="text-purple-300">Follow-along</span>`;
+            } else if (ex.completionMethod === 0) {
+                setsInfo = `<span class="text-blue-300">${setsReps}s timer</span>`;
+            } else {
+                const parts = setsReps.split(',');
+                const uniqueReps = [...new Set(parts)];
+                const repStr = uniqueReps.length === 1 ? `${parts.length}&times;${uniqueReps[0]}` : `${parts.length} sets &middot; ${setsReps} reps`;
+                let weightStr = '';
+                if (ex.recommendedWeight) {
+                    const w = unit === 1 ? Math.round(ex.recommendedWeight * 2.2) : ex.recommendedWeight;
+                    weightStr = `<span class="text-green-400">${w} ${unitLabel}</span>`;
+                }
+                setsInfo = `<span class="text-gray-300">${repStr}</span> ${weightStr}`;
+            }
+            return `
+                <div class="flex items-center gap-3 p-2 bg-gray-900 rounded-lg">
+                    ${ex.img ? `<img src="${ex.img}" class="w-10 h-10 rounded object-cover bg-black flex-shrink-0" loading="lazy">` : '<div class="w-10 h-10 rounded bg-gray-700 flex-shrink-0"></div>'}
+                    <div class="flex-grow min-w-0">
+                        <p class="text-white text-sm font-medium truncate">${ex.title}</p>
+                        <div class="flex gap-2 text-xs">${setsInfo} <span class="text-gray-500">${ex.mainMuscleGroupName || ''}</span></div>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    // ── Programs ─────────────────────────────────────────────
+    async function fetchPrograms() {
+        document.getElementById('programLoading').classList.remove('hidden');
+        try {
+            const resp = await fetch('/api/browse/programs?page=1');
+            if (resp.status === 401) { window.location.href = '/settings'; return; }
+            const data = await resp.json();
+            allPrograms = data.programs || [];
+            programLoaded = true;
+            const visiblePrograms = allPrograms.filter(p => passesAllFilters(p));
+            updateEquipmentBanner(allPrograms.length, visiblePrograms.length);
+            document.getElementById('programLoading').classList.add('hidden');
+            renderProgramFilters();
+            renderPrograms();
+        } catch (err) {
+            document.getElementById('programLoading').textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderProgramFilters() {
+        const container = document.getElementById('programFilters');
+        // Group by difficulty (only visible programs)
+        const visible = allPrograms.filter(p => passesAllFilters(p));
+        const diffs = {};
+        visible.forEach(p => {
+            const d = DIFF_MAP[p.difficultyId] || 'Other';
+            diffs[d] = (diffs[d] || 0) + 1;
+        });
+
+        let html = `<button onclick="setProgramFilter('All')" class="px-3 py-1 rounded-full text-xs font-medium ${activeProgramFilter === 'All' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}">All (${visible.length})</button>`;
+        Object.entries(diffs).forEach(([name, count]) => {
+            const active = activeProgramFilter === name;
+            html += `<button onclick="setProgramFilter('${name}')" class="px-3 py-1 rounded-full text-xs font-medium ${active ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}">${name} (${count})</button>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function setProgramFilter(name) {
+        activeProgramFilter = name;
+        renderProgramFilters();
+        renderPrograms();
+    }
+
+    function renderPrograms() {
+        const grid = document.getElementById('programGrid');
+        let filtered = allPrograms.filter(p => passesAllFilters(p));
+        if (activeProgramFilter !== 'All') {
+            const diffId = Object.entries(DIFF_MAP).find(([k, v]) => v === activeProgramFilter)?.[0];
+            if (diffId) filtered = filtered.filter(p => p.difficultyId === parseInt(diffId));
+        }
+
+        document.getElementById('programCount').textContent = `Showing ${filtered.length} of ${allPrograms.length} programs`;
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<p class="text-gray-500 col-span-full text-center py-8">No programs found.</p>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map(p => {
+            const diff = DIFF_MAP[p.difficultyId] || '';
+            const diffColor = DIFF_COLOR[p.difficultyId] || 'text-gray-400';
+            return `
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden cursor-pointer hover:border-gray-500 transition" onclick="openProgramDetail(${p.id})">
+                    ${p.coverImg ? `<div class="h-44 bg-gray-900 overflow-hidden"><img src="${p.coverImg}" class="w-full h-full object-cover" loading="lazy"></div>` : '<div class="h-44 bg-gray-900 flex items-center justify-center text-gray-600">No Image</div>'}
+                    <div class="p-3">
+                        <h3 class="font-bold text-white text-sm mb-1 line-clamp-2">${p.name}</h3>
+                        <p class="text-gray-400 text-xs mb-2 line-clamp-2">${p.description || ''}</p>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="text-blue-300">${p.weekCount} weeks &middot; ${p.weekTrainingFrequency}x/week</span>
+                            <span class="${diffColor}">${diff}</span>
+                        </div>
+                        ${p.isHot ? '<span class="inline-block mt-1 px-1.5 py-0.5 bg-red-600 text-white text-[10px] rounded">HOT</span>' : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    async function openProgramDetail(planId) {
+        const p = allPrograms.find(x => x.id === planId) || {};
+        const modal = document.getElementById('programModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        document.getElementById('programModalTitle').textContent = p.name || 'Program';
+        const diff = DIFF_MAP[p.difficultyId] || '';
+        document.getElementById('programModalSub').textContent = `${p.weekCount || '?'} weeks · ${p.weekTrainingFrequency || '?'}x/week · ${diff}`;
+        document.getElementById('programModalDesc').textContent = p.description || '';
+        document.getElementById('programModalLoading').classList.remove('hidden');
+        document.getElementById('programModalWeeks').innerHTML = '';
+
+        try {
+            const resp = await fetch(`/api/browse/program/${planId}`);
+            const data = await resp.json();
+            document.getElementById('programModalLoading').classList.add('hidden');
+            renderProgramDetail(data);
+        } catch (err) {
+            document.getElementById('programModalLoading').textContent = 'Error: ' + err.message;
+        }
+    }
+
+    function renderProgramDetail(data) {
+        const container = document.getElementById('programModalWeeks');
+        const weeks = data.exclusivePlanWeekList || [];
+
+        if (weeks.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-4">No schedule details available.</p>';
+            return;
+        }
+
+        container.innerHTML = weeks.map(week => {
+            const days = week.exclusivePlanDayList || [];
+            const daysHtml = days.map(day => {
+                const courses = day.courseList || [];
+                if (courses.length === 0) {
+                    return `<div class="flex items-center gap-3 px-3 py-2 border-b border-gray-800 last:border-0">
+                        <span class="text-gray-500 font-mono text-xs w-10">Day ${day.day}</span>
+                        <span class="text-gray-600 text-sm italic">Rest Day</span>
+                    </div>`;
+                }
+                return courses.map(c => `
+                    <div class="flex items-center gap-3 px-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer hover:bg-gray-800" onclick="event.stopPropagation();closeModal('programModal');openCourseDetailById(${c.id},'${(c.courseTitle||'').replace(/'/g,"\\'")}',${c.durationMinute||0})">
+                        <span class="text-gray-500 font-mono text-xs w-10">Day ${day.day}</span>
+                        ${c.courseImg ? `<img src="${c.courseImg}" class="w-8 h-8 rounded object-cover bg-black flex-shrink-0" loading="lazy">` : ''}
+                        <div class="flex-grow min-w-0">
+                            <p class="text-white text-sm truncate">${c.courseTitle}</p>
+                            <span class="text-xs text-blue-300">${c.durationMinute} min</span>
+                        </div>
+                    </div>`).join('');
+            }).join('');
+
+            return `<div class="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+                <div class="px-3 py-2 bg-gray-800 border-b border-gray-700">
+                    <span class="text-white font-bold text-sm">Week ${week.week}</span>
+                </div>
+                ${daysHtml}
+            </div>`;
+        }).join('');
+    }
+
+    // Open course detail by ID (from program day click)
+    function openCourseDetailById(courseId, title, duration) {
+        const modal = document.getElementById('courseModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.getElementById('courseModalTitle').textContent = title;
+        document.getElementById('courseModalSub').textContent = `${duration} min`;
+        document.getElementById('courseModalLoading').classList.remove('hidden');
+        document.getElementById('courseModalExercises').innerHTML = '';
+        document.getElementById('courseModalDuration').textContent = `${duration} min`;
+        document.getElementById('courseModalCalories').textContent = '-';
+        document.getElementById('courseModalVolume').textContent = '-';
+
+        fetch(`/api/browse/course/${courseId}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('courseModalLoading').classList.add('hidden');
+                renderCourseDetail(data);
+            })
+            .catch(err => {
+                document.getElementById('courseModalLoading').textContent = 'Error: ' + err.message;
+            });
+    }
+
+    // ── Scheduling ──────────────────────────────────────────
+    function resetScheduleUI() {
+        document.getElementById('scheduleBtn').classList.remove('hidden');
+        document.getElementById('scheduleDatePicker').classList.add('hidden');
+        document.getElementById('scheduleResult').classList.add('hidden');
+        document.getElementById('scheduleResult').textContent = '';
+    }
+
+    function showScheduleDate() {
+        document.getElementById('scheduleBtn').classList.add('hidden');
+        document.getElementById('scheduleDatePicker').classList.remove('hidden');
+        const dateInput = document.getElementById('scheduleDate');
+        dateInput.min = new Date().toISOString().split('T')[0];
+        dateInput.value = '';
+    }
+
+    function cancelSchedule() {
+        document.getElementById('scheduleDatePicker').classList.add('hidden');
+        document.getElementById('scheduleBtn').classList.remove('hidden');
+    }
+
+    async function confirmSchedule() {
+        const date = document.getElementById('scheduleDate').value;
+        if (!date || !currentCourseId) return;
+
+        const resultEl = document.getElementById('scheduleResult');
+        resultEl.classList.remove('hidden');
+        resultEl.className = 'mt-2 text-sm text-center text-gray-400';
+        resultEl.textContent = 'Scheduling...';
+
+        try {
+            const resp = await fetch('/api/schedule_course', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ date, courseId: currentCourseId, status: 1 })
+            });
+            const result = await resp.json();
+
+            if (result.success) {
+                resultEl.className = 'mt-2 text-sm text-center text-green-400';
+                resultEl.textContent = `Scheduled for ${date}!`;
+                document.getElementById('scheduleDatePicker').classList.add('hidden');
+            } else {
+                resultEl.className = 'mt-2 text-sm text-center text-red-400';
+                resultEl.textContent = 'Scheduling failed. Please try again.';
+            }
+        } catch (err) {
+            resultEl.className = 'mt-2 text-sm text-center text-red-400';
+            resultEl.textContent = 'Error: ' + err.message;
+        }
+    }
+
+    // ── Modal helpers ────────────────────────────────────────
+    function closeModal(id) {
+        document.getElementById(id).classList.add('hidden');
+        document.getElementById(id).classList.remove('flex');
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeModal('courseModal');
+            closeModal('programModal');
+        }
+    });
+
+    // Auto-load workouts tab
+    switchTab('workouts');
+</script>
+{% endblock %}

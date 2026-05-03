@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+config.json
+*.log
+static/media_cache/
+library_cache*.json
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+.DS_Store
+.vscode/
+.pytest_cache/

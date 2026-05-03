@@ -1,0 +1,714 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mx-auto max-w-6xl">
+    
+    <h1 class="text-3xl font-bold text-white mb-2">Training History</h1>
+    <p class="text-gray-400 text-sm mb-6">View past workouts and export data for analysis.</p>
+
+    <!-- Calendar Section -->
+    <div class="mb-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span>📅</span> Monthly Overview
+            </h2>
+            <div class="flex items-center space-x-4 bg-gray-800 p-2 rounded-lg">
+                <button id="prevMonthHistory" class="text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded transition">
+                    &lt; Prev
+                </button>
+                <span id="currentMonthLabelHistory" class="text-lg font-semibold text-white min-w-[150px] text-center"></span>
+                <button id="nextMonthHistory" class="text-gray-400 hover:text-white px-2 py-1 hover:bg-gray-700 rounded transition">
+                    Next &gt;
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-700">
+            <!-- Weekday Headers -->
+            <div class="grid grid-cols-7 gap-2 mb-2 text-center text-gray-400 font-bold uppercase text-sm tracking-wider">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            </div>
+
+            <!-- Calendar Grid -->
+            <div id="historyCalendarGrid" class="grid grid-cols-7 gap-2 auto-rows-fr">
+                <!-- Calendar days will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="border-t border-gray-700 mb-8"></div>
+
+    <!-- Search Section -->
+    <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
+        <div>
+            <h2 class="text-2xl font-bold text-white">Detailed Search</h2>
+            <p class="text-gray-400 text-sm mt-1">Search specific date ranges for export.</p>
+        </div>
+
+        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 flex flex-wrap gap-4 items-end shadow-lg">
+            <div>
+                <label class="block text-xs text-gray-400 font-bold mb-1 uppercase">Start Date</label>
+                <input type="date" id="start-date" class="bg-gray-900 border border-gray-600 text-white text-sm rounded-lg block w-full p-2.5">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 font-bold mb-1 uppercase">End Date</label>
+                <input type="date" id="end-date" class="bg-gray-900 border border-gray-600 text-white text-sm rounded-lg block w-full p-2.5">
+            </div>
+            <button onclick="fetchHistory()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-lg transition shadow-lg">
+                Search
+            </button>
+        </div>
+    </div>
+
+    <div id="results-toolbar" class="hidden flex justify-between items-center mb-4 bg-gray-800/50 p-3 rounded border border-gray-700">
+        <span id="record-count" class="text-gray-300 font-mono text-sm">Found 0 records</span>
+        <div class="flex gap-2">
+            <button onclick="copySummaryJson()" class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded border border-gray-600 transition">
+                Copy Summary List
+            </button>
+            <button onclick="deepExport()" id="deep-export-btn" class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-2 rounded border border-green-500 transition font-bold flex items-center gap-2">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Deep Export (All Details)
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden shadow-xl">
+        <table class="w-full text-left text-sm text-gray-400">
+            <thead class="text-xs text-gray-200 uppercase bg-gray-900">
+                    <tr>
+                        <th class="px-6 py-4">ID</th>   
+                        <th class="px-6 py-4">Date</th>
+                        <th class="px-6 py-4">Workout Name</th>
+                        <th class="px-6 py-4 text-center">Volume</th>
+                        <th class="px-6 py-4 text-center">Duration</th>
+                        <th class="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+            <tbody id="history-table-body" class="divide-y divide-gray-700">
+                <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                        Select dates and click Search to view history.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="export-container" class="hidden mt-6 p-4 bg-gray-800 rounded-lg border border-yellow-600/50 shadow-2xl">
+        <div class="flex justify-between items-center mb-2">
+            <div>
+                <h3 class="text-white font-bold text-lg">Export Ready</h3>
+                <p class="text-gray-400 text-xs">Raw JSON generated from deep export.</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeExport()" class="text-gray-400 hover:text-white text-sm px-3 py-2">
+                    Close
+                </button>
+                <button onclick="downloadExportFile()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2 shadow-lg hover:shadow-blue-900/50 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    Download File
+                </button>
+                <button onclick="copyExportArea()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2 shadow-lg hover:shadow-green-900/50 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                    Copy to Clipboard
+                </button>
+            </div>
+        </div>
+        <textarea id="export-textarea" class="w-full h-64 bg-gray-900 text-green-400 font-mono text-xs p-4 rounded border border-gray-700 focus:outline-none focus:border-yellow-600 resize-y" readonly></textarea>
+    </div>
+
+    <!-- Workout Details Modal -->
+    <div id="workout-details-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" onclick="closeWorkoutModal(event)">
+        <div class="bg-gray-800 rounded-lg border border-gray-600 shadow-2xl max-w-lg w-full mx-4" onclick="event.stopPropagation()">
+            <div class="p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Workout Details</h3>
+                <div id="modal-workout-details" class="text-gray-300 space-y-2 mb-6 font-mono text-sm">
+                    <!-- Details will be injected here -->
+                </div>
+                <div class="flex gap-3 justify-end">
+                    <button onclick="closeWorkoutModal()" class="text-gray-400 hover:text-white px-4 py-2 rounded transition">
+                        Close
+                    </button>
+                    <button id="modal-copy-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold flex items-center gap-2 shadow-lg transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                        Copy JSON
+                    </button>
+                    <button id="modal-download-btn" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold flex items-center gap-2 shadow-lg transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        Download JSON
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+    .history-calendar-day {
+        min-height: 100px;
+        transition: all 0.2s;
+        background-color: rgba(55, 65, 81, 0.3);
+        border: 1px solid rgba(75, 85, 99, 0.5);
+        border-radius: 0.375rem;
+        padding: 0.5rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .history-calendar-day.today {
+        background-color: rgba(55, 65, 81, 0.6);
+        border-color: #4b5563;
+    }
+
+    .history-workout-pill {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .history-workout-pill:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Type 2 (Official) - Turquoise */
+    .history-workout-type2 {
+        background-color: #5f9ea0;
+        border: 1px solid #4a7a7c;
+        color: #e0f7fa;
+    }
+
+    /* Type 5 (Custom) - Purple */
+    .history-workout-type5 {
+        background-color: #9370db;
+        border: 1px solid #7b5ab8;
+        color: #f3e5f5;
+    }
+
+    /* Type 7 (Movement) - White outline */
+    .history-workout-type7 {
+        background-color: transparent;
+        border: 2px solid #ffffff;
+        color: #ffffff;
+    }
+
+    .history-workout-pill .workout-title {
+        display: block;
+        font-weight: bold;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .history-workout-pill .workout-meta {
+        display: block;
+        font-size: 0.65rem;
+        opacity: 0.9;
+        margin-top: 2px;
+    }
+</style>
+
+<script>
+    let currentHistoryData = [];
+
+    // Set default dates (Current Month)
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    // Helper to format YYYY-MM-DD for input fields
+    const formatDateInput = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    document.getElementById('start-date').value = formatDateInput(firstDay);
+    document.getElementById('end-date').value = formatDateInput(today);
+
+    async function fetchHistory() {
+        const start = document.getElementById('start-date').value;
+        const end = document.getElementById('end-date').value;
+        const tbody = document.getElementById('history-table-body');
+        
+        tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-12 text-center text-gray-500">Loading...</td></tr>';
+        
+        try {
+            const res = await fetch(`/api/workout_history?start=${start}&end=${end}`);
+            const data = await res.json();
+            
+            if(data.error) {
+                alert("Error: " + data.error);
+                return;
+            }
+
+            currentHistoryData = data;
+            renderTable(data);
+            
+            document.getElementById('results-toolbar').classList.remove('hidden');
+            document.getElementById('record-count').innerText = `Found ${data.length} records`;
+
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-12 text-center text-red-500">Error fetching data. Check console.</td></tr>';
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('history-table-body');
+        tbody.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-12 text-center text-gray-500">No records found for this period.</td></tr>';
+            return;
+        }
+
+        // Sort by endTime descending (Newest first)
+        data.sort((a, b) => {
+            const dateA = new Date(a.endTime || a.startTime);
+            const dateB = new Date(b.endTime || b.startTime);
+            return dateB - dateA;
+        });
+
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = "hover:bg-gray-700/50 transition";
+            
+            // 1. Prefer the end timestamp, fall back to start timestamp
+            const timestamp = item.endTimestamp || item.startTimestamp;
+            // 2. Convert Unix seconds to JavaScript milliseconds
+            const dateObj = new Date(timestamp * 1000);
+            
+            const dateStr = dateObj.toLocaleString(undefined, {
+                year: 'numeric', month: 'numeric', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            });
+            const durationMin = Math.round((item.trainingTime || 0) / 60);
+            const exportId = item.trainingId; 
+            const type = item.type; // Capture Type
+
+            row.innerHTML = `
+                <td class="px-6 py-4 font-mono text-gray-500 text-xs select-all">
+                    ${item.trainingId}
+                </td>
+                <td class="px-6 py-4 font-mono text-gray-300 text-xs">${dateStr}</td>
+                <td class="px-6 py-4 font-bold text-white">
+                    ${item.title || "Unknown Workout"}
+                    <div class="text-xs text-gray-500 font-normal">Type: ${item.type}</div>
+                </td>
+                <td class="px-6 py-4 text-center text-gray-300">${item.totalCapacity || 0}</td>
+                <td class="px-6 py-4 text-center text-gray-300">${durationMin} min</td>
+                <td class="px-6 py-4 text-right">
+                    <div class="flex gap-2 justify-end">
+                        <button onclick="downloadDetail('${exportId}', '${type}')" class="text-green-400 hover:text-white text-xs font-bold border border-green-900/50 hover:border-green-500 bg-green-900/20 px-3 py-1 rounded transition">
+                            Download
+                        </button>
+                        <button onclick="copyDetail('${exportId}', '${type}')" class="text-blue-400 hover:text-white text-xs font-bold border border-blue-900/50 hover:border-blue-500 bg-blue-900/20 px-3 py-1 rounded transition">
+                            Copy
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // 1. Copy Summary List
+    function copySummaryJson() {
+        copyToClipboard(JSON.stringify(currentHistoryData, null, 2));
+    }
+
+    // 2. Fetch Single Detail and Copy
+    async function copyDetail(id, type) {
+        if (!id || id === 'undefined') {
+            alert("Error: No trainingId found for this record.");
+            return;
+        }
+        try {
+            // Updated to pass type to backend
+            const res = await fetch(`/api/workout_history/detail/${id}?type=${type}`);
+            const data = await res.json();
+            copyToClipboard(JSON.stringify(data, null, 2));
+            alert("Detailed JSON copied to clipboard!");
+        } catch (e) {
+            alert("Failed to fetch detail: " + e);
+        }
+    }
+
+    // 2b. Fetch Single Detail and Download as File
+    async function downloadDetail(id, type) {
+        if (!id || id === 'undefined') {
+            alert("Error: No trainingId found for this record.");
+            return;
+        }
+        try {
+            const res = await fetch(`/api/workout_history/detail/${id}?type=${type}`);
+            const data = await res.json();
+
+            // Create filename using training ID
+            const filename = `training-record-${id}.json`;
+            const content = JSON.stringify(data, null, 2);
+
+            // Create and download the file
+            const blob = new Blob([content], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert("Failed to fetch detail: " + e);
+        }
+    }
+
+    // 3. Deep Export (The Data Analyst Feature)
+    async function deepExport() {
+        if (!currentHistoryData.length) return alert("No records to export.");
+        
+        if(!confirm(`This will perform ${currentHistoryData.length} API calls. Continue?`)) return;
+
+        const btn = document.getElementById('deep-export-btn');
+        const originalText = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+        
+        const fullDataset = [];
+        let successCount = 0;
+        let failCount = 0;
+
+        document.getElementById('export-container').classList.add('hidden');
+
+        for (let i = 0; i < currentHistoryData.length; i++) {
+            const summary = currentHistoryData[i];
+            const targetId = summary.trainingId;
+            const type = summary.type; // Capture Type
+
+            btn.innerHTML = `<span class="animate-pulse">Fetching ${i + 1}/${currentHistoryData.length}...</span>`;
+            
+            if (targetId) {
+                try {
+                    // Updated to pass type to backend
+                    const res = await fetch(`/api/workout_history/detail/${targetId}?type=${type}`);
+                    const detail = await res.json();
+                    
+                    fullDataset.push({
+                        summary: summary,
+                        detail: detail
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error(`Failed to fetch ${targetId}`, e);
+                    fullDataset.push({ summary: summary, error: "Failed to fetch" });
+                    failCount++;
+                }
+            } else {
+                fullDataset.push({ summary: summary, error: "No Id" });
+                failCount++;
+            }
+            
+            await new Promise(r => setTimeout(r, 50));
+        }
+        
+        const exportBox = document.getElementById('export-textarea');
+        exportBox.value = JSON.stringify(fullDataset, null, 2);
+
+        const container = document.getElementById('export-container');
+        container.classList.remove('hidden');
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+
+    function copyExportArea() {
+        const textarea = document.getElementById('export-textarea');
+        textarea.select();
+        textarea.setSelectionRange(0, 999999);
+        
+        try {
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                alert("Copied to clipboard!");
+            });
+        } catch (err) {
+            document.execCommand('copy');
+            alert("Copied!");
+        }
+    }
+
+    function closeExport() {
+        document.getElementById('export-container').classList.add('hidden');
+    }
+
+    function downloadExportFile() {
+        const textarea = document.getElementById('export-textarea');
+        const content = textarea.value;
+
+        // Create a timestamp for the filename
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5); // Format: YYYY-MM-DDTHH-MM-SS
+        const filename = `workout-history-export-${timestamp}.json`;
+
+        // Create a Blob with the JSON content
+        const blob = new Blob([content], { type: 'application/json' });
+
+        // Create a download link and trigger it
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+
+        // Cleanup
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(err => fallbackCopy(text));
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        var textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            document.execCommand('copy');
+        } catch (err) {
+            alert("Clipboard failed.");
+        }
+        document.body.removeChild(textArea);
+    }
+
+    // ====== CALENDAR FUNCTIONALITY ======
+
+    let currentCalendarMonth = today.getMonth();
+    let currentCalendarYear = today.getFullYear();
+    let calendarHistoryData = [];
+
+    // Initialize calendar on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        renderHistoryCalendar();
+    });
+
+    // Event listeners for calendar navigation
+    document.getElementById('prevMonthHistory').addEventListener('click', () => {
+        currentCalendarMonth--;
+        if (currentCalendarMonth < 0) {
+            currentCalendarMonth = 11;
+            currentCalendarYear--;
+        }
+        renderHistoryCalendar();
+    });
+
+    document.getElementById('nextMonthHistory').addEventListener('click', () => {
+        currentCalendarMonth++;
+        if (currentCalendarMonth > 11) {
+            currentCalendarMonth = 0;
+            currentCalendarYear++;
+        }
+        renderHistoryCalendar();
+    });
+
+    async function renderHistoryCalendar() {
+        // Update month label
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"];
+        document.getElementById('currentMonthLabelHistory').textContent =
+            `${monthNames[currentCalendarMonth]} ${currentCalendarYear}`;
+
+        // Calculate date range for the month
+        const firstDayOfMonth = new Date(currentCalendarYear, currentCalendarMonth, 1);
+        const lastDayOfMonth = new Date(currentCalendarYear, currentCalendarMonth + 1, 0);
+
+        const startDate = formatDateInput(firstDayOfMonth);
+        const endDate = formatDateInput(lastDayOfMonth);
+
+        // Fetch workout history for this month
+        try {
+            const res = await fetch(`/api/workout_history?start=${startDate}&end=${endDate}`);
+            const data = await res.json();
+
+            if (!data.error) {
+                calendarHistoryData = data;
+            } else {
+                calendarHistoryData = [];
+            }
+        } catch (e) {
+            console.error('Error fetching calendar history:', e);
+            calendarHistoryData = [];
+        }
+
+        // Render the calendar grid
+        const grid = document.getElementById('historyCalendarGrid');
+        grid.innerHTML = '';
+
+        // Calculate grid start (Sunday of the week containing the 1st)
+        const startDay = firstDayOfMonth.getDay();
+
+        // Get last day of previous month for padding
+        const prevMonthLastDay = new Date(currentCalendarYear, currentCalendarMonth, 0).getDate();
+        const prevMonthStart = prevMonthLastDay - startDay + 1;
+
+        // Total cells needed (6 rows × 7 days = 42)
+        const totalCells = 42;
+
+        for (let i = 0; i < totalCells; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'history-calendar-day';
+
+            let dayNumber, currentDate, isCurrentMonth = false;
+
+            // Days from previous month
+            if (i < startDay) {
+                dayNumber = prevMonthStart + i;
+                currentDate = new Date(currentCalendarYear, currentCalendarMonth - 1, dayNumber);
+                cell.classList.add('opacity-30');
+            }
+            // Days from current month
+            else if (i < startDay + lastDayOfMonth.getDate()) {
+                dayNumber = i - startDay + 1;
+                currentDate = new Date(currentCalendarYear, currentCalendarMonth, dayNumber);
+                isCurrentMonth = true;
+
+                // Highlight today
+                const nowDate = new Date();
+                if (currentDate.toDateString() === nowDate.toDateString()) {
+                    cell.classList.add('today');
+                }
+            }
+            // Days from next month
+            else {
+                dayNumber = i - startDay - lastDayOfMonth.getDate() + 1;
+                currentDate = new Date(currentCalendarYear, currentCalendarMonth + 1, dayNumber);
+                cell.classList.add('opacity-30');
+            }
+
+            // Day number at top
+            const dayLabel = document.createElement('div');
+            dayLabel.className = isCurrentMonth ? 'text-gray-300 font-bold mb-1' : 'text-gray-600 font-bold mb-1';
+            dayLabel.textContent = dayNumber;
+            cell.appendChild(dayLabel);
+
+            // Find workouts for this date
+            if (isCurrentMonth) {
+                const dateStr = formatDateInput(currentDate);
+                const workoutsForDay = calendarHistoryData.filter(workout => {
+                    const workoutDate = new Date((workout.endTimestamp || workout.startTimestamp) * 1000);
+                    return formatDateInput(workoutDate) === dateStr;
+                });
+
+                // Create workout pills
+                workoutsForDay.forEach(workout => {
+                    const pill = document.createElement('div');
+                    pill.className = `history-workout-pill history-workout-type${workout.type}`;
+
+                    const title = document.createElement('span');
+                    title.className = 'workout-title';
+                    title.textContent = workout.title || 'Workout';
+                    pill.appendChild(title);
+
+                    const meta = document.createElement('span');
+                    meta.className = 'workout-meta';
+                    const durationMin = Math.round((workout.trainingTime || 0) / 60);
+                    meta.textContent = `${durationMin}m • ${workout.totalCapacity || 0} vol`;
+                    pill.appendChild(meta);
+
+                    // Add click handler to show details
+                    pill.addEventListener('click', () => showWorkoutDetails(workout));
+
+                    // Add tooltip
+                    pill.title = `${workout.title}\n${durationMin} min • ${workout.totalCapacity || 0} volume\nType ${workout.type}`;
+
+                    cell.appendChild(pill);
+                });
+            }
+
+            grid.appendChild(cell);
+        }
+    }
+
+    function showWorkoutDetails(workout) {
+        const dateObj = new Date((workout.endTimestamp || workout.startTimestamp) * 1000);
+        const dateStr = dateObj.toLocaleString(undefined, {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+        const durationMin = Math.round((workout.trainingTime || 0) / 60);
+
+        // Populate modal details
+        const detailsContainer = document.getElementById('modal-workout-details');
+        detailsContainer.innerHTML = `
+            <div class="border-b border-gray-700 pb-2 mb-2">
+                <div class="text-xs text-gray-500 uppercase">Title</div>
+                <div class="text-white font-bold">${workout.title || 'Unknown'}</div>
+            </div>
+            <div class="border-b border-gray-700 pb-2 mb-2">
+                <div class="text-xs text-gray-500 uppercase">Date</div>
+                <div>${dateStr}</div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 border-b border-gray-700 pb-2 mb-2">
+                <div>
+                    <div class="text-xs text-gray-500 uppercase">Duration</div>
+                    <div>${durationMin} minutes</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase">Volume</div>
+                    <div>${workout.totalCapacity || 0}</div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-xs text-gray-500 uppercase">Type</div>
+                    <div>${workout.type}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase">Training ID</div>
+                    <div class="text-xs">${workout.trainingId}</div>
+                </div>
+            </div>
+        `;
+
+        // Set up button handlers
+        document.getElementById('modal-copy-btn').onclick = () => {
+            copyDetail(workout.trainingId, workout.type);
+            closeWorkoutModal();
+        };
+
+        document.getElementById('modal-download-btn').onclick = () => {
+            downloadDetail(workout.trainingId, workout.type);
+            closeWorkoutModal();
+        };
+
+        // Show modal
+        document.getElementById('workout-details-modal').classList.remove('hidden');
+    }
+
+    function closeWorkoutModal(event) {
+        // Close if clicking outside modal or clicking close button
+        if (!event || event.target.id === 'workout-details-modal') {
+            document.getElementById('workout-details-modal').classList.add('hidden');
+        }
+    }
+</script>
+{% endblock %}
