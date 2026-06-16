@@ -313,7 +313,7 @@ class TestSaveWorkoutWeights(unittest.TestCase):
 
     def test_preset_id_stored_in_action(self):
         """templatePresetId is passed through correctly."""
-        for preset_id in [-1, 1, 3, 5]:
+        for preset_id in [-1, 0, 1, 3, 5]:
             exercises = [{
                 'groupId': 1,
                 'variant_id': 1001,

@@ -620,7 +620,8 @@ class SpeedianceClient:
         for ex in exercises:
             group_id = int(ex['groupId'])
             sets = ex['sets']
-            preset_id = int(ex.get('preset_id') or -1)
+            raw_preset_id = ex.get('preset_id')
+            preset_id = int(raw_preset_id) if raw_preset_id is not None else -1
             data_stat_type = int(ex.get('data_stat_type') or 0)
             
             is_unilateral = unilateral_check.get(group_id, False)
