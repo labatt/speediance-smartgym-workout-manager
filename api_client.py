@@ -16,6 +16,8 @@ class SpeedianceProtocolError(SpeedianceAPIError):
     """Raised when the request shape no longer matches Speediance expectations."""
 
 class SpeedianceClient:
+    PREFERRED_COACH_ID = 31  # Liz, matching Toby's Warrior 1 instructor preference.
+
     def __init__(self):
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_file = os.path.join(self.base_dir, "config.json")
@@ -553,6 +555,18 @@ class SpeedianceClient:
             print(f"Error fetching training detail: {e}")
             return {}
 
+    def _select_action_library_variant(self, detail):
+        variants = detail.get('actionLibraryList') or []
+        if not variants:
+            return None
+
+        for variant in variants:
+            coach = variant.get('coach') or {}
+            if variant.get('coachId') == self.PREFERRED_COACH_ID or coach.get('id') == self.PREFERRED_COACH_ID:
+                return variant.get('id')
+
+        return variants[0].get('id')
+
     def schedule_course(self, date_str, course_id, status):
         """
         Schedules or unschedules an official course.
@@ -592,8 +606,9 @@ class SpeedianceClient:
         
         id_map = {}
         for d in details:
-            if d.get('actionLibraryList'):
-                id_map[str(d['id'])] = d['actionLibraryList'][0]['id']
+            selected_variant = self._select_action_library_variant(d)
+            if selected_variant:
+                id_map[str(d['id'])] = selected_variant
         
         action_library_list = []
         total_capacity = 0

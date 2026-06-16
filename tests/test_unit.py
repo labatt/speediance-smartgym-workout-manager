@@ -129,7 +129,7 @@ class TestRequestFlow(unittest.TestCase):
 
 class TestSaveWorkoutWeights(unittest.TestCase):
 
-    def _run_save(self, exercises, group_ids=None, unilateral_flags=None):
+    def _run_save(self, exercises, group_ids=None, unilateral_flags=None, details=None):
         """
         Runs save_workout with mocked network calls.
         Returns the JSON payload sent to the POST endpoint.
@@ -142,10 +142,12 @@ class TestSaveWorkoutWeights(unittest.TestCase):
             unilateral_flags = {gid: False for gid in group_ids}
 
         # Mock get_batch_details
-        client.get_batch_details = MagicMock(return_value=[
-            {"id": gid, "actionLibraryList": [{"id": gid + 1000}]}
-            for gid in group_ids
-        ])
+        if details is None:
+            details = [
+                {"id": gid, "actionLibraryList": [{"id": gid + 1000}]}
+                for gid in group_ids
+            ]
+        client.get_batch_details = MagicMock(return_value=details)
 
         # Mock is_exercise_unilateral
         client.is_exercise_unilateral = MagicMock(
@@ -321,6 +323,61 @@ class TestSaveWorkoutWeights(unittest.TestCase):
             payload = self._run_save(exercises)
             action = self._get_action(payload, 1)
             self.assertEqual(action['templatePresetId'], preset_id, f"preset_id={preset_id} not preserved")
+
+    def test_prefers_liz_variant_when_available(self):
+        """When no variant is explicit, default to Liz (coach id 31) if the exercise has her variant."""
+        exercises = [{
+            'groupId': 1,
+            'preset_id': -1,
+            'sets': [{'reps': 10, 'weight': 10, 'mode': 1, 'rest': 60, 'unit': 'reps'}]
+        }]
+        details = [{
+            "id": 1,
+            "actionLibraryList": [
+                {"id": 1001, "coach": {"id": 5, "name": "Default"}},
+                {"id": 1031, "coach": {"id": 31, "name": "Liz"}},
+            ],
+        }]
+        payload = self._run_save(exercises, details=details)
+        action = self._get_action(payload, 1)
+        self.assertEqual(action['actionLibraryId'], 1031)
+
+    def test_explicit_variant_id_overrides_preferred_coach(self):
+        """Manual choices stay manual; Liz preference only fills unspecified variants."""
+        exercises = [{
+            'groupId': 1,
+            'variant_id': 1001,
+            'preset_id': -1,
+            'sets': [{'reps': 10, 'weight': 10, 'mode': 1, 'rest': 60, 'unit': 'reps'}]
+        }]
+        details = [{
+            "id": 1,
+            "actionLibraryList": [
+                {"id": 1001, "coach": {"id": 5, "name": "Default"}},
+                {"id": 1031, "coach": {"id": 31, "name": "Liz"}},
+            ],
+        }]
+        payload = self._run_save(exercises, details=details)
+        action = self._get_action(payload, 1)
+        self.assertEqual(action['actionLibraryId'], 1001)
+
+    def test_falls_back_to_first_variant_when_liz_unavailable(self):
+        """Exercises without a Liz variant keep the old first-variant behavior."""
+        exercises = [{
+            'groupId': 1,
+            'preset_id': -1,
+            'sets': [{'reps': 10, 'weight': 10, 'mode': 1, 'rest': 60, 'unit': 'reps'}]
+        }]
+        details = [{
+            "id": 1,
+            "actionLibraryList": [
+                {"id": 1001, "coach": {"id": 5, "name": "Default"}},
+                {"id": 1002, "coach": {"id": 6, "name": "Helga"}},
+            ],
+        }]
+        payload = self._run_save(exercises, details=details)
+        action = self._get_action(payload, 1)
+        self.assertEqual(action['actionLibraryId'], 1001)
 
 
 class TestImperialWeightRoundTrip(unittest.TestCase):

@@ -14,3 +14,4 @@ library_cache*.json
 .DS_Store
 .vscode/
 .pytest_cache/
+.venv/
