@@ -103,13 +103,24 @@ class SpeedianceClient:
         return refreshed
 
     def _relogin_from_environment(self):
-        email = os.environ.get("SPEEDIANCE_EMAIL")
-        password = os.environ.get("SPEEDIANCE_PASSWORD")
+        """Silently sign back in after the token is invalidated.
+
+        Speediance allows one live session per account: signing in on the phone app
+        invalidates this app's token, and vice versa. That is not an error condition, it is
+        the normal way the session ends — so if the user has opted into remembering their
+        credentials, recover from it transparently instead of dumping them at a login page.
+
+        Saved credentials take precedence; the environment variables remain supported for
+        headless setups that would rather not keep a password in config.json.
+        """
+        email = self.credentials.get("saved_email") or os.environ.get("SPEEDIANCE_EMAIL")
+        password = self.credentials.get("saved_password") or os.environ.get("SPEEDIANCE_PASSWORD")
         if not email or not password:
             return False
 
-        success, message, debug_info = self.login(email, password)
+        success, message, debug_info = self.login(email, password, remember=bool(self.credentials.get("saved_email")))
         if success:
+            print("[AUTH] Token was invalidated (likely a sign-in elsewhere); re-authenticated automatically.")
             return True
 
         details = f": {debug_info}" if debug_info else ""
@@ -208,6 +219,10 @@ class SpeedianceClient:
         }
 
     def save_config(self, user_id, token, region="Global", unit=0, custom_instruction="", device_type=1, allow_monster_moves=False, owned_accessories=None, owned_devices=None):
+        # Remembered sign-in survives this call. save_config REPLACES the dict, so anything
+        # not carried over here is destroyed — including by logout(), which is exactly when
+        # we most need the saved credentials to still be there.
+        existing = self.credentials or {}
         self.credentials = {
             "user_id": user_id,
             "token": token,
@@ -218,6 +233,8 @@ class SpeedianceClient:
             "allow_monster_moves": bool(allow_monster_moves),
             "owned_accessories": owned_accessories or [],
             "owned_devices": owned_devices or [],
+            "saved_email": existing.get("saved_email", ""),
+            "saved_password": existing.get("saved_password", ""),
         }
         self.region = region
         self.device_type = int(device_type)
@@ -228,6 +245,32 @@ class SpeedianceClient:
         self.library_cache = self._load_library_cache()
         with open(self.config_file, 'w') as f:
             json.dump(self.credentials, f)
+        # This file holds a token and, if the user opted into "remember me", a password.
+        # Owner-only.
+        try:
+            os.chmod(self.config_file, 0o600)
+        except OSError:
+            pass
+
+    def remember_credentials(self, email, password):
+        """Opt in to being able to sign back in with one click."""
+        self.credentials["saved_email"] = email
+        self.credentials["saved_password"] = password
+        with open(self.config_file, 'w') as f:
+            json.dump(self.credentials, f)
+        try:
+            os.chmod(self.config_file, 0o600)
+        except OSError:
+            pass
+
+    def forget_credentials(self):
+        self.credentials["saved_email"] = ""
+        self.credentials["saved_password"] = ""
+        with open(self.config_file, 'w') as f:
+            json.dump(self.credentials, f)
+
+    def has_saved_credentials(self):
+        return bool(self.credentials.get("saved_email") and self.credentials.get("saved_password"))
 
     def update_unit(self, unit):
         """Updates the unit setting on the server (0=Metric, 1=Imperial)"""
@@ -254,7 +297,7 @@ class SpeedianceClient:
         except Exception as e:
             return False, str(e)
 
-    def login(self, email, password):
+    def login(self, email, password, remember=False):
         headers = self._build_headers(include_auth=False)
 
         # Step 1: Verify Identity
@@ -295,6 +338,8 @@ class SpeedianceClient:
                         self.credentials.get('owned_accessories', []),
                         self.credentials.get('owned_devices', []),
                     )
+                    if remember:
+                        self.remember_credentials(email, password)
                     return True, "Login successful", None
                 return False, "Token or appUserId not found in response", f"Response: {resp.text}"
             else:

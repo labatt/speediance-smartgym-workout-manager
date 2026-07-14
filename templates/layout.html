@@ -28,6 +28,31 @@
                 <a href="/history" class="hover:text-white">History</a>
                 <a href="/browse" class="hover:text-white">Browse</a>
                 <a href="/settings" class="text-gray-500 hover:text-white">Settings</a>
+
+                {# Session state, always visible. Speediance permits one live session per
+                   account, so signing in on the phone app silently kills this one — without
+                   this the app just appears to break. #}
+                <span class="inline-flex items-center gap-2 pl-4 ml-2 border-l border-gray-700">
+                    {% if auth_state.logged_in %}
+                        <span class="w-2 h-2 rounded-full bg-green-500" title="Connected"></span>
+                        <span class="text-xs text-gray-400" title="{{ auth_state.email }}">
+                            {{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}
+                        </span>
+                        <a href="/logout" class="text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition">Log out</a>
+                    {% else %}
+                        <span class="w-2 h-2 rounded-full bg-red-500" title="Signed out"></span>
+                        <span class="text-xs text-red-400">Signed out</span>
+                        {% if auth_state.can_quick_login %}
+                            <form method="POST" action="/auth/relogin" class="inline">
+                                <button type="submit"
+                                        class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition"
+                                        title="Sign back in as {{ auth_state.email }}">Log in</button>
+                            </form>
+                        {% else %}
+                            <a href="/settings" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition">Log in</a>
+                        {% endif %}
+                    {% endif %}
+                </span>
             </div>
         </div>
     </nav>

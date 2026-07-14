@@ -263,7 +263,8 @@ def login():
     client.host = "euapi.speediance.com" if region == "EU" else "api2.speediance.com"
     client.base_url = "https://" + client.host
         
-    success, message, debug_info = client.login(email, password)
+    remember = bool(request.form.get('remember'))
+    success, message, debug_info = client.login(email, password, remember=remember)
     if success:
         flash("Login successful!", "success")
         return redirect(url_for('index'))
@@ -275,9 +276,55 @@ def login():
 
 @app.route('/logout')
 def logout():
+    # Keeps any remembered credentials, so signing back in is one click. Use
+    # /auth/forget to actually erase them.
     client.logout()
     flash("Logged out successfully", "success")
     return redirect(url_for('settings'))
+
+
+@app.route('/auth/relogin', methods=['POST'])
+def auth_relogin():
+    """One-click sign-in using remembered credentials."""
+    if not client.has_saved_credentials():
+        flash("No saved credentials — sign in once with 'Remember me' first.", "error")
+        return redirect(url_for('settings'))
+
+    success, message, debug_info = client.login(
+        client.credentials.get('saved_email'),
+        client.credentials.get('saved_password'),
+        remember=True,
+    )
+    if success:
+        flash("Signed back in.", "success")
+        return redirect(request.referrer or url_for('index'))
+
+    flash(f"Automatic sign-in failed: {message}", "error")
+    return redirect(url_for('settings'))
+
+
+@app.route('/auth/forget', methods=['POST'])
+def auth_forget():
+    """Erase the remembered email/password from config.json."""
+    client.forget_credentials()
+    flash("Saved credentials erased.", "success")
+    return redirect(url_for('settings'))
+
+
+@app.context_processor
+def inject_auth_state():
+    """Every page's nav bar shows whether we currently hold a live session.
+
+    Speediance allows one live session per account, so signing in on the phone app
+    silently invalidates this app's token. Without this, the app just looks broken.
+    """
+    return {
+        "auth_state": {
+            "logged_in": bool(client.credentials.get("token")),
+            "email": client.credentials.get("saved_email") or "",
+            "can_quick_login": client.has_saved_credentials(),
+        }
+    }
 
 @app.route('/settings/preload')
 def preload_assets():
