@@ -1,79 +1,23 @@
-# Unofficial SmartGym Workout Manager — Vita Fork
+# Unofficial SmartGym Workout Manager
 
-> **This is a personal fork** of the original project by [hbui3](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager),
-> by way of the [ANPC86](https://github.com/ANPC86/SmartGymWorkoutManager) and
-> [OpenClaw / Aria](https://github.com/clawdassistant85-netizen/speediance-smartgym-workout-manager) forks.
-> All credit for the original work goes to them and to the contributors who built the public Speediance/SmartGym manager foundation.
-> There is no intention to take credit for or create confusion with the original project.
+A desktop/web manager for the Speediance Gym Monster: browse the exercise library, build and
+edit custom workouts, schedule them, generate workouts with an AI assistant, and review your
+training history in far more detail than the official app exposes.
 
----
+This fork exists to do two things:
 
-## What this fork adds: Speediance Vita support
+1. **Get more insight out of your training.** The machine records a great deal about every
+   rep you perform — power, speed, range of motion, time under tension, per-rep resistance,
+   and its own form scores. Almost all of it was being fetched and thrown away. It is now
+   charted and summarised.
+2. **Keep working as Speediance ships new software.** The API gates newer content behind
+   newer app versions. This client claimed to be an old release, so anything added to the
+   machine after that release was either rejected outright or silently invisible — and
+   several features were misreading the newer data models even once they loaded.
 
-**If you own a Vita, the upstream app cannot see it.** The Speediance API version-gates Vita
-content behind a newer app version than the client claims to be, so Vita exercises are
-invisible in the library and any workout containing one refuses to open:
-
-```
-Error loading data: Please upgrade the APP version in System Setting
-```
-
-This fork fixes that, then fixes everything that was broken *behind* it — because once Vita
-loaded, it turned out the app was misreading it in four more places, two of which silently
-corrupted real workouts.
-
-It also surfaces the **per-rep telemetry** the API has always returned and the UI threw away.
-
-See **[CHANGELOG.md](CHANGELOG.md)** for the full release notes and
-**[docs/API-NOTES.md](docs/API-NOTES.md)** for the API data model, including the traps that
-caused these bugs.
-
-### Vita workouts now load, and show real levels
-
-Vita intensity is a **level** (`10, 12, 14, 16` here), stored by the API in a `level` field
-while `weights` is all zeros. The app read `weights`, so every Vita set showed **0** — and
-`save_workout` clamped level to `1-10`, so opening a real workout and pressing Save silently
-crushed the 12/14/16 down to 10. There is no such ceiling: the API stores levels up to at
-least 100 verbatim. This fork no longer clamps.
-
-### Timed sets are no longer reported as failed rep targets
-
-A Vita set is a fixed **seconds** window in which reps are counted. History decoded only one
-value of the `completionMethod` enum, so a Vita set displayed `15 / 20` — reading as "15 of
-20 reps" — and was painted **red as a failure**, when it was actually **15 reps in a
-completed 20-second window**.
-
-| Before | After |
-|---|---|
-| ![before](docs/img/history-before.png) | ![after](docs/img/history-after.png) |
-
-### Per-rep performance telemetry
-
-The device records power, rope speed, range of motion, time-under-tension and resistance
-**for every single rep**, plus its own form scores. All of it was discarded. Each exercise
-now gets an inline chart of every rep in sequence, with dividers at set boundaries — so
-within-set fatigue and across-set decline read at a glance. Resistance is flat on rep-based
-work and visibly ramps on Vita.
-
-![telemetry](docs/img/history-telemetry.png)
-
-### The AI prompt understands Vita and unilateral exercises
-
-`Generate Prompt` used to describe every exercise as reps + weight. It now tags them:
-
-```
-[455212933054465] Vita Pull [TIMED+LEVEL] (Category: Training, Focus: Abs, ...)
-[437972850049025] Archer Rows [UNILATERAL] (Category: Training, Focus: Abs, ...)
-```
-
-and explains the contract — that `[TIMED]` sets carry **seconds** in `reps` and need
-`"unit": "sec"`, that Vita's `weight` is an **intensity level**, and that `[UNILATERAL]`
-exercises can take a different load per side via `"isUnilateralExpanded": true` with sets
-listed alternating Left, Right.
-
-It also fixes a silent bug where the model's chosen `presetId` was **discarded** — the
-importer read `preset`, so every AI-prescribed preset fell back to Custom and its RM values
-were re-read as raw kg/lbs.
+See **[CHANGELOG.md](CHANGELOG.md)** for the release notes and
+**[docs/API-NOTES.md](docs/API-NOTES.md)** for the API's data model, including the traps that
+caused the bugs fixed here.
 
 ---
 
@@ -84,77 +28,151 @@ were re-read as raw kg/lbs.
 
 *— [hbui3](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager)*
 
----
-
-This fork may continue to function as long as the API remains accessible, but is subject to the same limitations described above. Use at your own risk.
-
----
-
-## Credit and Lineage
-
-This repository is a public, non-secret publication copy used by OpenClaw / Aria as a Speediance connector and planning reference.
-
-### Original project: hbui3
-
-Credit to [hbui3/UnofficialSpeedianceWorkoutManager](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager) for the original unofficial Speediance desktop manager, including the core Flask app, Speediance API client, login/config flow, settings UI, custom workout management, exercise/library screens, workout builder foundations, prompt/export workflow, and test scaffolding.
-
-### Practical continuation: ANPC86 fork
-
-Credit to [ANPC86/SmartGymWorkoutManager](https://github.com/ANPC86/SmartGymWorkoutManager) for the practical fork this public copy was based on. The ANPC86 fork added and/or carried forward many of the day-to-day usability improvements listed below, including workout-builder polish, history/export work, calendar fixes, debug tooling, Docker setup, and regression coverage.
-
-### OpenClaw / Aria additions
-
-This public fork adds the OpenClaw / Aria-specific pieces needed for agent-readable fitness automation without publishing credentials, cached vendor payloads, or personal exports.
+This fork may continue to function as long as the API remains accessible, but is subject to
+the same limitations. Use at your own risk.
 
 ---
 
-## Current Changes and Features
+## Features
 
-### OpenClaw / Aria additions in this public repo
+### Workout history and performance insight
 
-- **Adaptive Speediance planner** — `adaptive_training.py` builds readiness-aware Speediance plans from normalized training signals.
-- **Readiness buckets** — classifies days into build, maintain, recover, protect, or post-BJJ-brutal modes.
-- **Single-implement Speediance workouts** — selects one implement per on-device workout, usually handles, barbell, or rope.
-- **On-device plus off-device split** — keeps 10 on-device Speediance exercises and optionally adds 0-2 off-Speediance accessories outside the device payload.
-- **Plan uniqueness window** — compares recent training-plan signatures so generated workouts do not repeat too quickly.
-- **Speediance payload conversion** — converts the planner output into the `SpeedianceClient.save_workout` exercise contract.
+- **Per-rep telemetry charts** — every rep of an exercise plotted in sequence, with dividers
+  at set boundaries, so within-set fatigue and across-set decline read at a glance. Power is
+  the solid line (split left/right when both cables are working); resistance is the dashed
+  line. Rendered as inline SVG, no charting dependency.
+- **Performance summary per exercise** — `avg 115 W · peak 139 W · 35 lbs · 0.78 m/s · ROM 0.56 m · TUT 201s`
+- **Form scores** — the machine already computes force control, amplitude stability and
+  left/right balance. They are now shown instead of discarded.
+- **Personal-record badges** — surfaced when the machine flags a max-weight, 1RM, or volume PR.
+- **Correct rendering of timed sets** — a timed set is a *seconds* window in which reps are
+  counted. It now reads `15 reps in 20s` rather than `15 / 20`, and is judged on whether the
+  window was held rather than against a rep target it never had.
+- **Full history page** — all past workouts with date, duration, calories and exercise
+  breakdown, exportable, with timestamps in your local timezone.
+
+![telemetry](docs/img/history-telemetry.png)
+
+**Timed sets, before and after.** These four sets each ran a full 20 seconds. Previously they
+were shown as failed rep targets, in red:
+
+| Before | After |
+|---|---|
+| ![before](docs/img/history-before.png) | ![after](docs/img/history-after.png) |
+
+### API compatibility with newer machine software
+
+- **Current app version advertised** — the client previously announced an outdated version, and
+  the API rejects newer content for old clients with
+  `Error loading data: Please upgrade the APP version in System Setting`. Any workout
+  containing a newer exercise refused to open, and those exercises were **silently missing
+  from the library** — no error, just an incomplete list.
+- **Structured API/auth/protocol exceptions**, reusable request sessions, better handling of
+  Speediance API status codes, and optional environment-backed re-login.
+- **API debug console** — a floating panel showing the last raw API request/response, for
+  troubleshooting connection or data problems.
+
+### Workout builder
+
+- **Timed and level-based exercises handled correctly** — some exercises (the Vita movements,
+  row/ski, and others) are scored by duration rather than reps, and some take an intensity
+  *level* rather than a weight. The builder now reads the level from the right field, shows it,
+  and no longer clamps it — a workout authored on the machine using levels 10/12/14/16 used to
+  display as `0` and get crushed to a flat level 10 on save.
+- **Live stats bar** — total exercises, estimated volume, total time, rest time, estimated burn.
+- **Target Muscles radar chart** — visual breakdown of the muscle groups a workout covers.
+- **Reordering** — move exercises up, down, to top or to bottom without repeated dragging.
+- **Condensed exercise cards** — key stats on a single line per exercise.
+- **Imperial / metric handling** — weights entered in Imperial are stored and retrieved without
+  a spurious unit conversion; preset IDs (including `0`) are preserved rather than coerced to
+  custom mode.
+
+### AI workout generation
+
+- **Exercise contracts made explicit in the prompt** — the generated prompt tags exercises the
+  model cannot describe as plain reps-and-weight, and explains the rules:
+  - `[TIMED]` / `[TIMED+LEVEL]` — the goal is a duration in **seconds**, not reps; and for
+    level-based exercises the intensity is a **level** (stepping up across sets, e.g.
+    10 → 12 → 14 → 16, is normal), not a weight or an RM value.
+  - `[UNILATERAL]` — one set entry applies to **both** sides by default; a different load per
+    side is opt-in via `"isUnilateralExpanded": true` with sets listed alternating Left, Right.
+- **Preset selection is honoured** — the model's chosen preset used to be silently discarded and
+  replaced with Custom, which meant an RM prescription was re-read as a raw weight.
+- **Import/export round-trips faithfully** — exporting a timed workout no longer loses its
+  seconds.
+
+### Adaptive planner
+
+- **Readiness-aware plan generation** (`adaptive_training.py`) — builds plans from normalised
+  training signals, classifying days into build, maintain, recover or protect modes.
+- **Single-implement sessions** — selects one implement per on-device workout (typically handles,
+  barbell or rope).
+- **On-device / off-device split** — keeps the on-device exercises in the machine payload and
+  optionally adds accessories outside it.
+- **Plan uniqueness window** — compares recent plan signatures so generated workouts do not
+  repeat too quickly.
+- **Payload conversion** — converts planner output into the `SpeedianceClient.save_workout`
+  exercise contract.
 - **Run and step guidance** — emits a run prescription and step target alongside the strength plan.
-- **Preferred coach variant selection** — defaults unspecified exercise variants to Liz / coach id `31` when available, while preserving explicit manual variant choices.
-- **Auth and protocol hardening** — adds structured API/auth/protocol exceptions, reusable request sessions, better Speediance API-code handling, and optional environment-backed re-login.
-- **Public safety scaffolding** — includes `.env.example`, `PUBLICATION_SAFETY.md`, and ignore rules for config files, library caches, exports, logs, databases, and virtualenvs.
-- **Self-contained tests** — adaptive planner tests use fake movement pools and temp directories instead of requiring local OpenClaw data.
+- **Preferred coach variant selection** — defaults unspecified exercise variants to a preferred
+  coach when available, while preserving explicit manual choices.
 
-### ANPC86 fork additions preserved here
+### Scheduling and workouts list
 
-#### Workout Builder Enhancements
-- **Live stats bar** — shows total exercises, estimated volume, total time, and rest time as you build
-- **Move to top / bottom buttons** — quickly reorder exercises without repeated dragging
-- **Redesigned header** — two-row layout with stats aligned to the right for a cleaner look
-- **Est. Burn chip** — displays estimated calorie burn alongside other stats
-- **Target Muscles radar chart** — visual breakdown of which muscle groups your workout covers
-- **Vita exercise support** — correctly handles Vita exercises (level 1–10) in the builder and when saving
-- **Cardio/timed exercises** — time input and dynamic preset dropdown work correctly for row, ski, and kcal modes
-- **Condensed workout cards** — all key stats shown in a single line per exercise
+- **Calendar** — schedule, move and remove custom workouts, with correct day highlighting
+  regardless of timezone.
+- **My Workouts** — count in the heading, reorganised and sorted for easier navigation.
 
-#### Workout History
-- **Full history page** — view all past workouts with date, duration, calories, and exercise details
-- **Export options** — download your workout history as a file
-- **Accurate timestamps** — dates display in your local timezone rather than a fixed region
+---
 
-#### My Workouts (Home Page)
-- **Workout count** — heading shows how many custom workouts you have at a glance
-- **Improved layout** — reorganized and sorted for easier navigation
+## Setup
 
-#### Calendar
-- **Day offset correction** — calendar highlights the correct day regardless of your timezone
-- **Drag/drop scheduling support** — schedule, move, and remove custom workouts on the calendar UI
+Copy the templates and fill them in — never commit the real files:
 
-#### API Debug Console
-- **Debug panel** — floating button reveals the last raw API response, useful for troubleshooting connection or data issues
+```bash
+cp config.example.json config.json     # or use the Settings page to log in
+cp .env.example .env
+```
 
-#### Weight Unit Handling (Imperial / Metric)
-- **Accurate LBS storage** — weights entered in Imperial are stored and retrieved correctly without incorrect unit conversion being applied
-- **Preset ID preservation** — preset IDs, including `0`, are preserved when saving workouts instead of being coerced to custom mode
+Install and run:
+
+```bash
+pip install -r requirements.txt
+python app.py                          # http://localhost:5001
+```
+
+For a long-running deployment, serve the Flask app with a WSGI server rather than
+`python app.py` (which enables the debug server). The app has **no authentication of its own**
+and exposes your API token on the Settings page, so if you host it anywhere reachable, put an
+authenticating reverse proxy in front of it.
+
+### Docker
+
+Edit the `volumes` path in `docker-compose.yml` to point at your checkout:
+
+```yaml
+volumes:
+  - /path/to/your/app:/app
+```
+
+- **Windows example:** `/c/Users/yourname/Downloads/SmartGymWorkoutManager`
+- **Linux / Synology NAS example:** `/volume1/docker/smart-gym-app`
+
+```bash
+docker compose up -d       # http://localhost:5001
+```
+
+---
+
+## Running Tests
+
+```bash
+python3 -m unittest -v tests/test_unit.py tests/test_adaptive_training.py
+node --test tests/workout-logic.test.mjs
+```
+
+`test_e2e_workouts.py` is credential-gated and skips when no Speediance credentials are
+configured.
 
 ---
 
@@ -167,48 +185,29 @@ This repo should not contain:
 - Speediance tokens or user IDs
 - cached library payloads such as `library_cache*.json`
 - workout exports, CSV files, logs, screenshots, databases, or personal fitness data
-- private OpenClaw report outputs
+- private planner report outputs
 
-Use `.env.example` and `config.example.json` as templates only.
-
----
-
-## Running Tests
-
-Python unit tests:
-
-```bash
-python3 -m unittest -v tests/test_unit.py tests/test_adaptive_training.py
-```
-
-JavaScript workout-logic tests:
-
-```bash
-node --test tests/workout-logic.test.mjs
-```
-
-The top-level `test_e2e_workouts.py` file is intentionally credential-gated and skips when no Speediance credentials are configured.
+Use `.env.example` and `config.example.json` as templates only. See
+[PUBLICATION_SAFETY.md](PUBLICATION_SAFETY.md).
 
 ---
 
-## Running with Docker
+## Credit and Lineage
 
-A `docker-compose.yml` template is included for running the app in a container.
+This is a personal fork, and no part of it is intended to take credit for — or create
+confusion with — the projects it builds on.
 
-**Before starting**, edit the `volumes` path to point to the folder where you unzipped or cloned this repository:
+- **[hbui3/UnofficialSpeedianceWorkoutManager](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager)**
+  — the original unofficial Speediance desktop manager: the core Flask app, the Speediance API
+  client, login/config flow, settings UI, custom workout management, exercise and library
+  screens, the workout-builder foundations, the prompt/export workflow, and the test scaffolding.
+  Everything here rests on that work.
+- **[ANPC86/SmartGymWorkoutManager](https://github.com/ANPC86/SmartGymWorkoutManager)** — the
+  practical continuation that carried the project forward: workout-builder polish, the history
+  and export work, calendar fixes, the debug console, Docker setup, imperial/metric handling,
+  and regression coverage. Much of the feature list above originates here.
+- **[clawdassistant85-netizen/speediance-smartgym-workout-manager](https://github.com/clawdassistant85-netizen/speediance-smartgym-workout-manager)**
+  — the public publication copy this fork is based on, which added the adaptive planner, the
+  structured auth/protocol error handling, and the publication-safety scaffolding.
 
-```yaml
-volumes:
-  - /path/to/your/app:/app
-```
-
-- **Windows example:** `/c/Users/yourname/Downloads/SmartGymWorkoutManager`
-- **Linux / Synology NAS example:** `/volume1/docker/smart-gym-app`
-
-Then run:
-
-```bash
-docker compose up -d
-```
-
-The app will be available at `http://localhost:5001`.
+This fork adds the workout-insight and API-compatibility work described above.
