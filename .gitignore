@@ -15,3 +15,4 @@ library_cache*.json
 .vscode/
 .pytest_cache/
 .venv/
+schedules.json

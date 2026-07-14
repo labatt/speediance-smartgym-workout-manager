@@ -1,0 +1,242 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+
+    <div class="flex justify-between items-center mb-2">
+        <h1 class="text-3xl font-bold text-white">Repeating Schedule</h1>
+        <span id="status-chip" class="text-sm text-gray-500"></span>
+    </div>
+    <p class="text-gray-400 text-sm mb-6">
+        Speediance has no repeating schedules of its own — it only stores one workout per day.
+        So this writes your pattern out day by day, about
+        <strong class="text-gray-300">{{ schedule.horizonWeeks or 12 }} weeks</strong> ahead, and quietly
+        tops it back up whenever you open the app.
+    </p>
+
+    <!-- Mode -->
+    <div class="flex gap-2 mb-6">
+        <button onclick="setMode('weekly')" id="tab-weekly"
+                class="px-4 py-2 rounded font-bold text-sm transition">By weekday</button>
+        <button onclick="setMode('cycle')" id="tab-cycle"
+                class="px-4 py-2 rounded font-bold text-sm transition">Rotating cycle</button>
+    </div>
+
+    <!-- Weekly -->
+    <div id="pane-weekly" class="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
+        <p class="text-sm text-gray-400 mb-3">
+            Each weekday always gets the same workout. Miss a day and nothing shifts — Thursday is
+            still Thursday.
+        </p>
+        <div class="space-y-2">
+            {% for day, label in [('mon','Monday'), ('tue','Tuesday'), ('wed','Wednesday'), ('thu','Thursday'), ('fri','Friday'), ('sat','Saturday'), ('sun','Sunday')] %}
+            <div class="grid grid-cols-12 gap-3 items-center">
+                <label class="col-span-3 text-sm font-medium text-gray-300">{{ label }}</label>
+                <select data-weekday="{{ day }}"
+                        class="weekday-select col-span-9 bg-gray-900 border border-gray-600 text-white p-2 rounded text-sm focus:border-green-500 outline-none">
+                    <option value="">— Rest —</option>
+                    {% for w in workouts %}
+                    <option value="{{ w.code }}">{{ w.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Cycle -->
+    <div id="pane-cycle" class="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6 hidden">
+        <p class="text-sm text-gray-400 mb-3">
+            A sequence that repeats continuously, ignoring the calendar. A 4-day cycle drifts:
+            this Monday is the first slot, in two weeks Monday is the third.
+        </p>
+        <div class="grid grid-cols-12 gap-3 items-center mb-4">
+            <label class="col-span-3 text-sm font-medium text-gray-300">Start the cycle on</label>
+            <input type="date" id="cycle-anchor" value="{{ today }}"
+                   class="col-span-9 bg-gray-900 border border-gray-600 text-white p-2 rounded text-sm">
+        </div>
+        <div id="cycle-list" class="space-y-2"></div>
+        <button onclick="addCycleSlot()" class="mt-3 text-sm text-blue-400 hover:text-blue-300">+ Add day to cycle</button>
+    </div>
+
+    <div class="flex gap-3 items-center mb-6">
+        <button onclick="preview()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-bold transition">
+            Preview changes
+        </button>
+        <span class="text-xs text-gray-500">Nothing is written until you confirm.</span>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview-box" class="hidden bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6">
+        <h2 class="text-lg font-bold text-white mb-1">Preview</h2>
+        <p id="preview-range" class="text-xs text-gray-500 mb-3"></p>
+        <div id="preview-summary" class="flex flex-wrap gap-4 text-sm mb-4"></div>
+
+        <div id="destructive-warning" class="hidden mb-4 p-3 rounded bg-red-900/30 border border-red-700">
+            <p class="text-red-300 font-bold text-sm mb-2">These existing entries will be removed:</p>
+            <div id="destructive-list" class="space-y-1 text-xs font-mono max-h-48 overflow-y-auto"></div>
+        </div>
+
+        <details class="mb-4">
+            <summary class="cursor-pointer text-sm text-gray-400 hover:text-gray-300">Show every day that changes</summary>
+            <div id="preview-list" class="mt-2 space-y-1 text-xs font-mono max-h-72 overflow-y-auto"></div>
+        </details>
+
+        <button onclick="apply()" id="apply-btn"
+                class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-bold transition">
+            Apply schedule
+        </button>
+        <span id="apply-status" class="ml-3 text-sm text-gray-400"></span>
+    </div>
+
+    <div class="text-xs text-gray-600 border-t border-gray-800 pt-4">
+        Completed workouts are never touched — your training history is safe. Speediance's own
+        “Goal-Focused Workout” suggestions are left alone too; only workouts you scheduled are
+        managed here.
+    </div>
+</div>
+
+<script>
+    const WORKOUTS = {{ workouts | map(attribute='code') | list | tojson }};
+    const NAMES = {{ workouts | map(attribute='name') | list | tojson }};
+    const nameOf = code => { const i = WORKOUTS.indexOf(code); return i < 0 ? code : NAMES[i]; };
+
+    let schedule = {{ schedule | tojson }};
+    if (!schedule.weekly) schedule.weekly = {};
+    if (!schedule.cycle) schedule.cycle = { anchor: '{{ today }}', sequence: [] };
+
+    function setMode(mode) {
+        schedule.mode = mode;
+        document.getElementById('pane-weekly').classList.toggle('hidden', mode !== 'weekly');
+        document.getElementById('pane-cycle').classList.toggle('hidden', mode !== 'cycle');
+        for (const m of ['weekly', 'cycle']) {
+            const tab = document.getElementById('tab-' + m);
+            tab.className = 'px-4 py-2 rounded font-bold text-sm transition ' + (m === mode
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700');
+        }
+        document.getElementById('preview-box').classList.add('hidden');
+    }
+
+    function workoutOptions(selected) {
+        let html = `<option value="">— Rest —</option>`;
+        WORKOUTS.forEach((code, i) => {
+            html += `<option value="${code}" ${code === selected ? 'selected' : ''}>${NAMES[i]}</option>`;
+        });
+        return html;
+    }
+
+    function renderCycle() {
+        const list = document.getElementById('cycle-list');
+        const seq = schedule.cycle.sequence || [];
+        list.innerHTML = seq.map((code, i) => `
+            <div class="grid grid-cols-12 gap-3 items-center">
+                <label class="col-span-3 text-sm text-gray-300">Day ${i + 1}</label>
+                <select onchange="schedule.cycle.sequence[${i}] = this.value || null"
+                        class="col-span-8 bg-gray-900 border border-gray-600 text-white p-2 rounded text-sm">
+                    ${workoutOptions(code)}
+                </select>
+                <button onclick="removeCycleSlot(${i})" class="col-span-1 text-red-400 hover:text-red-300 text-lg">&times;</button>
+            </div>`).join('');
+        if (!seq.length) {
+            list.innerHTML = `<p class="text-sm text-gray-600 italic">Add days to build the cycle.</p>`;
+        }
+    }
+
+    window.addCycleSlot = () => { schedule.cycle.sequence.push(null); renderCycle(); };
+    window.removeCycleSlot = i => { schedule.cycle.sequence.splice(i, 1); renderCycle(); };
+
+    function collect() {
+        document.querySelectorAll('.weekday-select').forEach(sel => {
+            schedule.weekly[sel.dataset.weekday] = sel.value || null;
+        });
+        schedule.cycle.anchor = document.getElementById('cycle-anchor').value;
+        return schedule;
+    }
+
+    async function preview() {
+        const body = collect();
+        const box = document.getElementById('preview-box');
+        const btn = document.getElementById('apply-btn');
+        box.classList.remove('hidden');
+        document.getElementById('preview-summary').innerHTML = '<span class="text-gray-500">Reading your calendar…</span>';
+        document.getElementById('preview-list').innerHTML = '';
+        document.getElementById('destructive-warning').classList.add('hidden');
+
+        const res = await fetch('/api/schedule/preview', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('preview-summary').innerHTML = `<span class="text-red-400">${data.error}</span>`;
+            return;
+        }
+
+        const s = data.summary;
+        document.getElementById('preview-range').innerText = `${data.start} → ${data.end}`;
+        document.getElementById('preview-summary').innerHTML = `
+            <span class="text-green-400">${s.write} to add</span>
+            <span class="text-yellow-400">${s.replace} to replace</span>
+            <span class="text-red-400">${s.clear} to clear</span>
+            <span class="text-gray-500">${data.noopCount} already correct</span>`;
+
+        // Name every entry that dies. A count is not consent.
+        const victims = data.changes.filter(c => (c.remove || []).length);
+        if (victims.length) {
+            document.getElementById('destructive-warning').classList.remove('hidden');
+            document.getElementById('destructive-list').innerHTML = victims.map(c =>
+                c.remove.map(r =>
+                    `<div class="text-red-300">${c.date} (${c.weekday}) — <span class="text-white">${r.title}</span> will be removed${c.wanted ? `, replaced by <span class="text-green-300">${nameOf(c.wanted)}</span>` : ''}</div>`
+                ).join('')).join('');
+        }
+
+        document.getElementById('preview-list').innerHTML = data.changes.map(c => {
+            const colour = { write: 'text-green-400', replace: 'text-yellow-400', clear: 'text-red-400' }[c.action];
+            const what = c.wanted ? nameOf(c.wanted) : 'rest';
+            return `<div><span class="text-gray-600">${c.date} ${c.weekday}</span> <span class="${colour}">${c.action}</span> <span class="text-gray-300">${what}</span></div>`;
+        }).join('') || '<div class="text-gray-500">Nothing to change — the calendar already matches.</div>';
+
+        btn.disabled = data.changes.length === 0;
+        btn.classList.toggle('opacity-40', data.changes.length === 0);
+    }
+
+    async function apply() {
+        const status = document.getElementById('apply-status');
+        const btn = document.getElementById('apply-btn');
+        btn.disabled = true;
+        status.innerText = 'Writing to your calendar…';
+
+        const res = await fetch('/api/schedule/apply', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(collect())
+        });
+        const data = await res.json();
+
+        if (data.error) {
+            status.innerHTML = `<span class="text-red-400">${data.error}</span>`;
+        } else if (data.failed) {
+            status.innerHTML = `<span class="text-yellow-400">${data.applied} applied, ${data.failed} failed.</span>`;
+        } else {
+            status.innerHTML = `<span class="text-green-400">Done — ${data.applied} days written, scheduled through ${data.appliedThrough}.</span>`;
+        }
+        btn.disabled = false;
+        updateChip(data.appliedThrough);
+    }
+
+    function updateChip(through) {
+        const chip = document.getElementById('status-chip');
+        chip.innerText = through ? `Scheduled through ${through}` : 'Not scheduled yet';
+        chip.className = through ? 'text-sm text-green-400' : 'text-sm text-gray-500';
+    }
+
+    // Restore saved pattern
+    (function init() {
+        document.querySelectorAll('.weekday-select').forEach(sel => {
+            const v = (schedule.weekly || {})[sel.dataset.weekday];
+            if (v) sel.value = v;
+        });
+        document.getElementById('cycle-anchor').value = schedule.cycle.anchor || '{{ today }}';
+        renderCycle();
+        setMode(schedule.mode || 'weekly');
+        updateChip(schedule.appliedThrough);
+    })();
+</script>
+{% endblock %}

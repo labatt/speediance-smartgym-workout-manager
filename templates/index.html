@@ -297,6 +297,24 @@
         renderWeekdayHeaders();
         renderCalendarHeader();
         fetchCalendarData();
+        topUpSchedule();
+    }
+
+    // Keep a repeating schedule's horizon full. Deliberately quiet: it only ever writes
+    // into days BEYOND what was already applied and reviewed, so it cannot silently
+    // destroy a one-off you placed inside the window you've already seen. No-ops entirely
+    // when no schedule is enabled.
+    async function topUpSchedule() {
+        try {
+            const res = await fetch('/api/schedule/topup', { method: 'POST' });
+            const data = await res.json();
+            if (data.extended > 0) {
+                console.log(`Schedule extended by ${data.extended} days (through ${data.appliedThrough}).`);
+                fetchCalendarData();
+            }
+        } catch (e) {
+            /* schedule top-up is best-effort; never block the dashboard */
+        }
     }
 
     function renderCalendarHeader() {

@@ -169,6 +169,35 @@ read in one glance:
 - The machine's own form scores: `force 5/5 · ROM 4/5 · balance 3/5`
 - PR badges when `maxWeightPr` / `oneRepMaxPr` / `totalCapacityPr` fire
 
+### Repeating schedules
+
+Speediance has no concept of recurrence — `templateReservation` writes exactly one dated entry.
+So a repeating schedule is a *pattern*, held locally and materialised into individual dated calls.
+
+- **By weekday** — Monday is always Workout A; a missed Wednesday shifts nothing.
+- **Rotating cycle** — a sequence (A, B, C, rest) walked from an anchor date, drifting across the
+  calendar for "3 on, 1 off" regardless of weekday.
+
+Written ~12 weeks ahead and topped back up whenever the dashboard is opened. No cron, no daemon,
+nothing to babysit.
+
+**Applying a schedule can destroy calendar entries, so the safety is structural:**
+
+- The pattern logic (`schedule_planner.py`) is **pure** — no I/O, no clock, no API — and covered
+  by 20 unit tests. Nothing decides what to delete by guesswork.
+- **Preview names every entry that would be removed**, not just a count. A count is not consent.
+- **Completed sessions are never touched.** The calendar mixes finished workouts (real training
+  history), user reservations, and Speediance's own "Goal-Focused Workout" suggestions — which
+  carry no code and are not reservations at all. Only `type: 3`, unfinished, code-bearing entries
+  are managed; on the account this was built against that correctly left 41 system suggestions and
+  10 completed sessions alone.
+- **The automatic top-up is not destructive.** It only writes into days *beyond* the horizon you
+  already reviewed, so a one-off you placed inside the reviewed window can never be silently eaten
+  by a background extension.
+
+Also renames the **Create Plan** nav item to **Build Workout** — it builds a workout, not a
+training plan, and the old name sent people looking for scheduling in the wrong place.
+
 ### The AI prompt now states each exercise's contract
 
 `Generate Prompt` previously described every exercise as if it took reps and a weight. Exercises

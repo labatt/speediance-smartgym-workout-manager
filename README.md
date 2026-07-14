@@ -123,11 +123,25 @@ were shown as failed rep targets, in red:
 - **Preferred coach variant selection** — defaults unspecified exercise variants to a preferred
   coach when available, while preserving explicit manual choices.
 
-### Scheduling and workouts list
+### Scheduling
 
-- **Calendar** — schedule, move and remove custom workouts, with correct day highlighting
-  regardless of timezone.
+- **Repeating schedules** — Speediance itself has no recurrence; it only stores one workout per
+  day. Define a pattern once and it is written out day by day, ~12 weeks ahead, and quietly
+  topped back up whenever you open the app. No cron, no daemon.
+  - **By weekday** — Monday is always Workout A. Miss a Wednesday and nothing shifts.
+  - **Rotating cycle** — a sequence (A, B, C, rest) that repeats continuously and drifts across
+    the calendar, for "3 on, 1 off" regardless of what day it is.
+- **Preview before anything is written** — applying a schedule can remove existing entries, so it
+  always shows you exactly what it will add, replace and clear first, **naming every entry that
+  would be destroyed**. A count is not consent.
+- **Your history is never touched** — completed sessions are left alone, as are Speediance's own
+  "Goal-Focused Workout" suggestions. Only workouts you scheduled are managed.
+- **Calendar** — schedule, move and remove custom workouts by drag and drop, with correct day
+  highlighting regardless of timezone.
 - **My Workouts** — count in the heading, reorganised and sorted for easier navigation.
+
+("Create Plan" in the nav was renamed **Build Workout** — it builds a *workout*, not a training
+plan, and the old name sent people looking for scheduling in the wrong place.)
 
 ---
 

@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from api_client import SpeedianceClient, SpeedianceAuthError
 from debug_routes import init_debug
+import schedule_planner
 import datetime
 import json
 import os
@@ -394,6 +395,205 @@ def preload_assets():
         yield "\nDone! All assets have been processed."
 
     return Response(generate(), mimetype='text/plain')
+
+# ---------------------------------------------------------------------------
+# Recurring schedules
+#
+# Speediance has no recurrence: `templateReservation` writes ONE dated entry. So the
+# repeating pattern lives here, locally, and is materialised into individual dated calls.
+# The pattern logic itself is in schedule_planner.py and is pure/unit-tested, because
+# applying a schedule deletes calendar entries and that must not be decided by guesswork.
+# ---------------------------------------------------------------------------
+
+SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schedules.json')
+DEFAULT_HORIZON_WEEKS = 12
+
+
+def load_schedule():
+    if os.path.exists(SCHEDULE_FILE):
+        try:
+            with open(SCHEDULE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Could not read {SCHEDULE_FILE}: {e}")
+    return {
+        "enabled": False,
+        "mode": "weekly",
+        "horizonWeeks": DEFAULT_HORIZON_WEEKS,
+        "weekly": {d: None for d in schedule_planner.WEEKDAYS},
+        "cycle": {"anchor": datetime.date.today().isoformat(), "sequence": []},
+        "appliedThrough": None,
+    }
+
+
+def save_schedule(schedule):
+    with open(SCHEDULE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(schedule, f, indent=2)
+
+
+def _calendar_between(start, end):
+    """Merged calendar days across every month the range touches."""
+    days = []
+    seen = set()
+    month = datetime.date(start.year, start.month, 1)
+    while month <= end:
+        key = month.strftime('%Y-%m')
+        if key not in seen:
+            seen.add(key)
+            days.extend(client.get_calendar_month(key) or [])
+        month = (month + datetime.timedelta(days=32)).replace(day=1)
+    return days
+
+
+def _horizon(schedule, from_date=None):
+    start = from_date or datetime.date.today()
+    weeks = int(schedule.get('horizonWeeks') or DEFAULT_HORIZON_WEEKS)
+    return start, start + datetime.timedelta(weeks=weeks)
+
+
+def _build_changes(schedule, protect_before=None):
+    start, end = _horizon(schedule)
+    existing = schedule_planner.existing_by_date(_calendar_between(start, end))
+    changes = schedule_planner.plan_changes(
+        schedule, start, end, existing, protect_before=protect_before
+    )
+    return start, end, changes
+
+
+def _apply_changes(changes):
+    """Execute the diff. Removals first, then the write, so a day is never doubled up."""
+    results = []
+    for change in changes:
+        if change['action'] == 'noop':
+            continue
+        date_str, ok, errors = change['date'], True, []
+
+        for victim in change.get('remove') or []:
+            try:
+                client.schedule_workout(date_str, victim['code'], 0)
+            except Exception as e:
+                ok = False
+                errors.append(f"remove {victim.get('title')}: {e}")
+
+        if change.get('wanted'):
+            try:
+                client.schedule_workout(date_str, change['wanted'], 1)
+            except Exception as e:
+                ok = False
+                errors.append(f"write: {e}")
+
+        results.append({"date": date_str, "action": change['action'], "ok": ok, "errors": errors})
+    return results
+
+
+@app.route('/schedule')
+def schedule_page():
+    if not client.credentials.get("token"):
+        return redirect(url_for('settings'))
+    return render_template(
+        'schedule.html',
+        schedule=load_schedule(),
+        workouts=client.get_user_workouts(),
+        today=datetime.date.today().isoformat(),
+    )
+
+
+@app.route('/api/schedule/pattern', methods=['GET', 'PUT'])
+def api_schedule_pattern():
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if request.method == 'GET':
+        return jsonify(load_schedule())
+
+    incoming = request.json or {}
+    schedule = load_schedule()
+    for key in ('enabled', 'mode', 'horizonWeeks', 'weekly', 'cycle'):
+        if key in incoming:
+            schedule[key] = incoming[key]
+    save_schedule(schedule)
+    return jsonify(schedule)
+
+
+@app.route('/api/schedule/preview', methods=['POST'])
+def api_schedule_preview():
+    """Read-only. Says exactly what apply would create and destroy. Touches nothing."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        schedule = request.json or load_schedule()
+        start, end, changes = _build_changes(schedule)
+        return jsonify({
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "summary": schedule_planner.summarize(changes),
+            "changes": [c for c in changes if c['action'] != 'noop'],
+            "noopCount": sum(1 for c in changes if c['action'] == 'noop'),
+        })
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/schedule/apply', methods=['POST'])
+def api_schedule_apply():
+    """Destructive, and only ever reached by an explicit click after a preview."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        schedule = request.json or load_schedule()
+        start, end, changes = _build_changes(schedule)
+        results = _apply_changes(changes)
+
+        schedule['appliedThrough'] = end.isoformat()
+        schedule['enabled'] = True
+        save_schedule(schedule)
+
+        failed = [r for r in results if not r['ok']]
+        return jsonify({
+            "applied": len(results) - len(failed),
+            "failed": len(failed),
+            "failures": failed,
+            "appliedThrough": schedule['appliedThrough'],
+        })
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/schedule/topup', methods=['POST'])
+def api_schedule_topup():
+    """Called quietly by the dashboard to keep the horizon full.
+
+    This runs unattended, so it is deliberately NOT destructive across the whole horizon:
+    `protect_before=appliedThrough` confines it to days beyond what the user has already
+    seen and confirmed. A one-off placed inside the reviewed window can never be silently
+    eaten by a background top-up.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    schedule = load_schedule()
+    if not schedule.get('enabled'):
+        return jsonify({"skipped": "not enabled"})
+
+    try:
+        applied_through = schedule.get('appliedThrough')
+        start, end, changes = _build_changes(schedule, protect_before=applied_through)
+        if not changes:
+            return jsonify({"extended": 0, "appliedThrough": applied_through})
+
+        results = _apply_changes(changes)
+        schedule['appliedThrough'] = end.isoformat()
+        save_schedule(schedule)
+        return jsonify({"extended": len(results), "appliedThrough": schedule['appliedThrough']})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/burn_rate')
 def api_burn_rate():
