@@ -151,7 +151,10 @@ function buildExportJSON(workoutData, planName) {
                 reps: s.reps,
                 weight: s.weight,
                 mode: s.mode,
-                rest: s.rest
+                rest: s.rest,
+                // Carry the goal unit, or a timed (Vita / Row-Ski) workout exports as
+                // rep-based and silently loses its seconds on re-import.
+                unit: s.unit || 'reps'
             }))
         }))
     };

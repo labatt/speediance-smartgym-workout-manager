@@ -15,6 +15,17 @@ class SpeedianceAuthError(SpeedianceAPIError):
 class SpeedianceProtocolError(SpeedianceAPIError):
     """Raised when the request shape no longer matches Speediance expectations."""
 
+# Vita intensity is a LEVEL (dataStatType == 6), carried in the `level` CSV rather than
+# in `weights` (which is sent as 0).
+#
+# There is NO upper clamp, deliberately. The old code capped level at 10, which was simply
+# wrong: a device-authored session legitimately uses levels 10,12,14,16, and opening and
+# re-saving it here silently crushed the 12/14/16 down to 10. The API itself does not clamp
+# (levels up to 100 round-trip verbatim), so neither do we — inventing a ceiling is what
+# destroyed real data in the first place.
+VITA_LEVEL_MIN = 1
+
+
 class SpeedianceClient:
     PREFERRED_COACH_ID = 31  # Liz, matching Toby's Warrior 1 instructor preference.
 
@@ -64,7 +75,13 @@ class SpeedianceClient:
         headers = {
             "Host": self.host,
             "Timestamp": str(int(time.time() * 1000)),
-            "Versioncode": "40304",
+            # Must be >= 40400 (app v4.4.0), the release that introduced Vita.
+            # The API version-gates Vita content: any request whose response would
+            # contain a Vita exercise is rejected with code 98 "Please upgrade the
+            # APP version in System Setting" for clients below this. That gate hides
+            # Vita from the exercise library too, not just from workout detail.
+            # Verified by bisection: 40399 -> blocked, 40400 -> OK.
+            "Versioncode": "40400",
             "Mobiledevices": '{"brand":"google","device":"emulator64_x86_64_arm64","deviceType":"sdk_gphone64_x86_64","os":"","os_version":"31","manufacturer":"Google"}',
             "Content-Type": "application/json",
             "User-Agent": "Dart/3.9 (dart:io)",
@@ -663,9 +680,10 @@ class SpeedianceClient:
                 break_list.append(str(rest))
                 mode_list.append(str(mode))
 
-                # Vita exercises (dataStatType==6): weight input = difficulty level (1-10)
+                # Vita exercises (dataStatType==6): the "weight" input is a difficulty LEVEL,
+                # carried in the `level` CSV, and `weights` is sent as 0. No upper clamp.
                 if data_stat_type == 6:
-                    level_list.append(str(max(1, min(10, int(weight_val) or 1))))
+                    level_list.append(str(max(VITA_LEVEL_MIN, int(weight_val) or VITA_LEVEL_MIN)))
                 else:
                     level_list.append("0")
 

@@ -1,8 +1,79 @@
-# Unofficial SmartGym Workout Manager — OpenClaw / Aria Public Fork
+# Unofficial SmartGym Workout Manager — Vita Fork
 
-> **This is a personal fork** of the original project by [hbui3](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager).
-> All credit for the original work goes to him and to the contributors who built the public Speediance/SmartGym manager foundation.
+> **This is a personal fork** of the original project by [hbui3](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager),
+> by way of the [ANPC86](https://github.com/ANPC86/SmartGymWorkoutManager) and
+> [OpenClaw / Aria](https://github.com/clawdassistant85-netizen/speediance-smartgym-workout-manager) forks.
+> All credit for the original work goes to them and to the contributors who built the public Speediance/SmartGym manager foundation.
 > There is no intention to take credit for or create confusion with the original project.
+
+---
+
+## What this fork adds: Speediance Vita support
+
+**If you own a Vita, the upstream app cannot see it.** The Speediance API version-gates Vita
+content behind a newer app version than the client claims to be, so Vita exercises are
+invisible in the library and any workout containing one refuses to open:
+
+```
+Error loading data: Please upgrade the APP version in System Setting
+```
+
+This fork fixes that, then fixes everything that was broken *behind* it — because once Vita
+loaded, it turned out the app was misreading it in four more places, two of which silently
+corrupted real workouts.
+
+It also surfaces the **per-rep telemetry** the API has always returned and the UI threw away.
+
+See **[CHANGELOG.md](CHANGELOG.md)** for the full release notes and
+**[docs/API-NOTES.md](docs/API-NOTES.md)** for the API data model, including the traps that
+caused these bugs.
+
+### Vita workouts now load, and show real levels
+
+Vita intensity is a **level** (`10, 12, 14, 16` here), stored by the API in a `level` field
+while `weights` is all zeros. The app read `weights`, so every Vita set showed **0** — and
+`save_workout` clamped level to `1-10`, so opening a real workout and pressing Save silently
+crushed the 12/14/16 down to 10. There is no such ceiling: the API stores levels up to at
+least 100 verbatim. This fork no longer clamps.
+
+### Timed sets are no longer reported as failed rep targets
+
+A Vita set is a fixed **seconds** window in which reps are counted. History decoded only one
+value of the `completionMethod` enum, so a Vita set displayed `15 / 20` — reading as "15 of
+20 reps" — and was painted **red as a failure**, when it was actually **15 reps in a
+completed 20-second window**.
+
+| Before | After |
+|---|---|
+| ![before](docs/img/history-before.png) | ![after](docs/img/history-after.png) |
+
+### Per-rep performance telemetry
+
+The device records power, rope speed, range of motion, time-under-tension and resistance
+**for every single rep**, plus its own form scores. All of it was discarded. Each exercise
+now gets an inline chart of every rep in sequence, with dividers at set boundaries — so
+within-set fatigue and across-set decline read at a glance. Resistance is flat on rep-based
+work and visibly ramps on Vita.
+
+![telemetry](docs/img/history-telemetry.png)
+
+### The AI prompt understands Vita and unilateral exercises
+
+`Generate Prompt` used to describe every exercise as reps + weight. It now tags them:
+
+```
+[455212933054465] Vita Pull [TIMED+LEVEL] (Category: Training, Focus: Abs, ...)
+[437972850049025] Archer Rows [UNILATERAL] (Category: Training, Focus: Abs, ...)
+```
+
+and explains the contract — that `[TIMED]` sets carry **seconds** in `reps` and need
+`"unit": "sec"`, that Vita's `weight` is an **intensity level**, and that `[UNILATERAL]`
+exercises can take a different load per side via `"isUnilateralExpanded": true` with sets
+listed alternating Left, Right.
+
+It also fixes a silent bug where the model's chosen `presetId` was **discarded** — the
+importer read `preset`, so every AI-prescribed preset fell back to Custom and its RM values
+were re-read as raw kg/lbs.
 
 ---
 

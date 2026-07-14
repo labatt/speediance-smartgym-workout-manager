@@ -348,6 +348,8 @@
             const reps = (apiEx.setsAndReps || "").toString().split(',');
             const weights = (apiEx.weights || "").toString().split(',');
             const counters = (apiEx.counterweight2 || "").toString().split(',');
+            // Vita stores its intensity in `level`, and sends weights as "0,0,0,0".
+            const levels = (apiEx.level || "").toString().split(',');
             const modes = (apiEx.sportMode || "").toString().split(',');
             const breaks = (apiEx.breakTime2 || "").toString().split(',');
             const leftRights = (apiEx.leftRight || "").toString().split(',');
@@ -357,12 +359,18 @@
             // The UI rendering loop then iterates over this array and displays them.
             // So we should NOT filter by "Left" only. We should parse ALL sets.
             
+            const isVita = meta.dataStatType === 6 || apiEx.dataStatType === 6;
+
             const setsParsed = reps.map((rep, i) => {
                 let w = 0;
                 const presetId = parseInt(apiEx.templatePresetId) || -1;
                 const isRM = presetId !== -1;
-                
-                if (isRM) {
+
+                if (isVita) {
+                    // Vita: intensity lives in `level`, NOT `weights` (which is all zeros).
+                    // Reading weights here is what made every Vita set display as 0.
+                    w = parseInt(levels[i] || 0) || 0;
+                } else if (isRM) {
                     // Preset workouts: use counterweight2 (RM).
                     w = parseInt(counters[i] || 0);
                 } else {
@@ -378,7 +386,8 @@
                     weight: w,
                     mode: parseInt(modes[i] || 1),
                     rest: parseInt(breaks[i] || 60),
-                    unit: 'reps' 
+                    // A timed movement (Vita, Row/Ski) stores SECONDS in setsAndReps, not reps.
+                    unit: getSetGoalUnit(apiEx) || 'reps'
                 };
             });
 
@@ -435,7 +444,7 @@
                 weight: defaultWeight,
                 mode: 1,
                 rest: rules.defRest,
-                unit: 'reps'
+                unit: getSetGoalUnit(meta) || 'reps'
             };
 
             const startSets = [];
@@ -491,7 +500,10 @@
         if (cm === 0 && scm === '1') return 'sec';   // timed via selectCompletionMethod
         if (cm === 1) return 'reps';
         if (cm === 2) return 'sec';                  // Row/Ski timed
-        if (cm === 5) return 'kcal';                 // Vita burn-to-complete
+        if (cm === 5) return 'sec';                  // Vita: a fixed SECONDS window (not kcal).
+                                                     // History returns targetCount=20 with time=20 for a
+                                                     // 20s Vita set, and saving {reps:20, unit:'sec'} round-trips
+                                                     // as setsAndReps="20" with completionMethod=5.
         return null;                                 // unknown — use set.unit toggle
     }
 
@@ -790,7 +802,7 @@
                     <div class="grid grid-cols-12 gap-2 text-xs uppercase text-gray-500 font-bold mb-2 px-1">
                         <div class="col-span-1 text-center">#</div>
                         <div class="col-span-3">${(() => { const u = getSetGoalUnit(ex); if (u === 'sec') return 'Target (sec)'; if (u === 'kcal') return 'Target (kcal)'; return `Target (${rules.minR}-${rules.maxR})`; })()}</div>
-                        <div class="col-span-2">${ex.dataStatType === 6 ? 'Level (1-10)' : `${rules.label} (${rules.minW}-${rules.maxW})`}</div>
+                        <div class="col-span-2">${ex.dataStatType === 6 ? 'Level' : `${rules.label} (${rules.minW}-${rules.maxW})`}</div>
                         <div class="col-span-3">Mode</div>
                         <div class="col-span-2">Rest (${rules.minRest}-${rules.maxRest}s)</div>
                         <div class="col-span-1"></div>
@@ -839,7 +851,7 @@
                                 </div>
                                 <div class="col-span-2">
                                     <input type="number"
-                                           min="${ex.dataStatType === 6 ? 1 : rules.minW}" max="${ex.dataStatType === 6 ? 10 : rules.maxW}" step="${ex.dataStatType === 6 ? 1 : rules.step}"
+                                           min="${ex.dataStatType === 6 ? 1 : rules.minW}" max="${ex.dataStatType === 6 ? '' : rules.maxW}" step="${ex.dataStatType === 6 ? 1 : rules.step}"
                                            value="${set.weight}"
                                            onchange="validateAndSet(${exIndex}, ${sIdx}, 'weight', this)"
                                            class="w-full bg-gray-700 ${ex.selectedPresetId != -1 ? 'text-yellow-400 font-bold' : 'text-white'} text-center rounded border border-gray-600 p-1">
@@ -884,9 +896,12 @@
 
         let min = 0, max = 999, step = 1;
         if (field === 'weight') {
+            // Vita 'weight' is an intensity LEVEL with no real ceiling (device workouts use
+            // 10,12,14,16 and the API accepts far higher). Clamping it to 10 here destroyed
+            // those values on edit. Floor at 1; leave the upper bound wide open.
             min = ex.dataStatType === 6 ? 1 : rules.minW;
-            max = ex.dataStatType === 6 ? 10 : rules.maxW;
-            step = rules.step;
+            max = ex.dataStatType === 6 ? 999 : rules.maxW;
+            step = ex.dataStatType === 6 ? 1 : rules.step;
         }
         if (field === 'reps') {
             const apiUnit = getSetGoalUnit(workoutData[exIdx]);
@@ -1041,6 +1056,8 @@ Set the weight and repetitions appropriately for the goal considering the limits
         }
 
         let addedCount = 0;
+        let timedCount = 0;
+        let uniCount = 0;
         fullLibrary.forEach(ex => {
             // Filter by category
             if (!selectedCats.has(ex.category_id)) return;
@@ -1052,12 +1069,69 @@ Set the weight and repetitions appropriately for the goal considering the limits
                 if (target) target += ', ' + aux;
                 else target = aux;
             }
-            prompt += `[${ex.id}] ${ex.title} (Category: ${ex.category_name}, Focus: ${focus}, Target: ${target})\n`;
+
+            // Tag exercises the model cannot prescribe with reps+weight. Without this it
+            // happily writes "12 reps @ 40kg" for a Vita movement, and save_workout turns
+            // that 40 into level 10 (clamped) on a set that is actually a seconds window.
+            const isLevelBased = ex.dataStatType === 6;              // Vita: intensity is a 1-10 level
+            const isTimed = getSetGoalUnit(ex) === 'sec';            // goal is a duration, not reps
+            let tag = '';
+            if (isLevelBased) tag = ' [TIMED+LEVEL]';
+            else if (isTimed) tag = ' [TIMED]';
+            if (tag) timedCount++;
+
+            // Unilateral exercises are trained one side at a time and can carry a
+            // different load per side. Unless the model opts in (see below), each set
+            // it writes is duplicated identically to both sides.
+            if (ex.isLeftRight === 1) { tag += ' [UNILATERAL]'; uniCount++; }
+
+            prompt += `[${ex.id}] ${ex.title}${tag} (Category: ${ex.category_name}, Focus: ${focus}, Target: ${target})\n`;
             addedCount++;
         });
 
         if (addedCount === 0) {
             return alert("No exercises selected! Please check at least one category.");
+        }
+
+        if (timedCount > 0) {
+            prompt += `
+TIMED EXERCISES (tagged [TIMED] or [TIMED+LEVEL] above):
+These are NOT rep-based. The machine runs them for a fixed number of SECONDS.
+- "reps" carries the DURATION IN SECONDS (typical: 20-60), not a repetition count.
+- "unit" MUST be "sec".
+- [TIMED+LEVEL] (the Vita movements): "weight" carries an INTENSITY LEVEL, NOT a weight in
+  kg/lbs and NOT an RM value. Levels start at 1; the device's own workouts commonly run
+  10-16, and it is normal to step the level UP across sets (e.g. 10, 12, 14, 16).
+- Timed exercises have no RM presets: "presetId" MUST be -1.
+Example of one correct timed set: { "reps": 30, "weight": 12, "mode": 1, "rest": 60, "unit": "sec" }
+  -> run this movement for 30 seconds at intensity level 12.
+`;
+        }
+
+        if (uniCount > 0) {
+            prompt += `
+UNILATERAL EXERCISES (tagged [UNILATERAL] above):
+These train one side at a time, so every working set is performed twice — once left, once right.
+By default, just write ONE set per working set and it is applied to BOTH sides identically:
+  "sets": [ { "reps": 12, "weight": 35, "mode": 1, "rest": 60 } ]   -> 12@35 left AND 12@35 right
+
+Only if you deliberately want a DIFFERENT load or rep count per side, opt in by adding
+"isUnilateralExpanded": true to the exercise and listing the sides yourself, ALTERNATING
+LEFT, RIGHT, LEFT, RIGHT (first entry = left). Two working sets then means four entries:
+{
+  "id": 437972850049025,
+  "presetId": -1,
+  "isUnilateralExpanded": true,
+  "sets": [
+    { "reps": 12, "weight": 35, "mode": 1, "rest": 60 },   // set 1 LEFT
+    { "reps": 10, "weight": 30, "mode": 1, "rest": 60 },   // set 1 RIGHT
+    { "reps": 12, "weight": 35, "mode": 1, "rest": 60 },   // set 2 LEFT
+    { "reps": 10, "weight": 30, "mode": 1, "rest": 60 }    // set 2 RIGHT
+  ]
+}
+Do NOT set "isUnilateralExpanded" unless you are listing both sides explicitly — otherwise
+the sets are duplicated and you will get twice the volume you intended.
+`;
         }
 
         prompt += `
@@ -1075,6 +1149,13 @@ You must output a JSON object with the following structure:
     }
   ]
 }
+
+For a normal rep-based exercise, omit "unit" (it defaults to reps):
+  { "reps": 10, "weight": 40, "mode": 1, "rest": 60 }
+
+For an exercise tagged [TIMED] or [TIMED+LEVEL], "reps" is SECONDS and "unit" is required.
+On [TIMED+LEVEL] (Vita) exercises "weight" is the 1-10 level, and "presetId" must be -1:
+  { "reps": 30, "weight": 6, "mode": 1, "rest": 60, "unit": "sec" }
 `;
 
         document.getElementById('prompt-text').value = prompt;
@@ -1132,13 +1213,20 @@ You must output a JSON object with the following structure:
                     const libEx = fullLibrary.find(e => e.id == groupId);
                     const title = libEx ? libEx.title : (ex.title || "Unknown Exercise");
 
+                    // The API's own completionMethod is authoritative: a Vita/timed movement is
+                    // a seconds window no matter what the JSON claims. Fall back to the JSON's
+                    // unit (an AI plan may legitimately ask for a timed set on a rep-capable
+                    // exercise), then to reps. Hardcoding 'reps' here silently turned every
+                    // imported timed set into a rep set.
+                    const mandatedUnit = getSetGoalUnit(meta);
+
                     // Map sets — normalize comma decimal separator for weight (e.g. "11,5" → 11.5)
                     const setsParsed = ex.sets.map(s => ({
                         reps: parseInt(s.reps),
                         weight: parseFloat(String(s.weight ?? 0).replace(',', '.')),
                         mode: parseInt(s.mode || 1),
                         rest: parseInt(s.rest || 60),
-                        unit: 'reps'
+                        unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
                     }));
 
                     // Handle Unilateral: expand L/R pairs if not already expanded.
@@ -1147,9 +1235,14 @@ You must output a JSON object with the following structure:
                     const alreadyExpanded = !!ex.isUnilateralExpanded;
                     const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
 
-                    // Determine the preset: use the exported preset field if present, else default to Custom (-1).
-                    const importedPresetId = (ex.preset !== undefined && ex.preset !== null)
-                        ? parseInt(ex.preset)
+                    // Determine the preset, else default to Custom (-1).
+                    // Accept BOTH keys: this app's own export writes `preset`, while the
+                    // generated AI prompt asks the model for `presetId`. Reading only `preset`
+                    // silently dropped every AI-chosen preset and fell back to Custom, so an
+                    // RM prescription got re-read as raw kg/lbs.
+                    const rawPreset = ex.preset ?? ex.presetId;
+                    const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
+                        ? parseInt(rawPreset)
                         : -1;
 
                     workoutData.push({
@@ -1230,11 +1323,11 @@ You must output a JSON object with the following structure:
         
         // Neue Sets bekommen IMMER die Defaults des aktuellen Presets
         const newSetTemplate = {
-            reps: rules.defR, 
-            weight: rules.defW, 
-            mode: 1, 
-            rest: rules.defRest, 
-            unit: 'reps'
+            reps: rules.defR,
+            weight: rules.defW,
+            mode: 1,
+            rest: rules.defRest,
+            unit: getSetGoalUnit(ex) || 'reps'
         };
         
         // For UI model, we just push ONE set object.
