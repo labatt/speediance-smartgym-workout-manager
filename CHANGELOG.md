@@ -103,6 +103,27 @@ The generated prompt asks the model for `"presetId"`, but the importer read `ex.
 preset an AI chose was dropped and replaced with **Custom (-1)** — so an RM prescription like
 "9 RM" was re-read as **9 kg**. Silent, and wrong. The importer now accepts either key.
 
+### The calorie estimate was off by more than 6x
+
+The builder estimated burn as `MET × 70kg × active-time-only`, which is wrong twice over: it
+assumes a **70 kg body weight** regardless of who you are, and it **discards rest time** — which
+the machine plainly counts, since it burns calories across the whole session. On one real
+75-minute workout that produced **~118 kcal** against the **739 kcal** the device actually
+recorded.
+
+The API exposes no body weight (there is no user-profile endpoint), so rather than guess one, the
+estimate is now **calibrated against your own recorded sessions**. The device's kcal/min turns out
+to be a stable personal constant — median **10.44, stdev 0.58** across 18 sessions on the account
+this was built against — and applying it to the full planned duration, rest included, brings the
+same workout to **~642 kcal**.
+
+A new `/api/burn_rate` endpoint returns the median kcal/min from the last 90 days. A user with no
+history falls back to the old MET formula, and the chip's tooltip says which method produced the
+number, so a rough guess is never mistaken for a measurement.
+
+The residual gap is honest: real sessions run longer than planned (setup, transitions, rests that
+overrun — measured at 0.83x–1.39x of planned time), and no static estimate can model that.
+
 ### The AI prompt prescribed kilograms on imperial accounts
 
 Weights are stored and returned in the unit the account is configured for, and **nothing in

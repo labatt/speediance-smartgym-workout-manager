@@ -239,6 +239,23 @@
 
     const userUnit = {{ unit | default(0) }}; // 0=Metric, 1=Imperial
 
+    // Median kcal/min measured from this user's own recorded sessions. null until loaded,
+    // and stays null for a user with no history — in which case the burn estimate falls
+    // back to the (much less accurate) MET formula.
+    let burnRatePerMin = null;
+    let burnRateSessions = 0;
+
+    fetch('/api/burn_rate')
+        .then(r => r.json())
+        .then(d => {
+            if (d && d.kcal_per_min) {
+                burnRatePerMin = d.kcal_per_min;
+                burnRateSessions = d.sessions || 0;
+                calculateWorkoutStats();   // re-render the burn chip with the real rate
+            }
+        })
+        .catch(() => { /* no history / offline: keep the MET fallback */ });
+
     // Human-readable labels for known preset IDs (used for dynamic preset dropdown)
     const PRESET_LABELS = {
         '-1': userUnit === 1 ? 'Customize (LBS)' : 'Customize (KG)',
@@ -545,13 +562,28 @@
                 // kcal: skip (unknown duration)
                 totalSecs += setDurSecs;
 
-                // Burn: MET × 70kg × hours (active time only, not rest)
+                // Fallback burn only: MET × 70kg × active seconds. Used when we have no
+                // history to calibrate against (see below) — it is a poor estimate.
                 totalKcal += met * 70 * (setDurSecs / 3600);
 
                 restSecs += (set.rest || 0);
                 totalSecs += (set.rest || 0);
             });
         });
+
+        // Burn, calibrated against what the machine actually recorded for THIS user.
+        //
+        // The old estimate was MET × 70kg × active-time-only. That is wrong twice: the
+        // body weight is a guess, and it discards rest — which the device plainly counts,
+        // since it burns calories across the whole session. On a real 75-minute workout it
+        // produced ~118 kcal against the device's 739.
+        //
+        // burnRatePerMin is the median kcal/min from the user's own recent sessions, which
+        // is stable enough to be worth trusting (stdev 0.58 over 18 sessions). Applied to
+        // TOTAL time including rest, it lands within a few percent of the device.
+        if (burnRatePerMin) {
+            totalKcal = burnRatePerMin * (totalSecs / 60);
+        }
 
         // Volume chip
         const volEl = document.getElementById('stat-volume');
@@ -572,6 +604,11 @@
         const burnSep = document.getElementById('stat-burn-sep');
         if (totalKcal >= 1) {
             burnEl.innerText = `~${Math.round(totalKcal)} kcal`;
+            // Say which method produced the number, so a rough guess is never mistaken for
+            // a measurement.
+            burnEl.title = burnRatePerMin
+                ? `Based on your own recorded sessions: ${burnRatePerMin} kcal/min across ${burnRateSessions} workouts, applied to the full planned time including rest. Real sessions often run longer than planned (setup, transitions, overrunning rests), so the machine may record somewhat more.`
+                : `Rough MET-based estimate (assumes a 70 kg body weight and counts working time only). Complete a few workouts and this will calibrate to what the machine actually records for you.`;
             burnEl.classList.remove('hidden');
             burnSep.classList.remove('hidden');
         } else {

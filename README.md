@@ -80,6 +80,12 @@ were shown as failed rep targets, in red:
   and no longer clamps it — a workout authored on the machine using levels 10/12/14/16 used to
   display as `0` and get crushed to a flat level 10 on save.
 - **Live stats bar** — total exercises, estimated volume, total time, rest time, estimated burn.
+- **Calorie estimate calibrated to you** — the estimate used to assume a 70 kg body weight and
+  count only working time, ignoring rest entirely; on a real 75-minute session it read ~118 kcal
+  against the 739 the machine recorded. The API exposes no body weight, so instead of guessing one
+  the estimate is now calibrated against your own recorded sessions (your kcal/min is a remarkably
+  stable personal constant). Falls back to the old formula if you have no history yet, and says
+  which method it used.
 - **Target Muscles radar chart** — visual breakdown of the muscle groups a workout covers.
 - **Reordering** — move exercises up, down, to top or to bottom without repeated dragging.
 - **Condensed exercise cards** — key stats on a single line per exercise.

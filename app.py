@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from api_client import SpeedianceClient, SpeedianceAuthError
 from debug_routes import init_debug
+import datetime
 import json
 import os
 import sys
@@ -393,6 +394,49 @@ def preload_assets():
         yield "\nDone! All assets have been processed."
 
     return Response(generate(), mimetype='text/plain')
+
+@app.route('/api/burn_rate')
+def api_burn_rate():
+    """Your personal kcal/min, measured from what the machine actually recorded.
+
+    The builder used to estimate burn as MET x 70kg x active-time-only, which was wrong
+    twice over: nobody's body weight is assumed-70kg, and it threw away rest time, which
+    the device plainly counts (it burns calories for the whole session). On a real 75-min
+    session that produced ~118 kcal against the device's 739.
+
+    Rather than guess a body weight the API does not expose, calibrate against the user's
+    own history: the device's kcal/min turns out to be very stable per user (median 10.44,
+    stdev 0.58 over 18 sessions on the account this was built against).
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        end = datetime.date.today()
+        start = end - datetime.timedelta(days=90)
+        records = client.get_training_records(start.isoformat(), end.isoformat())
+
+        rates = []
+        for r in records:
+            secs = r.get('trainingTime') or 0
+            kcal = r.get('calorie') or 0
+            # Skip trivially short sessions — their rate is dominated by rounding.
+            if secs > 300 and kcal > 0:
+                rates.append(kcal / (secs / 60.0))
+
+        if not rates:
+            return jsonify({"kcal_per_min": None, "sessions": 0})
+
+        rates.sort()
+        median = rates[len(rates) // 2] if len(rates) % 2 else \
+            (rates[len(rates) // 2 - 1] + rates[len(rates) // 2]) / 2.0
+
+        return jsonify({"kcal_per_min": round(median, 2), "sessions": len(rates)})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/stats/<int:group_id>')
 def api_stats(group_id):
