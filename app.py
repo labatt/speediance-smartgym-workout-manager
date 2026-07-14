@@ -490,10 +490,24 @@ def _apply_changes(changes):
 def schedule_page():
     if not client.credentials.get("token"):
         return redirect(url_for('settings'))
+
+    # An expired token must land the user on the login page, not a 500. Every other page
+    # already does this; omitting it here turned a routine token expiry into an Internal
+    # Server Error.
+    try:
+        workouts = client.get_user_workouts()
+    except Exception as e:
+        if _is_auth_error(e):
+            client.logout()
+            flash("Session expired. Please login again.", "error")
+            return redirect(url_for('settings'))
+        flash(f"Error loading workouts: {e}", "error")
+        return redirect(url_for('index'))
+
     return render_template(
         'schedule.html',
         schedule=load_schedule(),
-        workouts=client.get_user_workouts(),
+        workouts=workouts,
         today=datetime.date.today().isoformat(),
     )
 
