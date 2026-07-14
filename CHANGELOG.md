@@ -103,6 +103,21 @@ The generated prompt asks the model for `"presetId"`, but the importer read `ex.
 preset an AI chose was dropped and replaced with **Custom (-1)** — so an RM prescription like
 "9 RM" was re-read as **9 kg**. Silent, and wrong. The importer now accepts either key.
 
+### The AI prompt prescribed kilograms on imperial accounts
+
+Weights are stored and returned in the unit the account is configured for, and **nothing in
+this app converts them** — not on read, not on write. (An `api_client.py` comment claimed the
+frontend converted lbs→kg before sending; it does not. `lbsToKg()` exists but is never called
+on the save path.)
+
+The generated prompt nevertheless hardcoded `Custom (KG)` and "absolute weight (kg)". On an
+imperial account the model duly prescribed kilograms, the importer took them verbatim, and
+they were saved as pounds — a workout at roughly **45% of the intended load**, with nothing to
+indicate anything had gone wrong.
+
+The prompt now states the account's actual unit and explicitly forbids the other one. Import
+JSON should always be written in **the unit the account is set to**.
+
 ### `completionMethod: 5` was mapped to `kcal` instead of `sec`
 
 `getSetGoalUnit()` treated it as burn-to-complete, so the builder labelled those sets **Kcal** with

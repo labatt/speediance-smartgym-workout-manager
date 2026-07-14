@@ -703,7 +703,12 @@ class SpeedianceClient:
                     # Vita: no cable weight, level already captured above
                     weights_list.append("0")
                 elif preset_id == -1:
-                    api_weight = weight_val  # JS already converted LBS→KG before sending
+                    # Sent VERBATIM, in the account's configured unit. Nothing converts it:
+                    # the API stores and returns weights in whatever unit the account is set
+                    # to, and the read path applies no conversion either. (The old comment
+                    # here claimed "JS already converted LBS→KG before sending" — it does
+                    # not; lbsToKg() exists but is never called on the save path.)
+                    api_weight = weight_val
                     weights_list.append(f"{api_weight:.1f}")
                     set_capacity += (reps * api_weight)
                 else:

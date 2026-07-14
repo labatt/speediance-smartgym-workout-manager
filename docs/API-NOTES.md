@@ -165,14 +165,29 @@ Round-trips as `setsAndReps "30"`, `level "12"`, `weights "0"`, `completionMetho
 Note `completionMethod` and `countType` are **normalised server-side** from the exercise
 library, so the per-set values the client sends for those two are effectively advisory.
 
-## 8. Units on read are already in the account's display unit
+## 8. Weights are in the account's unit, on BOTH read and write — nothing converts
 
-Reads return weights in the unit configured on the account (`config.json` `unit: 1` = lbs),
-so displaying the raw value with an "lbs" label is **correct**. Do not add a kg→lbs
-conversion on the read path.
+The API stores and returns workout weights in the unit configured on the account
+(`config.json` `unit: 1` = lbs, `0` = kg). **No conversion happens anywhere in this app:**
 
-The write path separately converts lbs→kg before sending (`api_client.py`). The asymmetry
-is the API's, not a defect.
+- **Read** — the raw value is displayed with a unit label. `35` on an imperial account means
+  35 lbs. Do not add a kg→lbs conversion here.
+- **Write** — the value is sent verbatim (`api_client.py`, `api_weight = weight_val`). An old
+  comment there claimed *"JS already converted LBS→KG before sending"*; it is **false**.
+  `lbsToKg()` exists in `workout-logic.js` and is aliased in `create.html`, but is never
+  called on the save path.
+
+So **import JSON must be in the account's unit**, not kg. The generated AI prompt used to
+hardcode `Custom (KG)` and "absolute weight (kg)" — on an imperial account the model
+prescribed kilograms, they were saved verbatim as pounds, and the workout came out at
+roughly **45% of the intended load**, silently. The prompt now states the account's actual
+unit.
+
+The one genuine exception: the **library's** `recommendedWeight` *is* in kg, which is why
+`kgToLbs()` is applied to it (and only to it) when populating a default weight.
+
+RM-based presets (`presetId != -1`) are unitless — they go in `counterweight2`, not
+`weights`.
 
 ## 9. The importer accepts `preset` or `presetId`
 

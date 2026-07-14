@@ -1021,6 +1021,12 @@
             17: 'Abs'
         };
 
+        // Weights are stored and returned in the ACCOUNT's configured unit — nothing in the
+        // read or write path converts them. The prompt used to hardcode "KG", so on an
+        // imperial account the model prescribed kilograms and they were saved verbatim as
+        // pounds, i.e. at roughly 45% of the intended load.
+        const weightUnitLabel = userUnit === 1 ? 'LBS' : 'KG';
+
         let prompt = `You are a professional fitness coach using the Speediance Gym Monster.
 Your task is to create a custom workout plan based on the user's request: "${userRequest}"
 
@@ -1035,11 +1041,16 @@ MODES:
 Use these modes appropriately based on the goal (e.g., Eccentric for hypertrophy/control).
 
 PRESET IDS:
-- -1: Custom (KG)
+- -1: Custom (${weightUnitLabel})
 - 1: Gain Muscle (RM)
 - 3: Stamina (RM)
 - 5: Strength (RM)
-Depending on the preset, the training weight can be prescribed either as an absolute weight (kg) or as a relative RM value based on the users maximum strength for a specific number of repetitions.
+Depending on the preset, the training weight can be prescribed either as an absolute weight or as a relative RM value based on the users maximum strength for a specific number of repetitions.
+
+WEIGHT UNIT:
+Absolute weights MUST be given in ${weightUnitLabel}. This account is configured for
+${weightUnitLabel}, and the value you write is stored verbatim — nothing converts it.
+Do NOT prescribe in ${weightUnitLabel === 'LBS' ? 'kilograms' : 'pounds'}.
 When providing a RM value try to keep one repetition in reserve to avoid overtraining.
 Use the preset ID appropriately based on the goal (e.g., Gain Muscle for hypertrophy, Stamina for endurance, Strength for strength/explosiveness).
 For custom workouts, use the -1 preset.
