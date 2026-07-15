@@ -796,7 +796,20 @@ def api_session_coach(training_id):
 
         prompt = coach.build_prompt(snapshot, notes, comparison)
         ok, text = coach.ask_ollama(prompt)
-        return jsonify({"ok": ok, "text": text})
+
+        saved_at = None
+        if ok and text:
+            # Persist the read in the journal so reopening the session shows it without
+            # re-billing the model. Stamped so a stale read (ratings changed since) is
+            # visible; the button re-generates on demand.
+            journal = load_journal()
+            entry = journal.get(str(training_id), {})
+            saved_at = datetime.datetime.now().isoformat(timespec='minutes')
+            entry['coach'] = {"text": text, "model": coach.load_config().get("model"), "at": saved_at}
+            journal[str(training_id)] = entry
+            save_journal(journal)
+
+        return jsonify({"ok": ok, "text": text, "at": saved_at})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401

@@ -114,6 +114,7 @@
                     </button>
                 </div>
                 <div id="coachOut" class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></div>
+                <p id="coachStamp" class="text-[11px] text-indigo-400/60 mt-1"></p>
                 <p class="text-[11px] text-indigo-400/70 mt-2">
                     Reads only the recorded facts and your felt ratings — your ratings outrank the sensors.
                     Rate the exercises above first for a sharper read.
@@ -544,9 +545,28 @@
         renderGroupRollup(data.snapshot.groups);
         annotateExerciseCards(data.snapshot, data.comparison);
 
-        // Coach box appears for custom sessions; the read is on demand (it's a model call).
+        // Coach box appears for custom sessions. If a read was already generated it is
+        // stored in the journal and shown immediately — no re-billing the model.
         document.getElementById('coachBox').classList.remove('hidden');
-        document.getElementById('coachOut').textContent = '';
+        const saved = (data.notes || {}).coach;
+        const out = document.getElementById('coachOut');
+        const btn = document.getElementById('coachBtn');
+        if (saved && saved.text) {
+            out.className = 'text-sm text-gray-300 leading-relaxed';
+            out.innerHTML = coachMarkdown(saved.text);
+            setCoachStamp(saved.at, saved.model);
+            btn.textContent = 'Re-analyze';
+        } else {
+            out.textContent = '';
+            setCoachStamp(null);
+            btn.textContent = 'Analyze this session';
+        }
+    }
+
+    function setCoachStamp(at, model) {
+        let el = document.getElementById('coachStamp');
+        if (!el) return;
+        el.textContent = at ? `Generated ${at.replace('T', ' ')}${model ? ' · ' + model : ''}` : '';
     }
 
     // Render the model's markdown SAFELY. HTML is escaped FIRST, so nothing the model
@@ -602,7 +622,7 @@
             // Only the successful coach read is formatted, via the escape-first renderer above.
             if (data.error) { out.className = 'text-sm text-red-400 whitespace-pre-wrap leading-relaxed'; out.textContent = data.error; }
             else if (!data.ok) { out.className = 'text-sm text-yellow-400 whitespace-pre-wrap leading-relaxed'; out.textContent = data.text; }
-            else { out.className = 'text-sm text-gray-300 leading-relaxed'; out.innerHTML = coachMarkdown(data.text); }
+            else { out.className = 'text-sm text-gray-300 leading-relaxed'; out.innerHTML = coachMarkdown(data.text); setCoachStamp(data.at); }
         } catch (e) {
             out.className = 'text-sm text-red-400 whitespace-pre-wrap leading-relaxed';
             out.textContent = 'Request failed: ' + e.message;
