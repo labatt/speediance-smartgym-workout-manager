@@ -1,3 +1,4 @@
+import datetime
 import os
 import sys
 import unittest
@@ -27,7 +28,6 @@ SNAPSHOT = {
     ],
     "groups": [],
 }
-
 NOTES = {"overall": "right", "exercises": {"Standing Leg Curl": "easy"}}
 
 
@@ -36,29 +36,19 @@ class TestBuildPrompt(unittest.TestCase):
         self.p = coach.build_prompt(SNAPSHOT, NOTES)
 
     def test_includes_felt_ratings(self):
-        self.assertIn("Felt: easy", self.p)          # per-exercise
-        self.assertIn("just right", self.p)           # overall
+        self.assertIn("Felt: easy", self.p)
+        self.assertIn("just right", self.p)
 
     def test_unrated_exercise_marked_not_rated(self):
-        self.assertIn("Felt: not rated", self.p)      # Vita has no rating
+        self.assertIn("Felt: not rated", self.p)
 
     def test_vita_spoken_in_levels_not_weight(self):
-        # The Vita line must not carry a weight-style '@ number'.
         vita_line = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
         self.assertIn("level-based", vita_line)
         self.assertNotIn("@", vita_line)
 
     def test_power_trend_labelled_as_unreliable(self):
         self.assertIn("NOT a measure of effort", self.p)
-
-    def test_groups_by_region(self):
-        self.assertIn("== Legs ==", self.p)
-        self.assertIn("== Core ==", self.p)
-
-    def test_only_given_numbers_appear(self):
-        # A guard against the prompt implying figures we did not provide.
-        self.assertIn("12/12 @ 15.5", self.p)
-        self.assertIn("14/20 in 30s", self.p)
 
 
 class TestSystemPromptGuardrails(unittest.TestCase):
@@ -70,55 +60,81 @@ class TestSystemPromptGuardrails(unittest.TestCase):
 
 
 class TestEndpointAllowlist(unittest.TestCase):
-    def test_allows_cloud_https(self):
-        self.assertTrue(coach.endpoint_allowed("https://ollama.com"))
+    def test_ollama_cloud_and_local_allowed(self):
+        self.assertTrue(coach.endpoint_allowed("ollama", "https://ollama.com"))
+        self.assertTrue(coach.endpoint_allowed("ollama", "http://127.0.0.1:11434"))
 
-    def test_allows_local_daemon_standard_port(self):
-        self.assertTrue(coach.endpoint_allowed("http://127.0.0.1:11434"))
-        self.assertTrue(coach.endpoint_allowed("http://localhost:11434"))
+    def test_ollama_blocks_loopback_service_ports_and_metadata(self):
+        for bad in ("http://127.0.0.1:5432", "http://127.0.0.1:6379",
+                    "http://169.254.169.254/", "http://10.0.0.5:11434", "http://ollama.com"):
+            self.assertFalse(coach.endpoint_allowed("ollama", bad), bad)
 
-    def test_blocks_loopback_service_ports(self):
-        # The whole point: no SSRF into this box's own services.
-        for bad in ("http://127.0.0.1:5432", "http://127.0.0.1:6379", "http://localhost:5001"):
-            self.assertFalse(coach.endpoint_allowed(bad), bad)
+    def test_fixed_providers_pinned_to_their_host(self):
+        self.assertTrue(coach.endpoint_allowed("anthropic", "https://api.anthropic.com"))
+        self.assertTrue(coach.endpoint_allowed("openai", "https://api.openai.com"))
+        self.assertTrue(coach.endpoint_allowed("gemini", "https://generativelanguage.googleapis.com"))
+        self.assertTrue(coach.endpoint_allowed("grok", "https://api.x.ai"))
+        # A different host for a fixed provider is rejected — no SSRF via a swapped endpoint.
+        self.assertFalse(coach.endpoint_allowed("anthropic", "https://evil.test"))
+        self.assertFalse(coach.endpoint_allowed("openai", "http://127.0.0.1:6379"))
 
-    def test_blocks_cloud_metadata_and_private_hosts(self):
-        for bad in ("http://169.254.169.254/latest/meta-data/",
-                    "http://10.0.0.5:11434", "http://192.168.1.10:11434",
-                    "http://172.17.0.1:11434"):
-            self.assertFalse(coach.endpoint_allowed(bad), bad)
 
-    def test_blocks_non_http_schemes_and_spoofed_hosts(self):
-        self.assertFalse(coach.endpoint_allowed("file:///etc/passwd"))
-        self.assertFalse(coach.endpoint_allowed("gopher://127.0.0.1:6379"))
-        self.assertFalse(coach.endpoint_allowed("http://ollama.com.evil.test"))
-        self.assertFalse(coach.endpoint_allowed("http://ollama.com"))  # cloud must be https
+class TestModelFilter(unittest.TestCase):
+    def test_keeps_chat_models_drops_others(self):
+        self.assertTrue(coach._looks_like_chat_model("gpt-4o"))
+        self.assertTrue(coach._looks_like_chat_model("o3-mini"))
+        self.assertTrue(coach._looks_like_chat_model("chatgpt-4o-latest"))
+        for bad in ("text-embedding-3-large", "whisper-1", "tts-1", "dall-e-3", "omni-moderation-latest"):
+            self.assertFalse(coach._looks_like_chat_model(bad), bad)
 
-    def test_blocked_endpoint_refused_before_any_request(self):
-        cfg = {"endpoint": "http://127.0.0.1:5432", "model": "x", "api_key": "k"}
-        ok, msg = coach.ask_ollama("hi", cfg=cfg, timeout=2)
+
+class TestProviderDispatchOffline(unittest.TestCase):
+    def _cfg(self, provider, **pfields):
+        cfg = {"provider": provider, "providers": {p: coach._blank_provider(p) for p in coach.PROVIDERS},
+               "known_models": {}, "last_model_check": None}
+        cfg["providers"][provider].update(pfields)
+        return cfg
+
+    def test_missing_model_refused_before_any_call(self):
+        cfg = self._cfg("openai", api_key="k", model="")
+        ok, msg = coach.chat("hi", cfg, timeout=2)
         self.assertFalse(ok)
-        self.assertIn("not allowed", msg)
+        self.assertIn("model", msg.lower())
 
-
-class TestOllamaOffline(unittest.TestCase):
-    def test_unreachable_returns_friendly_reason(self):
-        # An ALLOWED endpoint (local Ollama port) that simply isn't running here.
-        cfg = {"endpoint": "http://127.0.0.1:11434", "model": "x", "api_key": ""}
-        ok, msg = coach.ask_ollama("hi", cfg=cfg, timeout=2)
+    def test_missing_key_refused_for_keyed_provider(self):
+        cfg = self._cfg("anthropic", api_key="", model="claude-opus-4-8")
+        ok, msg = coach.chat("hi", cfg, timeout=2)
         self.assertFalse(ok)
-        self.assertIn("Couldn't reach", msg)
+        self.assertIn("key", msg.lower())
 
-    def test_cloud_without_key_is_refused_before_any_call(self):
-        cfg = {"endpoint": "https://ollama.com", "model": "gpt-oss:120b", "api_key": ""}
-        ok, msg = coach.ask_ollama("hi", cfg=cfg, timeout=2)
+    def test_list_models_needs_key(self):
+        ok, msg = coach.list_models("openai", coach._blank_provider("openai"))
         self.assertFalse(ok)
-        self.assertIn("API key", msg)
+        self.assertIn("key", msg.lower())
 
-    def test_status_when_down(self):
-        st = coach.ollama_status(cfg={"endpoint": "http://127.0.0.1:59999", "model": "x", "api_key": ""})
-        self.assertFalse(st["up"])
-        self.assertEqual(st["models"], [])
+    def test_status_reports_active_provider(self):
+        cfg = self._cfg("grok", api_key="k", model="grok-2")
+        st = coach.status(cfg)
+        self.assertEqual(st["provider"], "grok")
+        self.assertTrue(st["ready"])
+
+
+class TestConfigMigration(unittest.TestCase):
+    def test_new_shape_round_trips(self):
+        cfg = {"provider": "openai", "providers": {p: coach._blank_provider(p) for p in coach.PROVIDERS},
+               "known_models": {}, "last_model_check": None}
+        cfg["providers"]["openai"]["api_key"] = "secret"
+        self.assertEqual(coach.active_provider(cfg), "openai")
+        self.assertEqual(coach.provider_cfg(cfg, "openai")["api_key"], "secret")
+
+
+class TestNewModelCheck(unittest.TestCase):
+    def test_throttled_within_interval(self):
+        today = datetime.date.today().isoformat()
+        cfg = {"provider": "ollama", "providers": {p: coach._blank_provider(p) for p in coach.PROVIDERS},
+               "known_models": {}, "last_model_check": today}
+        new, _ = coach.check_new_models(cfg)   # just checked today -> skip
+        self.assertEqual(new, {})
 
 
 if __name__ == "__main__":

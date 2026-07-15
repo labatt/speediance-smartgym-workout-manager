@@ -795,7 +795,8 @@ def api_session_coach(training_id):
                 comparison = None
 
         prompt = coach.build_prompt(snapshot, notes, comparison)
-        ok, text = coach.ask_ollama(prompt)
+        cfg = coach.load_config()
+        ok, text = coach.chat(prompt, cfg)
 
         saved_at = None
         if ok and text:
@@ -805,7 +806,8 @@ def api_session_coach(training_id):
             journal = load_journal()
             entry = journal.get(str(training_id), {})
             saved_at = datetime.datetime.now().isoformat(timespec='minutes')
-            entry['coach'] = {"text": text, "model": coach.load_config().get("model"), "at": saved_at}
+            model = coach.provider_cfg(cfg, coach.active_provider(cfg)).get("model")
+            entry['coach'] = {"text": text, "model": model, "at": saved_at}
             journal[str(training_id)] = entry
             save_journal(journal)
 
@@ -816,34 +818,83 @@ def api_session_coach(training_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _coach_public_config(cfg):
+    """Config for the UI — every provider's model/endpoint and whether a key is set, but
+    never the keys themselves."""
+    providers = {}
+    for p, meta in coach.PROVIDERS.items():
+        pc = coach.provider_cfg(cfg, p)
+        providers[p] = {
+            "label": meta["label"], "editable": bool(meta.get("editable")),
+            "endpoint": pc.get("endpoint"), "model": pc.get("model"),
+            "has_key": bool(pc.get("api_key")),
+        }
+    return {"provider": coach.active_provider(cfg), "providers": providers,
+            "status": coach.status(cfg)}
+
+
 @app.route('/api/coach/config', methods=['GET', 'POST'])
 def api_coach_config():
-    # Same gate as every sibling route. This is the one endpoint that can WRITE the coach
-    # config — the outbound endpoint and the API key — so an unauthenticated write here is
-    # the worst of the set. Gate before either branch runs.
+    # Same gate as every sibling route. This endpoint WRITES the coach config — provider,
+    # endpoints, and API keys — so an unauthenticated write is the worst of the set.
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
 
+    cfg = coach.load_config()
     if request.method == 'GET':
-        cfg = coach.load_config()
-        status = coach.ollama_status(cfg)
-        # Never return the key itself; only whether one is set.
-        return jsonify({
-            "endpoint": cfg["endpoint"], "model": cfg["model"],
-            "has_key": bool(cfg.get("api_key")), "status": status,
-        })
+        return jsonify(_coach_public_config(cfg))
 
     incoming = request.json or {}
-    if incoming.get('endpoint') and not coach.endpoint_allowed(incoming['endpoint']):
-        return jsonify({"error": "Endpoint not allowed. Use https://ollama.com or "
-                                 "http://127.0.0.1:11434."}), 400
-    coach.save_config(
-        endpoint=incoming.get('endpoint'),
-        model=incoming.get('model'),
-        # Empty string clears; omit the field to leave the existing key untouched.
-        api_key=incoming.get('api_key') if 'api_key' in incoming else None,
-    )
-    return jsonify({"saved": True, "status": coach.ollama_status()})
+    if 'provider' in incoming and incoming['provider'] in coach.PROVIDERS:
+        cfg['provider'] = incoming['provider']
+
+    # Per-provider fields. Endpoint only editable for Ollama, and only to an allowed host.
+    for p, fields in (incoming.get('providers') or {}).items():
+        if p not in coach.PROVIDERS:
+            continue
+        pc = cfg['providers'].setdefault(p, {})
+        if 'model' in fields:
+            pc['model'] = fields['model']
+        if 'api_key' in fields:            # empty string clears; omit to leave untouched
+            pc['api_key'] = fields['api_key']
+        if 'endpoint' in fields and coach.PROVIDERS[p].get('editable'):
+            ep = fields['endpoint'] or coach.PROVIDERS[p]['endpoint']
+            if not coach.endpoint_allowed(p, ep):
+                return jsonify({"error": "Endpoint not allowed. Use https://ollama.com or "
+                                         "http://127.0.0.1:11434."}), 400
+            pc['endpoint'] = ep
+
+    coach.save_config(cfg)
+    return jsonify({"saved": True, **_coach_public_config(cfg)})
+
+
+@app.route('/api/coach/models')
+def api_coach_models():
+    """Live model list for a provider, using its saved key. Powers the model dropdown."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    provider = request.args.get('provider')
+    if provider not in coach.PROVIDERS:
+        return jsonify({"error": "Unknown provider"}), 400
+    cfg = coach.load_config()
+    ok, result = coach.list_models(provider, coach.provider_cfg(cfg, provider))
+    if not ok:
+        return jsonify({"ok": False, "error": result})
+    return jsonify({"ok": True, "models": result})
+
+
+@app.route('/api/coach/check_updates', methods=['POST'])
+def api_coach_check_updates():
+    """Weekly-throttled scan for newly released models across keyed providers."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    cfg = coach.load_config()
+    try:
+        new_by_provider, cfg = coach.check_new_models(cfg, force=bool(request.args.get('force')))
+        coach.save_config(cfg)
+        return jsonify({"new": new_by_provider, "checked": cfg.get("last_model_check")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/burn_rate')

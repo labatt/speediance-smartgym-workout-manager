@@ -1,41 +1,112 @@
-"""Turn a session's deterministic facts into a coaching read, via a local Ollama model.
+"""Turn a session's deterministic facts into a coaching read, via a chosen LLM provider.
 
 Split in two on purpose:
 
-- build_prompt() is PURE and unit-tested. It lays out the facts progression.py extracted
-  plus the athlete's own felt ratings, and hard-codes the lesson from 2026-07-14 into the
-  system prompt: a power sensor cannot measure effort, so the felt rating outranks any
+- build_prompt() / SYSTEM_PROMPT are PURE and unit-tested. They lay out the facts
+  progression.py extracted plus the athlete's own felt ratings, and hard-code the lesson
+  from 2026-07-14: a power sensor cannot measure effort, so the felt rating outranks any
   metric, and the model must cite the numbers it is given and never invent one.
-- ask_ollama() is a thin HTTP client to a local Ollama daemon. It is optional: if Ollama
-  is not running the feature degrades to a clear "start Ollama" message rather than an error.
+- Everything below the prompt is a thin, provider-agnostic HTTP client. Providers are
+  Ollama (cloud or local), Anthropic (Claude), OpenAI (ChatGPT), Google (Gemini), and
+  xAI (Grok). Each has a fixed API host (only Ollama's endpoint is user-editable), so
+  models are DISCOVERED live from the provider rather than hardcoded — and a weekly check
+  can diff that list to surface newly-released models.
 
 The model interprets; it does not compute. Every number it may cite is pre-computed here.
 """
 
+import datetime
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
 
-# Ollama Cloud: a hosted Ollama that speaks the same API at https://ollama.com with a Bearer
-# key (created at ollama.com/settings/keys). This box has no GPU and shares its RAM with
-# other services, so cloud is the right call — nothing runs locally. The same code works
-# against a local daemon (http://127.0.0.1:11434, no key) if that is ever preferred.
-DEFAULT_ENDPOINT = "https://ollama.com"
-DEFAULT_MODEL = "gpt-oss:120b"
+# Fixed API host per provider. Only Ollama's endpoint is user-editable (it can point at a
+# local daemon); the rest are constants, which keeps the SSRF surface to Ollama alone.
+PROVIDERS = {
+    "ollama":    {"label": "Ollama",             "endpoint": "https://ollama.com",                          "editable": True},
+    "anthropic": {"label": "Anthropic (Claude)", "endpoint": "https://api.anthropic.com"},
+    "openai":    {"label": "OpenAI (ChatGPT)",   "endpoint": "https://api.openai.com"},
+    "gemini":    {"label": "Google (Gemini)",    "endpoint": "https://generativelanguage.googleapis.com"},
+    "grok":      {"label": "xAI (Grok)",         "endpoint": "https://api.x.ai"},
+}
+DEFAULT_PROVIDER = "ollama"
+DEFAULT_MODELS = {"ollama": "gpt-oss:120b"}   # others: first from the live list
 
 _CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coach_config.json")
 
 
-def endpoint_allowed(endpoint):
-    """Only Ollama Cloud, or a local Ollama daemon on its standard port.
+# --------------------------------------------------------------------------- config
 
-    The endpoint is user-set and every call carries the Bearer key, so an unrestricted value
-    is an SSRF straight into this box's loopback services (Postgres 5432, Redis 6379, MySQL,
-    other apps) or cloud metadata (169.254.169.254). An allowlist is more robust than
-    filtering private IPs, which DNS rebinding can slip past. Both legitimate uses still work:
-    hosted cloud, and a local daemon (always on 11434).
+def _blank_provider(provider):
+    return {"api_key": "", "endpoint": PROVIDERS[provider]["endpoint"], "model": DEFAULT_MODELS.get(provider, "")}
+
+
+def load_config():
+    """Full multi-provider config. Migrates the old single-Ollama shape into providers.ollama."""
+    cfg = {
+        "provider": DEFAULT_PROVIDER,
+        "providers": {p: _blank_provider(p) for p in PROVIDERS},
+        "known_models": {},
+        "last_model_check": None,
+    }
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+        except Exception:
+            saved = {}
+        if "providers" in saved:
+            for p in PROVIDERS:
+                if p in saved.get("providers", {}):
+                    cfg["providers"][p].update({k: v for k, v in saved["providers"][p].items() if v is not None})
+            cfg["provider"] = saved.get("provider", cfg["provider"])
+            cfg["known_models"] = saved.get("known_models", {})
+            cfg["last_model_check"] = saved.get("last_model_check")
+        elif saved.get("api_key") or saved.get("model"):
+            # Legacy {endpoint, model, api_key} — it was Ollama-only.
+            cfg["providers"]["ollama"].update({
+                "api_key": saved.get("api_key", ""),
+                "endpoint": saved.get("endpoint") or PROVIDERS["ollama"]["endpoint"],
+                "model": saved.get("model") or DEFAULT_MODELS["ollama"],
+            })
+
+    # Env overrides (headless).
+    if os.environ.get("OLLAMA_HOST"):
+        cfg["providers"]["ollama"]["endpoint"] = os.environ["OLLAMA_HOST"]
+    if os.environ.get("OLLAMA_API_KEY"):
+        cfg["providers"]["ollama"]["api_key"] = os.environ["OLLAMA_API_KEY"]
+    return cfg
+
+
+def save_config(config):
+    with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    try:
+        os.chmod(_CONFIG_FILE, 0o600)   # holds API keys
+    except OSError:
+        pass
+    return config
+
+
+def active_provider(config):
+    p = config.get("provider", DEFAULT_PROVIDER)
+    return p if p in PROVIDERS else DEFAULT_PROVIDER
+
+
+def provider_cfg(config, provider):
+    return config["providers"].get(provider) or _blank_provider(provider)
+
+
+# --------------------------------------------------------------------------- endpoint safety
+
+def endpoint_allowed(provider, endpoint):
+    """A provider may only talk to its own fixed host — or, for Ollama, its allowlist.
+
+    Only Ollama's endpoint is user-editable, so it's the only SSRF surface: an arbitrary
+    value would send the Bearer key into this box's loopback services (Postgres, Redis) or
+    cloud metadata. An allowlist beats private-IP filtering (DNS rebinding defeats that).
     """
     try:
         u = urllib.parse.urlparse((endpoint or "").strip())
@@ -44,46 +115,217 @@ def endpoint_allowed(endpoint):
     host = (u.hostname or "").lower()
     if u.scheme not in ("http", "https"):
         return False
-    if host == "ollama.com" or host.endswith(".ollama.com"):
-        return u.scheme == "https"
-    if host in ("127.0.0.1", "localhost", "::1"):
-        return (u.port or 11434) == 11434   # local Ollama only; not 5432/6379/etc.
-    return False
+    if provider == "ollama":
+        if host == "ollama.com" or host.endswith(".ollama.com"):
+            return u.scheme == "https"
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return (u.port or 11434) == 11434   # local Ollama only; not 5432/6379/etc.
+        return False
+    # Fixed-host providers: endpoint must match the constant we ship.
+    return endpoint.rstrip("/") == PROVIDERS.get(provider, {}).get("endpoint", "").rstrip("/")
 
 
-def load_config():
-    """{endpoint, model, api_key}. File first, then env override, then defaults."""
-    cfg = {"endpoint": DEFAULT_ENDPOINT, "model": DEFAULT_MODEL, "api_key": ""}
-    if os.path.exists(_CONFIG_FILE):
+# --------------------------------------------------------------------------- HTTP helpers
+
+def _request(method, url, headers, body=None, timeout=120):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return True, json.loads(resp.read() or "{}"), None
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="ignore")[:300]
+        return False, None, (e.code, detail)
+    except (urllib.error.URLError, ConnectionError, OSError) as e:
+        return False, None, (0, str(e))
+
+
+def _auth_headers(provider, pc):
+    key = pc.get("api_key", "")
+    if provider == "anthropic":
+        return {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
+    if provider in ("openai", "grok"):
+        return {"content-type": "application/json", "Authorization": "Bearer " + key}
+    if provider == "gemini":
+        return {"content-type": "application/json"}   # key rides in the query string
+    # ollama
+    h = {"content-type": "application/json"}
+    if key:
+        h["Authorization"] = "Bearer " + key
+    return h
+
+
+def _err_reason(provider, code, detail):
+    if code in (401, 403):
+        return f"{PROVIDERS[provider]['label']} rejected the API key ({code}). Check it in Settings."
+    if code == 404:
+        return f"{PROVIDERS[provider]['label']}: not found (404). The model may be unavailable to this key."
+    if code == 429:
+        return f"{PROVIDERS[provider]['label']} rate-limited (429). Try again shortly."
+    if code == 0:
+        return f"Couldn't reach {PROVIDERS[provider]['label']}: {detail}"
+    return f"{PROVIDERS[provider]['label']} error {code}: {detail}"
+
+
+# --------------------------------------------------------------------------- model discovery
+
+def _looks_like_chat_model(mid):
+    """OpenAI lists embeddings/tts/whisper/etc.; keep the chat-capable ones."""
+    mid = mid.lower()
+    if any(x in mid for x in ("embedding", "whisper", "tts", "dall-e", "moderation",
+                              "audio", "realtime", "transcribe", "image", "search")):
+        return False
+    return mid.startswith("gpt") or mid.startswith("chatgpt") or (len(mid) > 1 and mid[0] == "o" and mid[1].isdigit())
+
+
+def list_models(provider, pc):
+    """(ok, [model_id, ...]) discovered live from the provider, or (False, reason)."""
+    endpoint = (pc.get("endpoint") or PROVIDERS[provider]["endpoint"]).rstrip("/")
+    if not endpoint_allowed(provider, endpoint):
+        return False, "Endpoint not allowed."
+    if provider != "gemini" and not pc.get("api_key"):
+        return False, "No API key set for this provider."
+
+    if provider in ("openai", "grok"):
+        ok, data, err = _request("GET", endpoint + "/v1/models", _auth_headers(provider, pc), timeout=20)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        if provider == "openai":
+            ids = [i for i in ids if _looks_like_chat_model(i)]
+        return True, sorted(ids)
+
+    if provider == "anthropic":
+        ok, data, err = _request("GET", endpoint + "/v1/models?limit=1000", _auth_headers(provider, pc), timeout=20)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        return True, sorted(m.get("id") for m in data.get("data", []) if m.get("id"))
+
+    if provider == "gemini":
+        url = endpoint + "/v1beta/models?key=" + urllib.parse.quote(pc.get("api_key", "")) + "&pageSize=1000"
+        ok, data, err = _request("GET", url, _auth_headers(provider, pc), timeout=20)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        ids = []
+        for m in data.get("models", []):
+            if "generateContent" in (m.get("supportedGenerationMethods") or []):
+                ids.append((m.get("name") or "").replace("models/", ""))
+        return True, sorted(i for i in ids if i)
+
+    # ollama — /api/tags (cloud lists cloud models; local lists pulls)
+    ok, data, err = _request("GET", endpoint + "/api/tags", _auth_headers(provider, pc), timeout=20)
+    if not ok:
+        return False, _err_reason(provider, *err)
+    return True, sorted(m.get("name") for m in data.get("models", []) if m.get("name"))
+
+
+# --------------------------------------------------------------------------- chat
+
+def _chat_provider(provider, pc, prompt, timeout):
+    endpoint = (pc.get("endpoint") or PROVIDERS[provider]["endpoint"]).rstrip("/")
+    if not endpoint_allowed(provider, endpoint):
+        return False, "Endpoint not allowed."
+    model = pc.get("model")
+    if not model:
+        return False, "No model selected. Pick one in Settings."
+    if provider != "gemini" and not pc.get("api_key") and provider != "ollama":
+        return False, "No API key set for this provider."
+
+    if provider in ("openai", "grok"):
+        body = {"model": model, "temperature": 0.3, "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+        ok, data, err = _request("POST", endpoint + "/v1/chat/completions", _auth_headers(provider, pc), body, timeout)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        return True, ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
+
+    if provider == "anthropic":
+        body = {"model": model, "max_tokens": 2000, "system": SYSTEM_PROMPT,
+                "messages": [{"role": "user", "content": prompt}]}
+        ok, data, err = _request("POST", endpoint + "/v1/messages", _auth_headers(provider, pc), body, timeout)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        return True, text.strip()
+
+    if provider == "gemini":
+        url = endpoint + "/v1beta/models/" + urllib.parse.quote(model) + ":generateContent?key=" + urllib.parse.quote(pc.get("api_key", ""))
+        body = {"system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.3}}
+        ok, data, err = _request("POST", url, _auth_headers(provider, pc), body, timeout)
+        if not ok:
+            return False, _err_reason(provider, *err)
+        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts", [])
+        return True, "".join(p.get("text", "") for p in parts).strip()
+
+    # ollama
+    body = {"model": model, "stream": False, "options": {"temperature": 0.3},
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+    ok, data, err = _request("POST", endpoint + "/api/chat", _auth_headers(provider, pc), body, timeout)
+    if not ok:
+        return False, _err_reason(provider, *err)
+    return True, ((data.get("message") or {}).get("content") or "").strip()
+
+
+def chat(prompt, config=None, timeout=120):
+    """Run the coaching prompt through the ACTIVE provider. (ok, text_or_reason)."""
+    config = config or load_config()
+    provider = active_provider(config)
+    return _chat_provider(provider, provider_cfg(config, provider), prompt, timeout)
+
+
+def status(config=None):
+    """Lightweight reachability/config summary for the active provider (no model call)."""
+    config = config or load_config()
+    provider = active_provider(config)
+    pc = provider_cfg(config, provider)
+    has_key = bool(pc.get("api_key")) or provider == "ollama"
+    return {"provider": provider, "label": PROVIDERS[provider]["label"],
+            "model": pc.get("model"), "has_key": bool(pc.get("api_key")),
+            "ready": bool(pc.get("model")) and has_key}
+
+
+# --------------------------------------------------------------------------- weekly new-model check
+
+def check_new_models(config, force=False, interval_days=7):
+    """Diff each keyed provider's live model list against what we last saw.
+
+    Returns (new_by_provider, config) and records the current lists + timestamp. Throttled to
+    once per interval unless force=True; today's date is passed in via datetime at call time.
+    """
+    today = datetime.date.today()
+    last = config.get("last_model_check")
+    if not force and last:
         try:
-            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg.update({k: v for k, v in json.load(f).items() if v})
+            if (today - datetime.date.fromisoformat(last)).days < interval_days:
+                return {}, config
         except Exception:
             pass
-    if os.environ.get("OLLAMA_HOST"):
-        cfg["endpoint"] = os.environ["OLLAMA_HOST"]
-    if os.environ.get("OLLAMA_MODEL"):
-        cfg["model"] = os.environ["OLLAMA_MODEL"]
-    if os.environ.get("OLLAMA_API_KEY"):
-        cfg["api_key"] = os.environ["OLLAMA_API_KEY"]
-    return cfg
+
+    known = config.setdefault("known_models", {})
+    new_by_provider = {}
+    for provider in PROVIDERS:
+        pc = provider_cfg(config, provider)
+        if provider != "ollama" and not pc.get("api_key"):
+            continue
+        if provider == "ollama" and not pc.get("api_key"):
+            continue
+        ok, models = list_models(provider, pc)
+        if not ok or not isinstance(models, list):
+            continue
+        prev = set(known.get(provider, []))
+        fresh = [m for m in models if m not in prev]
+        if prev and fresh:                    # only report once we have a prior baseline
+            new_by_provider[provider] = fresh
+        known[provider] = models
+
+    config["last_model_check"] = today.isoformat()
+    return new_by_provider, config
 
 
-def save_config(endpoint=None, model=None, api_key=None):
-    cfg = load_config()
-    if endpoint is not None:
-        cfg["endpoint"] = endpoint or DEFAULT_ENDPOINT
-    if model is not None:
-        cfg["model"] = model or DEFAULT_MODEL
-    if api_key is not None:
-        cfg["api_key"] = api_key
-    with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
-    try:
-        os.chmod(_CONFIG_FILE, 0o600)   # holds the API key
-    except OSError:
-        pass
-    return cfg
+# =========================================================================== PURE PROMPT
+# Everything below is pure and unit-tested — do not add I/O here.
 
 FEEL_WORDS = {
     "too_easy": "TOO EASY", "easy": "easy", "right": "just right",
@@ -150,71 +392,3 @@ def build_prompt(snapshot, notes, comparison=None):
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
                  "Weight it far below the athlete's felt rating and rep completion.")
     return "\n".join(lines)
-
-
-def _headers(cfg):
-    h = {"Content-Type": "application/json"}
-    if cfg.get("api_key"):
-        h["Authorization"] = "Bearer " + cfg["api_key"]
-    return h
-
-
-def ask_ollama(prompt, cfg=None, timeout=120):
-    """Call Ollama (cloud or local) via /api/chat. Returns (ok, text_or_reason)."""
-    cfg = cfg or load_config()
-    endpoint = cfg["endpoint"].rstrip("/")
-    if not endpoint_allowed(endpoint):
-        return False, ("Endpoint not allowed. Use https://ollama.com or a local Ollama at "
-                       "http://127.0.0.1:11434.")
-    is_cloud = "ollama.com" in endpoint
-
-    if is_cloud and not cfg.get("api_key"):
-        return False, "No Ollama Cloud API key set. Add one in Settings (get it from ollama.com/settings/keys)."
-
-    body = json.dumps({
-        "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "options": {"temperature": 0.3},
-    }).encode()
-
-    req = urllib.request.Request(endpoint + "/api/chat", data=body, headers=_headers(cfg))
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read())
-        return True, ((data.get("message") or {}).get("content") or "").strip()
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="ignore")[:200]
-        if e.code in (401, 403):
-            return False, "Ollama rejected the API key (401/403). Check the key in Settings."
-        if e.code == 404:
-            hint = f"ollama pull {cfg['model']}" if not is_cloud else "check the model name against ollama.com/search?c=cloud"
-            return False, f"Model '{cfg['model']}' not found. {hint}"
-        return False, f"Ollama error {e.code}: {detail}"
-    except (urllib.error.URLError, ConnectionError, OSError) as e:
-        where = "Ollama Cloud" if is_cloud else f"Ollama at {endpoint}"
-        return False, f"Couldn't reach {where}: {e}"
-
-
-def ollama_status(cfg=None):
-    """Reachable? Which models are available? (Cloud /api/tags lists local pulls only,
-    so for cloud we report reachability via the key rather than a model list.)"""
-    cfg = cfg or load_config()
-    endpoint = cfg["endpoint"].rstrip("/")
-    is_cloud = "ollama.com" in endpoint
-    if not endpoint_allowed(endpoint):
-        return {"up": False, "cloud": is_cloud, "model": cfg["model"],
-                "has_key": bool(cfg.get("api_key")), "models": [], "blocked": True}
-    try:
-        req = urllib.request.Request(endpoint + "/api/tags", headers=_headers(cfg))
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            tags = json.loads(resp.read())
-        return {"up": True, "cloud": is_cloud, "model": cfg["model"],
-                "has_key": bool(cfg.get("api_key")),
-                "models": [m.get("name") for m in tags.get("models", [])]}
-    except Exception:
-        return {"up": False, "cloud": is_cloud, "model": cfg["model"],
-                "has_key": bool(cfg.get("api_key")), "models": []}

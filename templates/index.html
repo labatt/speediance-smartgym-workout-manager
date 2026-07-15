@@ -298,6 +298,24 @@
         renderCalendarHeader();
         fetchCalendarData();
         topUpSchedule();
+        checkCoachModels();
+    }
+
+    // Weekly check for newly released AI models (throttled server-side). Runs from the
+    // dashboard so it happens even if Settings is never opened; a one-line banner links there.
+    async function checkCoachModels() {
+        try {
+            const d = await (await fetch('/api/coach/check_updates', { method: 'POST' })).json();
+            const entries = Object.entries(d.new || {});
+            if (!entries.length) return;
+            const n = entries.reduce((a, [, ms]) => a + ms.length, 0);
+            const bar = document.createElement('div');
+            bar.className = 'bg-green-900/40 border border-green-700 text-green-200 text-sm rounded p-2 mb-4 flex justify-between items-center';
+            bar.innerHTML = `<span>${n} new AI model${n === 1 ? '' : 's'} available for the Coach.</span>` +
+                `<a href="/settings" class="underline font-semibold ml-3">Choose in Settings →</a>`;
+            const main = document.querySelector('main') || document.body;
+            main.insertBefore(bar, main.firstChild);
+        } catch (e) { /* best effort */ }
     }
 
     // Keep a repeating schedule's horizon full. Deliberately quiet: it only ever writes
