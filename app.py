@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from api_client import SpeedianceClient, SpeedianceAuthError
 from debug_routes import init_debug
 import schedule_planner
+import progression
 import datetime
 import json
 import os
@@ -654,6 +655,112 @@ def api_schedule_topup():
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Training journal
+#
+# Records a factual snapshot of each completed session plus the athlete's own subjective
+# feel (overall, and optionally per exercise — any, all, or none). Deliberately no
+# verdicts: the 2026-07-14 session showed a power-only rule calling an easy Leg Curl
+# "grinding" and a hard Hip Abduction "too light". The felt rating is the ground truth the
+# sensors miss; value comes from comparing facts + feel across sessions, not from a
+# same-day oracle. See progression.py.
+# ---------------------------------------------------------------------------
+
+JOURNAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'journal.json')
+
+
+def load_journal():
+    if os.path.exists(JOURNAL_FILE):
+        try:
+            with open(JOURNAL_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Could not read journal: {e}")
+    return {}
+
+
+def save_journal(data):
+    with open(JOURNAL_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def _analyze_training(training_id):
+    """Facts for one session, enriched with muscle names from the library."""
+    detail = client.get_training_detail(training_id, 'custom')
+    try:
+        lib = {e['id']: e for e in client.get_library()}
+        for ex in detail or []:
+            g = lib.get(ex.get('actionLibraryGroupId'))
+            if g and not ex.get('mainMuscleGroupName'):
+                ex['mainMuscleGroupName'] = g.get('mainMuscleGroupName')
+    except Exception:
+        pass  # names are a nicety; the region rollup works without them
+    return progression.analyze_session(detail)
+
+
+@app.route('/api/session/<int:training_id>/analysis')
+def api_session_analysis(training_id):
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        snapshot = _analyze_training(training_id)
+        notes = load_journal().get(str(training_id), {})
+
+        # Line up against the previous session of the SAME workout template.
+        prev = None
+        template_id = request.args.get('template_id')
+        if template_id:
+            try:
+                end = datetime.date.today()
+                start = end - datetime.timedelta(days=120)
+                records = client.get_training_records(start.isoformat(), end.isoformat())
+                earlier = [r for r in records
+                           if str(r.get('templateId')) == str(template_id)
+                           and r.get('trainingId') != training_id]
+                if earlier:
+                    prev = _analyze_training(earlier[0]['trainingId'])
+            except Exception:
+                prev = None
+
+        return jsonify({
+            "snapshot": snapshot,
+            "notes": notes,
+            "comparison": progression.compare_sessions(snapshot, prev) if prev else None,
+            "feel_scale": progression.FEEL_SCALE,
+        })
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/session/<int:training_id>/notes', methods=['POST'])
+def api_session_notes(training_id):
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    incoming = request.json or {}
+    journal = load_journal()
+    entry = journal.get(str(training_id), {})
+
+    # Every field optional. overall: a feel rating or null. exercises: {name: rating}.
+    if 'overall' in incoming:
+        entry['overall'] = incoming['overall']
+    if 'note' in incoming:
+        entry['note'] = incoming['note']
+    if 'exercises' in incoming and isinstance(incoming['exercises'], dict):
+        ex_notes = entry.setdefault('exercises', {})
+        for name, feel in incoming['exercises'].items():
+            if feel:
+                ex_notes[name] = feel
+            else:
+                ex_notes.pop(name, None)
+
+    journal[str(training_id)] = entry
+    save_journal(journal)
+    return jsonify(entry)
 
 
 @app.route('/api/burn_rate')

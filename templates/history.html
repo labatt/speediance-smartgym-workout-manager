@@ -90,6 +90,20 @@
         <!-- Exercise List -->
         <div class="overflow-y-auto flex-grow" id="detailContent">
             <div id="detailLoading" class="text-center py-8 text-gray-500">Loading details...</div>
+
+            <!-- How did it feel? Overall + optional per-exercise. Everything optional. -->
+            <div id="feelPanel" class="hidden mb-4 bg-gray-900/60 border border-gray-700 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-sm font-bold text-white">How did today feel?</h4>
+                    <span id="feelSaved" class="text-xs text-green-400 opacity-0 transition-opacity">saved</span>
+                </div>
+                <div id="overallFeel" class="flex flex-wrap gap-1.5 mb-2"></div>
+                <p class="text-[11px] text-gray-500">Optional — and you can rate each exercise on its card below. Notes are saved to compare against next time.</p>
+            </div>
+
+            <!-- Muscle-group rollup -->
+            <div id="groupRollup" class="hidden mb-4"></div>
+
             <div id="detailExercises" class="space-y-3"></div>
         </div>
 
@@ -447,10 +461,141 @@
             document.getElementById('detailFooter').classList.remove('hidden');
             document.getElementById('detailLoading').classList.add('hidden');
             renderDetail(data, rec);
+            loadProgression(rec);   // facts + feel, only for detailed (custom) sessions
         } catch (err) {
             console.error('Error fetching detail:', err);
             document.getElementById('detailLoading').textContent = 'Error loading details: ' + err.message;
         }
+    }
+
+    // ---- Training journal: facts + subjective feel, compared over time ----
+
+    const FEEL_LABELS = {
+        too_easy: 'Too easy', easy: 'Easy', right: 'Just right', hard: 'Hard', too_hard: 'Too hard',
+    };
+    const FEEL_COLOR = {
+        too_easy: 'bg-blue-600', easy: 'bg-teal-600', right: 'bg-green-600',
+        hard: 'bg-orange-600', too_hard: 'bg-red-600',
+    };
+    let progressionState = { trainingId: null, notes: { exercises: {} } };
+
+    function feelChip(current, value, onPick) {
+        const active = current === value;
+        const b = document.createElement('button');
+        b.className = `text-xs px-2 py-1 rounded transition ${active ? FEEL_COLOR[value] + ' text-white font-bold' : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'}`;
+        b.textContent = FEEL_LABELS[value];
+        b.onclick = () => onPick(active ? null : value);  // click again to clear
+        return b;
+    }
+
+    async function saveNotes(patch) {
+        const id = progressionState.trainingId;
+        if (!id) return;
+        const res = await fetch(`/api/session/${id}/notes`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(patch),
+        });
+        progressionState.notes = await res.json();
+        const saved = document.getElementById('feelSaved');
+        saved.style.opacity = '1';
+        setTimeout(() => { saved.style.opacity = '0'; }, 1200);
+    }
+
+    async function loadProgression(rec) {
+        // Only sessions with an exercise breakdown (custom templates) can be analysed.
+        const apiType = (TYPE_MAP[rec.type] || {}).detailType;
+        document.getElementById('feelPanel').classList.add('hidden');
+        document.getElementById('groupRollup').classList.add('hidden');
+        if (apiType !== 'custom') return;
+
+        progressionState = { trainingId: rec.trainingId, notes: { exercises: {} } };
+        const url = `/api/session/${rec.trainingId}/analysis` + (rec.templateId ? `?template_id=${rec.templateId}` : '');
+        let data;
+        try { data = await (await fetch(url)).json(); } catch { return; }
+        if (data.error) return;
+        progressionState.notes = data.notes || { exercises: {} };
+
+        // Overall feel row
+        const overall = document.getElementById('overallFeel');
+        overall.innerHTML = '';
+        (data.feel_scale || []).forEach(v => {
+            overall.appendChild(feelChip(progressionState.notes.overall, v, async val => {
+                await saveNotes({ overall: val });
+                loadProgressionRefresh();
+            }));
+        });
+        document.getElementById('feelPanel').classList.remove('hidden');
+
+        renderGroupRollup(data.snapshot.groups);
+        annotateExerciseCards(data.snapshot, data.comparison);
+    }
+
+    function loadProgressionRefresh() {
+        // Re-render overall chips to reflect the new selection without a round trip.
+        const overall = document.getElementById('overallFeel');
+        overall.innerHTML = '';
+        ['too_easy','easy','right','hard','too_hard'].forEach(v => {
+            overall.appendChild(feelChip(progressionState.notes.overall, v, async val => {
+                await saveNotes({ overall: val }); loadProgressionRefresh();
+            }));
+        });
+    }
+
+    function renderGroupRollup(groups) {
+        if (!groups || !groups.length) return;
+        const el = document.getElementById('groupRollup');
+        el.innerHTML = `<div class="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">By muscle group</div>
+            <div class="flex flex-wrap gap-2">` +
+            groups.map(g => {
+                const tone = g.missed ? 'border-orange-700 text-orange-300' : 'border-gray-700 text-gray-300';
+                return `<span class="text-xs px-2 py-1 rounded border ${tone} bg-gray-900">
+                    <strong>${g.region}</strong> · ${g.exercises.length} ex${g.missed ? ` · ${g.missed} missed reps` : ' · all complete'}
+                </span>`;
+            }).join('') + `</div>`;
+        el.classList.remove('hidden');
+    }
+
+    // Add a per-exercise feel row + comparison line to each exercise card.
+    function annotateExerciseCards(snapshot, comparison) {
+        const cmpByName = {};
+        (comparison || []).forEach(c => { cmpByName[c.name] = c; });
+
+        document.querySelectorAll('#detailExercises [data-ex-name]').forEach(card => {
+            const name = card.getAttribute('data-ex-name');
+            const facts = snapshot.exercises.find(e => e.name === name);
+            if (!facts) return;
+
+            const row = document.createElement('div');
+            row.className = 'flex flex-wrap items-center gap-1.5 px-3 pb-2 pt-1 border-t border-gray-700/40';
+            const label = document.createElement('span');
+            label.className = 'text-[11px] text-gray-500 mr-1';
+            label.textContent = 'Felt:';
+            row.appendChild(label);
+
+            ['too_easy','easy','right','hard','too_hard'].forEach(v => {
+                row.appendChild(feelChip((progressionState.notes.exercises || {})[name], v, async val => {
+                    await saveNotes({ exercises: { [name]: val } });
+                    annotateExerciseCards(snapshot, comparison);  // re-render selection state
+                }));
+            });
+
+            // Comparison against the previous session of this workout.
+            const cmp = cmpByName[name];
+            if (cmp && cmp.status !== 'first_time' && cmp.load_delta !== null && cmp.load_delta !== undefined) {
+                const d = cmp.load_delta;
+                const txt = d > 0 ? `↑ ${d} vs last` : d < 0 ? `↓ ${-d} vs last` : 'same as last';
+                const c = d > 0 ? 'text-green-400' : d < 0 ? 'text-yellow-400' : 'text-gray-500';
+                const badge = document.createElement('span');
+                badge.className = `text-[11px] ${c} ml-2`;
+                badge.textContent = txt;
+                row.appendChild(badge);
+            }
+
+            // Replace any prior feel row (re-render), else append.
+            const existing = card.querySelector('[data-feel-row]');
+            if (existing) existing.remove();
+            row.setAttribute('data-feel-row', '1');
+            card.appendChild(row);
+        });
     }
 
     function renderDetail(data, rec) {
@@ -480,6 +625,7 @@
         exercises.forEach(ex => {
             const card = document.createElement('div');
             card.className = 'bg-gray-900 rounded-lg border border-gray-700 overflow-hidden';
+            card.setAttribute('data-ex-name', ex.actionLibraryName || 'Exercise');
 
             const name = ex.actionLibraryName || 'Exercise';
             const sets = ex.finishedReps || [];

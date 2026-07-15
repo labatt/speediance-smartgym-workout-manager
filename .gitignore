@@ -16,3 +16,4 @@ library_cache*.json
 .pytest_cache/
 .venv/
 schedules.json
+journal.json
