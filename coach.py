@@ -14,8 +14,9 @@ The model interprets; it does not compute. Every number it may cite is pre-compu
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 # Ollama Cloud: a hosted Ollama that speaks the same API at https://ollama.com with a Bearer
 # key (created at ollama.com/settings/keys). This box has no GPU and shares its RAM with
@@ -25,6 +26,29 @@ DEFAULT_ENDPOINT = "https://ollama.com"
 DEFAULT_MODEL = "gpt-oss:120b"
 
 _CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coach_config.json")
+
+
+def endpoint_allowed(endpoint):
+    """Only Ollama Cloud, or a local Ollama daemon on its standard port.
+
+    The endpoint is user-set and every call carries the Bearer key, so an unrestricted value
+    is an SSRF straight into this box's loopback services (Postgres 5432, Redis 6379, MySQL,
+    other apps) or cloud metadata (169.254.169.254). An allowlist is more robust than
+    filtering private IPs, which DNS rebinding can slip past. Both legitimate uses still work:
+    hosted cloud, and a local daemon (always on 11434).
+    """
+    try:
+        u = urllib.parse.urlparse((endpoint or "").strip())
+    except Exception:
+        return False
+    host = (u.hostname or "").lower()
+    if u.scheme not in ("http", "https"):
+        return False
+    if host == "ollama.com" or host.endswith(".ollama.com"):
+        return u.scheme == "https"
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return (u.port or 11434) == 11434   # local Ollama only; not 5432/6379/etc.
+    return False
 
 
 def load_config():
@@ -139,6 +163,9 @@ def ask_ollama(prompt, cfg=None, timeout=120):
     """Call Ollama (cloud or local) via /api/chat. Returns (ok, text_or_reason)."""
     cfg = cfg or load_config()
     endpoint = cfg["endpoint"].rstrip("/")
+    if not endpoint_allowed(endpoint):
+        return False, ("Endpoint not allowed. Use https://ollama.com or a local Ollama at "
+                       "http://127.0.0.1:11434.")
     is_cloud = "ollama.com" in endpoint
 
     if is_cloud and not cfg.get("api_key"):
@@ -178,6 +205,9 @@ def ollama_status(cfg=None):
     cfg = cfg or load_config()
     endpoint = cfg["endpoint"].rstrip("/")
     is_cloud = "ollama.com" in endpoint
+    if not endpoint_allowed(endpoint):
+        return {"up": False, "cloud": is_cloud, "model": cfg["model"],
+                "has_key": bool(cfg.get("api_key")), "models": [], "blocked": True}
     try:
         req = urllib.request.Request(endpoint + "/api/tags", headers=_headers(cfg))
         with urllib.request.urlopen(req, timeout=5) as resp:

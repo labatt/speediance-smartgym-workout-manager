@@ -561,11 +561,14 @@
             const url = `/api/session/${rec.trainingId}/coach` + (rec.templateId ? `?template_id=${rec.templateId}` : '');
             const res = await fetch(url, { method: 'POST' });
             const data = await res.json();
-            if (data.error) out.innerHTML = `<span class="text-red-400">${data.error}</span>`;
-            else if (!data.ok) out.innerHTML = `<span class="text-yellow-400">${data.text}</span>`;
-            else out.textContent = data.text;
+            // textContent, not innerHTML: these strings carry user-set values (model name,
+            // endpoint) and raw exception text. Render as text, colour via className only.
+            if (data.error) { out.className = 'text-sm text-red-400 whitespace-pre-wrap leading-relaxed'; out.textContent = data.error; }
+            else if (!data.ok) { out.className = 'text-sm text-yellow-400 whitespace-pre-wrap leading-relaxed'; out.textContent = data.text; }
+            else { out.className = 'text-sm text-gray-300 whitespace-pre-wrap leading-relaxed'; out.textContent = data.text; }
         } catch (e) {
-            out.innerHTML = `<span class="text-red-400">Request failed: ${e.message}</span>`;
+            out.className = 'text-sm text-red-400 whitespace-pre-wrap leading-relaxed';
+            out.textContent = 'Request failed: ' + e.message;
         } finally {
             btn.disabled = false;
             btn.textContent = 'Re-analyze';

@@ -69,9 +69,42 @@ class TestSystemPromptGuardrails(unittest.TestCase):
         self.assertIn("cannot measure effort", s)
 
 
+class TestEndpointAllowlist(unittest.TestCase):
+    def test_allows_cloud_https(self):
+        self.assertTrue(coach.endpoint_allowed("https://ollama.com"))
+
+    def test_allows_local_daemon_standard_port(self):
+        self.assertTrue(coach.endpoint_allowed("http://127.0.0.1:11434"))
+        self.assertTrue(coach.endpoint_allowed("http://localhost:11434"))
+
+    def test_blocks_loopback_service_ports(self):
+        # The whole point: no SSRF into this box's own services.
+        for bad in ("http://127.0.0.1:5432", "http://127.0.0.1:6379", "http://localhost:5001"):
+            self.assertFalse(coach.endpoint_allowed(bad), bad)
+
+    def test_blocks_cloud_metadata_and_private_hosts(self):
+        for bad in ("http://169.254.169.254/latest/meta-data/",
+                    "http://10.0.0.5:11434", "http://192.168.1.10:11434",
+                    "http://172.17.0.1:11434"):
+            self.assertFalse(coach.endpoint_allowed(bad), bad)
+
+    def test_blocks_non_http_schemes_and_spoofed_hosts(self):
+        self.assertFalse(coach.endpoint_allowed("file:///etc/passwd"))
+        self.assertFalse(coach.endpoint_allowed("gopher://127.0.0.1:6379"))
+        self.assertFalse(coach.endpoint_allowed("http://ollama.com.evil.test"))
+        self.assertFalse(coach.endpoint_allowed("http://ollama.com"))  # cloud must be https
+
+    def test_blocked_endpoint_refused_before_any_request(self):
+        cfg = {"endpoint": "http://127.0.0.1:5432", "model": "x", "api_key": "k"}
+        ok, msg = coach.ask_ollama("hi", cfg=cfg, timeout=2)
+        self.assertFalse(ok)
+        self.assertIn("not allowed", msg)
+
+
 class TestOllamaOffline(unittest.TestCase):
     def test_unreachable_returns_friendly_reason(self):
-        cfg = {"endpoint": "http://127.0.0.1:59999", "model": "x", "api_key": ""}
+        # An ALLOWED endpoint (local Ollama port) that simply isn't running here.
+        cfg = {"endpoint": "http://127.0.0.1:11434", "model": "x", "api_key": ""}
         ok, msg = coach.ask_ollama("hi", cfg=cfg, timeout=2)
         self.assertFalse(ok)
         self.assertIn("Couldn't reach", msg)

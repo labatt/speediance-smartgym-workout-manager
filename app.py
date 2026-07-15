@@ -805,6 +805,12 @@ def api_session_coach(training_id):
 
 @app.route('/api/coach/config', methods=['GET', 'POST'])
 def api_coach_config():
+    # Same gate as every sibling route. This is the one endpoint that can WRITE the coach
+    # config — the outbound endpoint and the API key — so an unauthenticated write here is
+    # the worst of the set. Gate before either branch runs.
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+
     if request.method == 'GET':
         cfg = coach.load_config()
         status = coach.ollama_status(cfg)
@@ -815,6 +821,9 @@ def api_coach_config():
         })
 
     incoming = request.json or {}
+    if incoming.get('endpoint') and not coach.endpoint_allowed(incoming['endpoint']):
+        return jsonify({"error": "Endpoint not allowed. Use https://ollama.com or "
+                                 "http://127.0.0.1:11434."}), 400
     coach.save_config(
         endpoint=incoming.get('endpoint'),
         model=incoming.get('model'),
