@@ -60,6 +60,28 @@ were shown as failed rep targets, in red:
 |---|---|
 | ![before](docs/img/history-before.png) | ![after](docs/img/history-after.png) |
 
+### Training journal and an optional AI coach
+
+- **Session snapshot + how it felt** — each completed session records a factual snapshot
+  (completion, per-set load or Vita level, ROM trend, the device's own force/amplitude/balance
+  scores) alongside your own **felt rating**: an overall "how hard was today", plus an optional
+  rating per exercise. Any, all, or none.
+- **Compared over time and by muscle group** — the same workout lines up against its last
+  outing (load deltas per exercise), rolled up by body region.
+- **Facts, not a false oracle** — it deliberately does **not** hand down "add weight" verdicts
+  from sensors alone. A power-only rule was tried and got it exactly backwards: it called an
+  easy exercise "grinding" (one explosive rep skewed the maths) and a hard one "too light" (a
+  small stabiliser burns without ever producing high wattage). A sensor cannot measure effort —
+  your felt rating is the ground truth it misses, and the analysis code is unit-tested to never
+  emit a verdict.
+- **Optional coach (Ollama)** — a "Coach's read" button sends the *computed facts and your felt
+  ratings* to an Ollama model (Cloud by default, so nothing runs on this machine) and gets back
+  a short read grouped by muscle group. Deterministic code produces every number; the model
+  only interprets, under a prompt that forbids inventing figures and makes your felt rating
+  outrank any metric. It speaks in *levels* for Vita, and recommends changes only where the
+  evidence and your rating agree. Configure the endpoint, model, and API key in Settings; the
+  key is stored owner-only and never leaves the machine except in the model call itself.
+
 ### API compatibility with newer machine software
 
 - **Current app version advertised** — the client previously announced an outdated version, and
@@ -162,9 +184,19 @@ python app.py                          # http://localhost:5001
 ```
 
 For a long-running deployment, serve the Flask app with a WSGI server rather than
-`python app.py` (which enables the debug server). The app has **no authentication of its own**
-and exposes your API token on the Settings page, so if you host it anywhere reachable, put an
-authenticating reverse proxy in front of it.
+`python app.py` (which enables the debug server), and run a **single worker** — the app holds
+one in-memory session, so multiple workers would disagree about whether you're logged in. The
+app has **no authentication of its own** and exposes your API token on the Settings page, so if
+you host it anywhere reachable, put an authenticating reverse proxy in front of it.
+
+### Signing in
+
+Speediance allows **one live session per account**, so signing in on the phone app logs this
+app out, and vice versa. The nav bar always shows the current state — a green dot when
+connected, a red "Signed out" with a one-click Log in when not. Tick **Remember me** at login
+and the app re-authenticates itself automatically when the token is invalidated from elsewhere,
+instead of stranding you; your password is then stored in `config.json` on this machine
+(owner-only) to make that possible, and "Forget it" in Settings erases it.
 
 ### Docker
 

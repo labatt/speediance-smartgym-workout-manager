@@ -154,6 +154,17 @@ seconds back into reps.
 
 ## Added
 
+### Session state in the nav bar, and remembered sign-in
+
+Speediance permits one live session per account, so signing in on the phone app silently
+invalidates this app's token. That used to look like the app randomly breaking — pages
+redirected to Settings with no explanation, and you retyped your password every time. The nav
+bar now always shows session state (green connected / red signed-out with a one-click Log in),
+and an optional "Remember me" lets the app re-authenticate itself transparently when the token
+is invalidated from elsewhere. The credentials, when remembered, are stored owner-only in
+`config.json`; "Forget it" in Settings erases them. The server also runs a single worker now, so
+one coherent session is reported rather than flickering between workers.
+
 ### Per-rep performance telemetry in history
 
 The machine records **one value per rep** for power, rope speed, range of motion, time under
@@ -242,3 +253,16 @@ The API's data-model traps, written down so nobody has to rediscover them: the `
 the `completionMethod` enum, level-vs-weight, the ragged per-rep telemetry arrays, the
 `weights`-is-not-resistance trap on dual-cable exercises, the unilateral index-parity contract, and
 the units asymmetry between read and write.
+
+## Security
+
+Defense-in-depth on the coach endpoints:
+
+- **Auth gate consistency** — `/api/coach/config` (the one route that writes the coach endpoint
+  and API key) now checks the session token like every sibling route.
+- **SSRF allowlist** — the coach endpoint is user-set and every call carries the Bearer key, so
+  it is restricted to `https://ollama.com` or a local Ollama on its standard port. This blocks
+  pointing it at the box's own loopback services (Postgres, Redis, MySQL) or cloud metadata. An
+  allowlist is used rather than private-IP filtering, which DNS rebinding can defeat.
+- **XSS** — the "Coach's read" error paths render server strings (which include the user-set
+  model name and raw exception text) with `textContent`, not `innerHTML`.
