@@ -75,13 +75,16 @@ class SpeedianceClient:
         headers = {
             "Host": self.host,
             "Timestamp": str(int(time.time() * 1000)),
-            # Must be >= 40400 (app v4.4.0), the release that introduced Vita.
-            # The API version-gates Vita content: any request whose response would
-            # contain a Vita exercise is rejected with code 98 "Please upgrade the
-            # APP version in System Setting" for clients below this. That gate hides
-            # Vita from the exercise library too, not just from workout detail.
-            # Verified by bisection: 40399 -> blocked, 40400 -> OK.
-            "Versioncode": "40400",
+            # The API version-gates content on the version this client declares, and
+            # returns code 98 "Please upgrade the APP version in System Setting" (or silently
+            # shortens the library) for clients below what a feature requires.
+            #   40304 (v4.3.4): 885 exercises, no Vita
+            #   40400 (v4.4.0): 892 exercises, Vita unlocked
+            #   41000 (v4.10.0): 1042 exercises (+150) — current value
+            # Do NOT jump this far above the real app version or probe it rapidly: the server
+            # answers implausibly-high codes with an anti-abuse "Invalid nonce string" throttle
+            # (observed at 42000+ and under rapid change). Step modestly when bumping.
+            "Versioncode": "41000",
             "Mobiledevices": '{"brand":"google","device":"emulator64_x86_64_arm64","deviceType":"sdk_gphone64_x86_64","os":"","os_version":"31","manufacturer":"Google"}',
             "Content-Type": "application/json",
             "User-Agent": "Dart/3.9 (dart:io)",
