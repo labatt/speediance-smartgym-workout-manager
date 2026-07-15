@@ -81,6 +81,11 @@ were shown as failed rep targets, in red:
   outrank any metric. It speaks in *levels* for Vita, and recommends changes only where the
   evidence and your rating agree. Configure the endpoint, model, and API key in Settings; the
   key is stored owner-only and never leaves the machine except in the model call itself.
+  - The read is **saved once generated** and shown instantly when you reopen the session
+    (no re-billing the model), timestamped so a stale read is obvious — "Re-analyze" refreshes
+    it after you change a rating.
+  - The model's markdown is rendered to formatted HTML through an **escape-first** renderer, so
+    the output is styled without ever letting the model's text inject markup.
 
 ### API compatibility with newer machine software
 
