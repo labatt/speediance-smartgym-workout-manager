@@ -198,11 +198,77 @@
         </div>
     </details>
 
+    <div class="mt-8 pt-6 border-t border-gray-700">
+        <h3 class="text-lg font-bold text-white mb-1">Coach (Ollama)</h3>
+        <p class="text-xs text-gray-500 mb-3">
+            Powers the "Coach's read" on each session in History. Uses
+            <a href="https://ollama.com/settings/keys" target="_blank" class="text-indigo-400 hover:underline">Ollama Cloud</a>
+            by default (nothing runs on this machine). Your session facts and felt ratings are sent to the model.
+        </p>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs font-bold mb-1 text-gray-400">Endpoint</label>
+                <input type="text" id="coach-endpoint" placeholder="https://ollama.com"
+                       class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
+            </div>
+            <div>
+                <label class="block text-xs font-bold mb-1 text-gray-400">Model</label>
+                <input type="text" id="coach-model" placeholder="gpt-oss:120b"
+                       class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
+            </div>
+            <div>
+                <label class="block text-xs font-bold mb-1 text-gray-400">API key <span id="coach-keyset" class="text-green-400"></span></label>
+                <input type="password" id="coach-key" placeholder="paste to set / change"
+                       class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
+                <p class="text-[11px] text-gray-600 mt-1">Stored in <code>coach_config.json</code> on this machine (owner-only). Leave blank to keep the current key.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="saveCoach()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded text-sm">Save & test</button>
+                <span id="coach-status" class="text-xs text-gray-400"></span>
+            </div>
+        </div>
+    </div>
+
     <div class="mt-8 pt-8 border-t border-gray-700 text-center">
         <p class="text-xs text-gray-500">
-            Disclaimer: This is an unofficial tool and is not affiliated with, endorsed by, or connected to Speediance. 
+            Disclaimer: This is an unofficial tool and is not affiliated with, endorsed by, or connected to Speediance.
             Use at your own risk.
         </p>
     </div>
 </div>
+
+<script>
+    async function loadCoach() {
+        try {
+            const d = await (await fetch('/api/coach/config')).json();
+            document.getElementById('coach-endpoint').value = d.endpoint || '';
+            document.getElementById('coach-model').value = d.model || '';
+            document.getElementById('coach-keyset').textContent = d.has_key ? '· key set' : '· no key';
+            showCoachStatus(d.status);
+        } catch (e) { /* not logged in, ignore */ }
+    }
+    function showCoachStatus(s) {
+        const el = document.getElementById('coach-status');
+        if (!s) return;
+        el.innerHTML = s.up
+            ? `<span class="text-green-400">● reachable${s.cloud ? ' (cloud)' : ''} — ${s.model}</span>`
+            : `<span class="text-red-400">● not reachable${s.cloud && !s.has_key ? ' — add an API key' : ''}</span>`;
+    }
+    async function saveCoach() {
+        const body = {
+            endpoint: document.getElementById('coach-endpoint').value.trim(),
+            model: document.getElementById('coach-model').value.trim(),
+        };
+        const key = document.getElementById('coach-key').value.trim();
+        if (key) body.api_key = key;
+        document.getElementById('coach-status').textContent = 'Saving…';
+        const d = await (await fetch('/api/coach/config', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+        })).json();
+        document.getElementById('coach-key').value = '';
+        showCoachStatus(d.status);
+        loadCoach();
+    }
+    loadCoach();
+</script>
 {% endblock %}

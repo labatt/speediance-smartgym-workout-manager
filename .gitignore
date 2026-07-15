@@ -17,3 +17,4 @@ library_cache*.json
 .venv/
 schedules.json
 journal.json
+coach_config.json

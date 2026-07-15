@@ -104,6 +104,22 @@
             <!-- Muscle-group rollup -->
             <div id="groupRollup" class="hidden mb-4"></div>
 
+            <!-- Coach's read (Ollama) -->
+            <div id="coachBox" class="hidden mb-4 bg-indigo-950/40 border border-indigo-800/60 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-sm font-bold text-indigo-200">Coach's read</h4>
+                    <button id="coachBtn" onclick="askCoach()"
+                            class="text-xs px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition">
+                        Analyze this session
+                    </button>
+                </div>
+                <div id="coachOut" class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></div>
+                <p class="text-[11px] text-indigo-400/70 mt-2">
+                    Reads only the recorded facts and your felt ratings — your ratings outrank the sensors.
+                    Rate the exercises above first for a sharper read.
+                </p>
+            </div>
+
             <div id="detailExercises" class="space-y-3"></div>
         </div>
 
@@ -527,6 +543,33 @@
 
         renderGroupRollup(data.snapshot.groups);
         annotateExerciseCards(data.snapshot, data.comparison);
+
+        // Coach box appears for custom sessions; the read is on demand (it's a model call).
+        document.getElementById('coachBox').classList.remove('hidden');
+        document.getElementById('coachOut').textContent = '';
+    }
+
+    async function askCoach() {
+        const rec = currentDetailPayload && currentDetailPayload.summary;
+        if (!rec) return;
+        const btn = document.getElementById('coachBtn');
+        const out = document.getElementById('coachOut');
+        btn.disabled = true;
+        btn.textContent = 'Thinking…';
+        out.textContent = '';
+        try {
+            const url = `/api/session/${rec.trainingId}/coach` + (rec.templateId ? `?template_id=${rec.templateId}` : '');
+            const res = await fetch(url, { method: 'POST' });
+            const data = await res.json();
+            if (data.error) out.innerHTML = `<span class="text-red-400">${data.error}</span>`;
+            else if (!data.ok) out.innerHTML = `<span class="text-yellow-400">${data.text}</span>`;
+            else out.textContent = data.text;
+        } catch (e) {
+            out.innerHTML = `<span class="text-red-400">Request failed: ${e.message}</span>`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Re-analyze';
+        }
     }
 
     function loadProgressionRefresh() {

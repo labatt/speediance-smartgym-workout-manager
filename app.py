@@ -3,6 +3,7 @@ from api_client import SpeedianceClient, SpeedianceAuthError
 from debug_routes import init_debug
 import schedule_planner
 import progression
+import coach
 import datetime
 import json
 import os
@@ -761,6 +762,66 @@ def api_session_notes(training_id):
     journal[str(training_id)] = entry
     save_journal(journal)
     return jsonify(entry)
+
+
+@app.route('/api/session/<int:training_id>/coach', methods=['POST'])
+def api_session_coach(training_id):
+    """A coaching read of one session, from a local/cloud Ollama model.
+
+    The model only interprets: progression.py computes every fact, coach.build_prompt lays
+    them out with the athlete's felt ratings, and the system prompt forbids inventing numbers
+    and makes the felt rating outrank any sensor metric.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        snapshot = _analyze_training(training_id)
+        notes = load_journal().get(str(training_id), {})
+
+        comparison = None
+        template_id = request.args.get('template_id')
+        if template_id:
+            try:
+                end = datetime.date.today()
+                start = end - datetime.timedelta(days=120)
+                records = client.get_training_records(start.isoformat(), end.isoformat())
+                earlier = [r for r in records
+                           if str(r.get('templateId')) == str(template_id)
+                           and r.get('trainingId') != training_id]
+                if earlier:
+                    comparison = progression.compare_sessions(
+                        snapshot, _analyze_training(earlier[0]['trainingId']))
+            except Exception:
+                comparison = None
+
+        prompt = coach.build_prompt(snapshot, notes, comparison)
+        ok, text = coach.ask_ollama(prompt)
+        return jsonify({"ok": ok, "text": text})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/coach/config', methods=['GET', 'POST'])
+def api_coach_config():
+    if request.method == 'GET':
+        cfg = coach.load_config()
+        status = coach.ollama_status(cfg)
+        # Never return the key itself; only whether one is set.
+        return jsonify({
+            "endpoint": cfg["endpoint"], "model": cfg["model"],
+            "has_key": bool(cfg.get("api_key")), "status": status,
+        })
+
+    incoming = request.json or {}
+    coach.save_config(
+        endpoint=incoming.get('endpoint'),
+        model=incoming.get('model'),
+        # Empty string clears; omit the field to leave the existing key untouched.
+        api_key=incoming.get('api_key') if 'api_key' in incoming else None,
+    )
+    return jsonify({"saved": True, "status": coach.ollama_status()})
 
 
 @app.route('/api/burn_rate')

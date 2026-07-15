@@ -169,6 +169,27 @@ read in one glance:
 - The machine's own form scores: `force 5/5 · ROM 4/5 · balance 3/5`
 - PR badges when `maxWeightPr` / `oneRepMaxPr` / `totalCapacityPr` fire
 
+### Training journal and an optional AI coach
+
+Records a factual snapshot of each completed session — completion, per-set load or Vita level,
+ROM trend, the device's own force/amplitude/balance scores — and pairs it with your own
+**felt rating** (overall, and optionally per exercise; any, all, or none). Sessions of the
+same workout then compare over time, with a per-muscle-group rollup.
+
+This deliberately computes **facts, not verdicts**. A power-only rule was tried and failed:
+it called an easy Leg Curl "grinding" (one explosive rep skewed the maths) and a hard Cable
+Hip Abduction "too light" (a small stabiliser burns without ever producing high wattage). A
+sensor cannot measure effort — the felt rating is the ground truth it misses, and a test
+asserts the analysis code never emits add/reduce language.
+
+On top of that sits an **optional coach** powered by Ollama (Cloud by default — nothing runs
+locally). Deterministic code extracts every fact; the model only interprets, under a system
+prompt that forbids inventing numbers and makes your felt rating outrank any metric. In
+testing it correctly held an exercise you'd rated "easy" because its range had collapsed 38%,
+spoke in *levels* for Vita, and recommended reducing load only where you'd felt it too hard.
+The API key is stored in `coach_config.json` (owner-only) and never leaves the machine except
+in the model call itself.
+
 ### Repeating schedules
 
 Speediance has no concept of recurrence — `templateReservation` writes exactly one dated entry.
