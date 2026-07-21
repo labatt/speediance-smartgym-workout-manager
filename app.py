@@ -687,6 +687,36 @@ def save_journal(data):
         json.dump(data, f, indent=2)
 
 
+# Multi-day assessment: the latest read over a rolling window, cached so reopening the
+# page shows it (with its date) rather than forcing a fresh LLM call every visit.
+ASSESSMENT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assessment.json')
+ASSESSMENT_DAYS = {1, 3, 7, 14}
+ASSESSMENT_MAX_SESSIONS = 40
+
+
+def load_assessment():
+    if os.path.exists(ASSESSMENT_FILE):
+        try:
+            with open(ASSESSMENT_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Could not read assessment: {e}")
+    return None
+
+
+def save_assessment(data):
+    with open(ASSESSMENT_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def _assessment_date(ts):
+    """A record's startTimestamp is Unix seconds; render it as YYYY-MM-DD."""
+    try:
+        return datetime.datetime.fromtimestamp(float(ts)).strftime('%Y-%m-%d')
+    except Exception:
+        return '?'
+
+
 def _analyze_training(training_id):
     """Facts for one session, enriched with muscle names from the library."""
     detail = client.get_training_detail(training_id, 'custom')
@@ -1131,6 +1161,88 @@ def history_page():
         return redirect(url_for('settings'))
     unit = client.credentials.get('unit', 0)
     return render_template('history.html', unit=unit)
+
+@app.route('/assessment')
+def assessment_page():
+    if not client.credentials.get("token"):
+        return redirect(url_for('settings'))
+    unit = client.credentials.get('unit', 0)
+    return render_template('assessment.html', unit=unit)
+
+
+@app.route('/api/assessment/last')
+def api_assessment_last():
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"last": load_assessment()})
+
+
+@app.route('/api/assessment', methods=['POST'])
+def api_assessment():
+    """Assess performance over the last N days: gather every completed session in the
+    window, build one factual multi-session prompt, and read it through the active provider."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        days = int(body.get('days'))
+    except (TypeError, ValueError):
+        days = None
+    if days not in ASSESSMENT_DAYS:
+        return jsonify({"error": "days must be one of 1, 3, 7, 14"}), 400
+
+    try:
+        cfg = coach.load_config()
+        if not coach.status(cfg).get("ready"):
+            return jsonify({"ok": False,
+                            "text": "No AI provider is ready. Add a key and pick a model in Settings."}), 200
+
+        end = datetime.date.today()
+        start = end - datetime.timedelta(days=days - 1)
+        records = [r for r in (client.get_training_records(start.isoformat(), end.isoformat()) or [])
+                   if r.get('trainingId')]
+
+        truncated = len(records) > ASSESSMENT_MAX_SESSIONS
+        records = records[:ASSESSMENT_MAX_SESSIONS]      # API returns newest first
+
+        journal = load_journal()
+        sessions = []
+        for r in records:
+            tid = r.get('trainingId')
+            try:
+                snap = _analyze_training(tid)
+            except Exception:
+                continue
+            if not snap or not snap.get('exercises'):
+                continue
+            sessions.append({
+                "date": _assessment_date(r.get('startTimestamp')),
+                "title": r.get('title') or 'Workout',
+                "snapshot": snap,
+                "notes": journal.get(str(tid), {}),
+            })
+        sessions.reverse()   # oldest -> newest for the read
+
+        if not sessions:
+            return jsonify({"ok": True, "empty": True, "session_count": 0,
+                            "text": f"No completed workouts with data in the last {days} day(s)."}), 200
+
+        prompt = coach.build_assessment_prompt(sessions, days)
+        ok, text = coach.chat(prompt, cfg, system=coach.ASSESSMENT_SYSTEM_PROMPT)
+        if not ok:
+            return jsonify({"ok": False, "text": text}), 200
+
+        model = coach.provider_cfg(cfg, coach.active_provider(cfg)).get("model")
+        result = {"text": text, "model": model,
+                  "at": datetime.datetime.now().isoformat(timespec='seconds'),
+                  "days": days, "session_count": len(sessions), "truncated": truncated}
+        save_assessment(result)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/history')
 def api_history():

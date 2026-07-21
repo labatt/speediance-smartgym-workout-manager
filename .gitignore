@@ -18,3 +18,4 @@ library_cache*.json
 schedules.json
 journal.json
 coach_config.json
+assessment.json
