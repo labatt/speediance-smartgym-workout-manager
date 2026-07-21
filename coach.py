@@ -342,6 +342,7 @@ Rules you must follow:
 - The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort: a small muscle worked to a burn shows low flat power yet feels hard, and one explosive rep can look like fatigue. When a felt rating and a metric disagree, trust the felt rating and say so.
 - Recommend adding weight ONLY where the evidence agrees: every rep completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form scores are low or range is shrinking, say hold and fix form first, regardless of the numbers.
 - For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
+- Loads are given in the athlete's own unit (labelled in the facts). Use that exact unit and never convert between kg and lb, and never assume a unit that is not stated.
 - Where an exercise was not rated, say what you'd want to know rather than guessing.
 - Be concise and specific. Group your read by muscle region. Prefer 'hold' over churn — most exercises should stay put most weeks.
 - End with at most 2-3 concrete suggestions, each naming the exercise and the felt/factual basis."""
@@ -351,17 +352,22 @@ def _feel(notes, name):
     return FEEL_WORDS.get((notes.get("exercises") or {}).get(name))
 
 
-def _exercise_line(e, notes, cmp_by=None):
+def _exercise_line(e, notes, cmp_by=None, unit=""):
     """One '- ...' fact line for an exercise. Pure. Shared by the single-session
-    read and the multi-day assessment so both speak the facts identically."""
+    read and the multi-day assessment so both speak the facts identically.
+
+    `unit` labels every weighted load (e.g. 'lbs'). The API returns loads already in the
+    athlete's display unit, so this only LABELS them — it never converts. Without a label
+    the model guesses (it printed kg for lbs data). Vita levels are never given a unit."""
     cmp_by = cmp_by or {}
     felt = _feel(notes, e["name"])
     if e["kind"] == "level":
         sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
                          for s in e["sets"] if not s["skipped"])
         return f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}."
+    u = f" {unit}" if unit else ""
     sets = ", ".join(
-        f"{s['done']}/{s['target']} @ {s['load']:g}"
+        f"{s['done']}/{s['target']} @ {s['load']:g}{u}"
         + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
         for s in e["sets"] if not s["skipped"]
     )
@@ -374,17 +380,22 @@ def _exercise_line(e, notes, cmp_by=None):
     cmp = cmp_by.get(e["name"])
     vs = ""
     if cmp and cmp.get("load_delta") not in (None, 0):
-        vs = f", top load {cmp['load_delta']:+g} vs last session"
+        vs = f", top load {cmp['load_delta']:+g}{u} vs last session"
     return f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}."
 
 
-def build_prompt(snapshot, notes, comparison=None):
-    """Compact, factual brief for the model. Pure — no I/O."""
+def build_prompt(snapshot, notes, comparison=None, unit=""):
+    """Compact, factual brief for the model. Pure — no I/O.
+
+    `unit` (e.g. 'lbs') labels every weighted load. The API already returns loads in the
+    athlete's display unit, so this labels them without converting."""
     notes = notes or {}
     lines = []
 
     overall = FEEL_WORDS.get(notes.get("overall"))
     lines.append(f"Overall the athlete rated the whole session: {overall}.")
+    if unit:
+        lines.append(f"All loads are in {unit} (the athlete's unit). Use {unit}; do not convert.")
     if notes.get("note"):
         lines.append(f"Session note: {notes['note']}")
     lines.append("")
@@ -394,7 +405,7 @@ def build_prompt(snapshot, notes, comparison=None):
     for region in sorted({e["region"] for e in snapshot["exercises"]}):
         lines.append(f"== {region} ==")
         for e in [x for x in snapshot["exercises"] if x["region"] == region]:
-            lines.append(_exercise_line(e, notes, cmp_by))
+            lines.append(_exercise_line(e, notes, cmp_by, unit))
         lines.append("")
 
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
@@ -409,6 +420,7 @@ Rules you must follow:
 - The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort. When a felt rating and a metric disagree, trust the felt rating and say so.
 - Recommend adding weight or resistance ONLY where the evidence agrees across the period: reps consistently completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form is low or range is shrinking, say hold and fix form first.
 - For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
+- Loads are given in the athlete's own unit (labelled in the facts). Use that exact unit and never convert between kg and lb, and never assume a unit that is not stated.
 - Judge trends only from the dated facts: an exercise's load or reps rising across sessions is improvement; falling or stalling with hard or failed sets is regression or a plateau.
 - Prefer 'hold' over churn — most exercises should stay put.
 
@@ -423,14 +435,17 @@ Structure your assessment, grouped by muscle region, to cover:
 Be concise and specific. Cite exercises by name and cite the facts you rely on."""
 
 
-def build_assessment_prompt(sessions, days):
+def build_assessment_prompt(sessions, days, unit=""):
     """Compact factual brief spanning several sessions. Pure — no I/O.
 
     sessions: list of {"date", "title", "snapshot": {"exercises": [...]}, "notes": {...}},
     oldest first. Reuses _exercise_line so the facts read identically to a single-session read.
-    """
+    `unit` (e.g. 'lbs') labels loads; the API already returns them in the athlete's unit."""
     lines = [f"Assessment window: the last {days} day(s). "
-             f"{len(sessions)} completed session(s) with data, oldest first.", ""]
+             f"{len(sessions)} completed session(s) with data, oldest first."]
+    if unit:
+        lines.append(f"All loads are in {unit} (the athlete's unit). Use {unit}; do not convert.")
+    lines.append("")
     for s in sessions:
         notes = s.get("notes") or {}
         snap = s.get("snapshot") or {}
@@ -443,7 +458,7 @@ def build_assessment_prompt(sessions, days):
         for region in sorted({e["region"] for e in exercises}):
             lines.append(f"== {region} ==")
             for e in [x for x in exercises if x["region"] == region]:
-                lines.append(_exercise_line(e, notes))
+                lines.append(_exercise_line(e, notes, unit=unit))
         lines.append("")
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort. "
                  "Weight it far below the athlete's felt rating and rep completion.")

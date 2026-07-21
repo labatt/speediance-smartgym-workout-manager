@@ -709,6 +709,12 @@ def save_assessment(data):
         json.dump(data, f, indent=2)
 
 
+def _unit_label():
+    """The athlete's display unit for weighted loads (0=Metric, 1=Imperial). The API returns
+    loads already in this unit; we only LABEL them for the model, never convert."""
+    return 'lbs' if client.credentials.get('unit', 0) == 1 else 'kg'
+
+
 def _assessment_date(ts):
     """A record's startTimestamp is Unix seconds; render it as YYYY-MM-DD."""
     try:
@@ -824,7 +830,7 @@ def api_session_coach(training_id):
             except Exception:
                 comparison = None
 
-        prompt = coach.build_prompt(snapshot, notes, comparison)
+        prompt = coach.build_prompt(snapshot, notes, comparison, unit=_unit_label())
         cfg = coach.load_config()
         ok, text = coach.chat(prompt, cfg)
 
@@ -1227,7 +1233,7 @@ def api_assessment():
             return jsonify({"ok": True, "empty": True, "session_count": 0,
                             "text": f"No completed workouts with data in the last {days} day(s)."}), 200
 
-        prompt = coach.build_assessment_prompt(sessions, days)
+        prompt = coach.build_assessment_prompt(sessions, days, unit=_unit_label())
         ok, text = coach.chat(prompt, cfg, system=coach.ASSESSMENT_SYSTEM_PROMPT)
         if not ok:
             return jsonify({"ok": False, "text": text}), 200
