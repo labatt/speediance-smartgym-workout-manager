@@ -400,3 +400,55 @@ def build_prompt(snapshot, notes, comparison=None):
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
                  "Weight it far below the athlete's felt rating and rep completion.")
     return "\n".join(lines)
+
+
+ASSESSMENT_SYSTEM_PROMPT = """You are a strength coach reviewing several training sessions on a Speediance cable machine across a period of days.
+
+Rules you must follow:
+- Use ONLY the facts given below. Never invent a number, a weight, or a rep count. If you cite a figure, it must appear in the facts.
+- The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort. When a felt rating and a metric disagree, trust the felt rating and say so.
+- Recommend adding weight or resistance ONLY where the evidence agrees across the period: reps consistently completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form is low or range is shrinking, say hold and fix form first.
+- For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
+- Judge trends only from the dated facts: an exercise's load or reps rising across sessions is improvement; falling or stalling with hard or failed sets is regression or a plateau.
+- Prefer 'hold' over churn — most exercises should stay put.
+
+Structure your assessment, grouped by muscle region, to cover:
+- Where the athlete is STRONG.
+- Where the athlete is WEAK or lagging.
+- Where they are IMPROVING (cite the dated trend).
+- Where they are REGRESSING or PLATEAUING.
+- Where to INCREASE weight or resistance next — name the exercise and the felt/factual basis.
+- Any other observations (imbalances, missed reps, form or range notes).
+
+Be concise and specific. Cite exercises by name and cite the facts you rely on."""
+
+
+def build_assessment_prompt(sessions, days):
+    """Compact factual brief spanning several sessions. Pure — no I/O.
+
+    sessions: list of {"date", "title", "snapshot": {"exercises": [...]}, "notes": {...}},
+    oldest first. Reuses _exercise_line so the facts read identically to a single-session read.
+    """
+    lines = [f"Assessment window: the last {days} day(s). "
+             f"{len(sessions)} completed session(s) with data, oldest first.", ""]
+    for s in sessions:
+        notes = s.get("notes") or {}
+        snap = s.get("snapshot") or {}
+        exercises = snap.get("exercises", [])
+        overall = FEEL_WORDS.get(notes.get("overall"))
+        lines.append(f"### {s.get('date', '?')} — {s.get('title', 'Workout')}")
+        lines.append(f"Overall felt: {overall}.")
+        if notes.get("note"):
+            lines.append(f"Session note: {notes['note']}")
+        for region in sorted({e["region"] for e in exercises}):
+            lines.append(f"== {region} ==")
+            for e in [x for x in exercises if x["region"] == region]:
+                lines.append(_exercise_line(e, notes))
+        lines.append("")
+    lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort. "
+                 "Weight it far below the athlete's felt rating and rep completion.")
+    lines.append("")
+    lines.append("Now assess performance across this whole window: where the athlete is strong, "
+                 "where weak, where improving, where regressing or plateauing, where to increase "
+                 "weight or resistance, plus other observations — grouped by muscle region.")
+    return "\n".join(lines)
