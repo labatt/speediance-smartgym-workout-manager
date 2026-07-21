@@ -221,7 +221,7 @@ def list_models(provider, pc):
 
 # --------------------------------------------------------------------------- chat
 
-def _chat_provider(provider, pc, prompt, timeout):
+def _chat_provider(provider, pc, prompt, timeout, system=None):
     endpoint = (pc.get("endpoint") or PROVIDERS[provider]["endpoint"]).rstrip("/")
     if not endpoint_allowed(provider, endpoint):
         return False, "Endpoint not allowed."
@@ -231,16 +231,18 @@ def _chat_provider(provider, pc, prompt, timeout):
     if provider != "gemini" and not pc.get("api_key") and provider != "ollama":
         return False, "No API key set for this provider."
 
+    sys_prompt = system or SYSTEM_PROMPT
+
     if provider in ("openai", "grok"):
         body = {"model": model, "temperature": 0.3, "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+            {"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]}
         ok, data, err = _request("POST", endpoint + "/v1/chat/completions", _auth_headers(provider, pc), body, timeout)
         if not ok:
             return False, _err_reason(provider, *err)
         return True, ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
 
     if provider == "anthropic":
-        body = {"model": model, "max_tokens": 2000, "system": SYSTEM_PROMPT,
+        body = {"model": model, "max_tokens": 2000, "system": sys_prompt,
                 "messages": [{"role": "user", "content": prompt}]}
         ok, data, err = _request("POST", endpoint + "/v1/messages", _auth_headers(provider, pc), body, timeout)
         if not ok:
@@ -250,7 +252,7 @@ def _chat_provider(provider, pc, prompt, timeout):
 
     if provider == "gemini":
         url = endpoint + "/v1beta/models/" + urllib.parse.quote(model) + ":generateContent?key=" + urllib.parse.quote(pc.get("api_key", ""))
-        body = {"system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        body = {"system_instruction": {"parts": [{"text": sys_prompt}]},
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": 0.3}}
         ok, data, err = _request("POST", url, _auth_headers(provider, pc), body, timeout)
@@ -261,18 +263,19 @@ def _chat_provider(provider, pc, prompt, timeout):
 
     # ollama
     body = {"model": model, "stream": False, "options": {"temperature": 0.3},
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+            "messages": [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]}
     ok, data, err = _request("POST", endpoint + "/api/chat", _auth_headers(provider, pc), body, timeout)
     if not ok:
         return False, _err_reason(provider, *err)
     return True, ((data.get("message") or {}).get("content") or "").strip()
 
 
-def chat(prompt, config=None, timeout=120):
-    """Run the coaching prompt through the ACTIVE provider. (ok, text_or_reason)."""
+def chat(prompt, config=None, timeout=120, system=None):
+    """Run a prompt through the ACTIVE provider. (ok, text_or_reason).
+    `system` overrides the default single-session SYSTEM_PROMPT (used by assessments)."""
     config = config or load_config()
     provider = active_provider(config)
-    return _chat_provider(provider, provider_cfg(config, provider), prompt, timeout)
+    return _chat_provider(provider, provider_cfg(config, provider), prompt, timeout, system)
 
 
 def status(config=None):
@@ -348,6 +351,33 @@ def _feel(notes, name):
     return FEEL_WORDS.get((notes.get("exercises") or {}).get(name))
 
 
+def _exercise_line(e, notes, cmp_by=None):
+    """One '- ...' fact line for an exercise. Pure. Shared by the single-session
+    read and the multi-day assessment so both speak the facts identically."""
+    cmp_by = cmp_by or {}
+    felt = _feel(notes, e["name"])
+    if e["kind"] == "level":
+        sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
+                         for s in e["sets"] if not s["skipped"])
+        return f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}."
+    sets = ", ".join(
+        f"{s['done']}/{s['target']} @ {s['load']:g}"
+        + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
+        for s in e["sets"] if not s["skipped"]
+    )
+    sc = e["scores"]
+    score_str = f"force {sc.get('force_control')}/5, amplitude-stability {sc.get('amplitude_stable')}/5"
+    complete = "all reps completed" if e["all_complete"] else "MISSED some reps"
+    rom = ""
+    if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
+        rom = f", range {e['rom_change_pct']:+.0f}% across sets"
+    cmp = cmp_by.get(e["name"])
+    vs = ""
+    if cmp and cmp.get("load_delta") not in (None, 0):
+        vs = f", top load {cmp['load_delta']:+g} vs last session"
+    return f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}."
+
+
 def build_prompt(snapshot, notes, comparison=None):
     """Compact, factual brief for the model. Pure — no I/O."""
     notes = notes or {}
@@ -364,31 +394,61 @@ def build_prompt(snapshot, notes, comparison=None):
     for region in sorted({e["region"] for e in snapshot["exercises"]}):
         lines.append(f"== {region} ==")
         for e in [x for x in snapshot["exercises"] if x["region"] == region]:
-            felt = _feel(notes, e["name"])
-            if e["kind"] == "level":
-                sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
-                                 for s in e["sets"] if not s["skipped"])
-                lines.append(f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}.")
-                continue
-
-            sets = ", ".join(
-                f"{s['done']}/{s['target']} @ {s['load']:g}"
-                + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
-                for s in e["sets"] if not s["skipped"]
-            )
-            sc = e["scores"]
-            score_str = f"force {sc.get('force_control')}/5, amplitude-stability {sc.get('amplitude_stable')}/5"
-            complete = "all reps completed" if e["all_complete"] else "MISSED some reps"
-            rom = ""
-            if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
-                rom = f", range {e['rom_change_pct']:+.0f}% across sets"
-            cmp = cmp_by.get(e["name"])
-            vs = ""
-            if cmp and cmp.get("load_delta") not in (None, 0):
-                vs = f", top load {cmp['load_delta']:+g} vs last session"
-            lines.append(f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}.")
+            lines.append(_exercise_line(e, notes, cmp_by))
         lines.append("")
 
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
                  "Weight it far below the athlete's felt rating and rep completion.")
+    return "\n".join(lines)
+
+
+ASSESSMENT_SYSTEM_PROMPT = """You are a strength coach reviewing several training sessions on a Speediance cable machine across a period of days.
+
+Rules you must follow:
+- Use ONLY the facts given below. Never invent a number, a weight, or a rep count. If you cite a figure, it must appear in the facts.
+- The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort. When a felt rating and a metric disagree, trust the felt rating and say so.
+- Recommend adding weight or resistance ONLY where the evidence agrees across the period: reps consistently completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form is low or range is shrinking, say hold and fix form first.
+- For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
+- Judge trends only from the dated facts: an exercise's load or reps rising across sessions is improvement; falling or stalling with hard or failed sets is regression or a plateau.
+- Prefer 'hold' over churn — most exercises should stay put.
+
+Structure your assessment, grouped by muscle region, to cover:
+- Where the athlete is STRONG.
+- Where the athlete is WEAK or lagging.
+- Where they are IMPROVING (cite the dated trend).
+- Where they are REGRESSING or PLATEAUING.
+- Where to INCREASE weight or resistance next — name the exercise and the felt/factual basis.
+- Any other observations (imbalances, missed reps, form or range notes).
+
+Be concise and specific. Cite exercises by name and cite the facts you rely on."""
+
+
+def build_assessment_prompt(sessions, days):
+    """Compact factual brief spanning several sessions. Pure — no I/O.
+
+    sessions: list of {"date", "title", "snapshot": {"exercises": [...]}, "notes": {...}},
+    oldest first. Reuses _exercise_line so the facts read identically to a single-session read.
+    """
+    lines = [f"Assessment window: the last {days} day(s). "
+             f"{len(sessions)} completed session(s) with data, oldest first.", ""]
+    for s in sessions:
+        notes = s.get("notes") or {}
+        snap = s.get("snapshot") or {}
+        exercises = snap.get("exercises", [])
+        overall = FEEL_WORDS.get(notes.get("overall"))
+        lines.append(f"### {s.get('date', '?')} — {s.get('title', 'Workout')}")
+        lines.append(f"Overall felt: {overall}.")
+        if notes.get("note"):
+            lines.append(f"Session note: {notes['note']}")
+        for region in sorted({e["region"] for e in exercises}):
+            lines.append(f"== {region} ==")
+            for e in [x for x in exercises if x["region"] == region]:
+                lines.append(_exercise_line(e, notes))
+        lines.append("")
+    lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort. "
+                 "Weight it far below the athlete's felt rating and rep completion.")
+    lines.append("")
+    lines.append("Now assess performance across this whole window: where the athlete is strong, "
+                 "where weak, where improving, where regressing or plateauing, where to increase "
+                 "weight or resistance, plus other observations — grouped by muscle region.")
     return "\n".join(lines)

@@ -137,5 +137,50 @@ class TestNewModelCheck(unittest.TestCase):
         self.assertEqual(new, {})
 
 
+class TestAssessmentPrompt(unittest.TestCase):
+    def setUp(self):
+        self.sessions = [
+            {"date": "2026-07-18", "title": "Workout A", "snapshot": SNAPSHOT, "notes": NOTES},
+            {"date": "2026-07-20", "title": "Workout B", "snapshot": SNAPSHOT, "notes": {}},
+        ]
+        self.p = coach.build_assessment_prompt(self.sessions, 7)
+
+    def test_lists_each_session_date_and_title(self):
+        self.assertIn("2026-07-18", self.p)
+        self.assertIn("Workout A", self.p)
+        self.assertIn("2026-07-20", self.p)
+        self.assertIn("Workout B", self.p)
+
+    def test_window_size_stated(self):
+        self.assertIn("7 day", self.p)
+
+    def test_vita_spoken_in_levels_not_weight(self):
+        vita_lines = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")]
+        self.assertTrue(vita_lines)
+        for l in vita_lines:
+            self.assertIn("level-based", l)
+            self.assertNotIn("@", l)
+
+    def test_carries_felt_ratings(self):
+        self.assertIn("Felt: easy", self.p)
+
+    def test_asks_the_assessment_questions(self):
+        low = self.p.lower()
+        for kw in ("strong", "weak", "improving", "regress", "increase weight or resistance"):
+            self.assertIn(kw, low)
+
+    def test_empty_sessions_does_not_raise(self):
+        out = coach.build_assessment_prompt([], 1)
+        self.assertIn("1 day", out)
+
+
+class TestAssessmentSystemPrompt(unittest.TestCase):
+    def test_encodes_guardrails(self):
+        s = coach.ASSESSMENT_SYSTEM_PROMPT.lower()
+        self.assertIn("felt rating outranks", s)
+        self.assertIn("never invent", s)
+        self.assertIn("muscle region", s)
+
+
 if __name__ == "__main__":
     unittest.main()

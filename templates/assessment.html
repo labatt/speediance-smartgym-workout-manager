@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+{% block head %}
+<script src="{{ url_for('static', filename='js/coach_markdown.js') }}"></script>
+{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-white mb-1">Performance Assessment</h1>
+    <p class="text-gray-400 text-sm mb-4">A coach's read over your recent workouts: where you're strong, weak,
+        improving, plateauing, and where to add weight or resistance.</p>
+
+    <div id="lastBanner" class="hidden mb-4 p-3 rounded bg-gray-800 border border-gray-700 text-sm text-gray-300"></div>
+
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="text-gray-400 text-sm mr-1" id="runLabel">Assess the last:</span>
+        <button data-days="1"  class="dayBtn px-3 py-1.5 rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 text-sm">1 day</button>
+        <button data-days="3"  class="dayBtn px-3 py-1.5 rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 text-sm">3 days</button>
+        <button data-days="7"  class="dayBtn px-3 py-1.5 rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 text-sm">7 days</button>
+        <button data-days="14" class="dayBtn px-3 py-1.5 rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 text-sm">14 days</button>
+    </div>
+
+    <div id="status" class="text-sm text-gray-400 mb-3"></div>
+    <div id="assessmentOut" class="text-sm text-gray-200 leading-relaxed"></div>
+</div>
+
+<script>
+    function relTime(iso) {
+        try {
+            const then = new Date(iso), now = new Date();
+            const days = Math.floor((now - then) / 86400000);
+            const d = then.toLocaleString(undefined, { month: 'short', day: 'numeric' });
+            if (days <= 0) return `today (${d})`;
+            if (days === 1) return `yesterday (${d})`;
+            return `${days} days ago (${d})`;
+        } catch (e) { return iso; }
+    }
+
+    function showLast(last) {
+        const banner = document.getElementById('lastBanner');
+        const out = document.getElementById('assessmentOut');
+        if (!last) { banner.classList.add('hidden'); return; }
+        banner.classList.remove('hidden');
+        // textContent, not innerHTML — the model name is a user-set value.
+        banner.textContent = `Last assessment: last ${last.days} day(s), run ${relTime(last.at)}`
+            + (last.model ? ` · ${last.model}` : '')
+            + `. Run a new one below.`;
+        out.innerHTML = coachMarkdown(last.text || '');
+    }
+
+    async function loadLast() {
+        try {
+            const r = await fetch('/api/assessment/last');
+            const d = await r.json();
+            showLast(d.last);
+        } catch (e) { /* first visit, nothing cached */ }
+    }
+
+    async function runAssessment(days) {
+        const status = document.getElementById('status');
+        const out = document.getElementById('assessmentOut');
+        document.querySelectorAll('.dayBtn').forEach(b => b.disabled = true);
+        status.className = 'text-sm text-indigo-300 mb-3';
+        status.textContent = `Assessing your last ${days} day(s)… this can take a moment.`;
+        out.textContent = '';
+        try {
+            const r = await fetch('/api/assessment', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ days })
+            });
+            const d = await r.json();
+            // Errors carry raw values — render as TEXT, never innerHTML.
+            if (d.error) { status.className = 'text-sm text-red-400 mb-3'; status.textContent = d.error; }
+            else if (d.empty) { status.className = 'text-sm text-yellow-400 mb-3'; status.textContent = d.text; }
+            else if (!d.ok) { status.className = 'text-sm text-yellow-400 mb-3'; status.textContent = d.text; }
+            else {
+                status.className = 'text-sm text-gray-500 mb-3';
+                status.textContent = `Last ${d.days} day(s) · ${d.session_count} session(s)`
+                    + (d.truncated ? ' (capped at 40 most recent)' : '')
+                    + (d.model ? ` · ${d.model}` : '');
+                out.innerHTML = coachMarkdown(d.text);
+                document.getElementById('lastBanner').classList.add('hidden');
+            }
+        } catch (e) {
+            status.className = 'text-sm text-red-400 mb-3';
+            status.textContent = 'Request failed: ' + e;
+        } finally {
+            document.querySelectorAll('.dayBtn').forEach(b => b.disabled = false);
+        }
+    }
+
+    document.querySelectorAll('.dayBtn').forEach(b =>
+        b.addEventListener('click', () => runAssessment(parseInt(b.dataset.days, 10))));
+    loadLast();
+</script>
+{% endblock %}
