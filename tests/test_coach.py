@@ -182,5 +182,40 @@ class TestAssessmentSystemPrompt(unittest.TestCase):
         self.assertIn("muscle region", s)
 
 
+class TestUnitLabelling(unittest.TestCase):
+    # The API returns loads already in the account's display unit; the facts must SAY which
+    # unit, or the model guesses (it printed "kg" for lbs data). See the units memory.
+    def test_exercise_line_labels_load_with_unit(self):
+        ex = SNAPSHOT["exercises"][0]  # Standing Leg Curl, weighted
+        line = coach._exercise_line(ex, NOTES, unit="lbs")
+        self.assertIn("15.5 lbs", line)
+
+    def test_exercise_line_no_unit_by_default_unchanged(self):
+        ex = SNAPSHOT["exercises"][0]
+        line = coach._exercise_line(ex, NOTES)
+        self.assertIn("@ 15.5", line)
+        self.assertNotIn("lbs", line)
+        self.assertNotIn("kg", line)
+
+    def test_vita_line_never_gets_a_weight_unit(self):
+        vita = SNAPSHOT["exercises"][1]
+        line = coach._exercise_line(vita, NOTES, unit="lbs")
+        self.assertNotIn("lbs", line)
+        self.assertIn("level-based", line)
+
+    def test_build_prompt_states_the_unit(self):
+        p = coach.build_prompt(SNAPSHOT, NOTES, unit="lbs")
+        self.assertIn("lbs", p)
+
+    def test_assessment_prompt_states_the_unit(self):
+        sessions = [{"date": "2026-07-20", "title": "A", "snapshot": SNAPSHOT, "notes": NOTES}]
+        p = coach.build_assessment_prompt(sessions, 7, unit="lbs")
+        self.assertIn("lbs", p)
+
+    def test_system_prompts_forbid_conversion(self):
+        self.assertIn("convert", coach.SYSTEM_PROMPT.lower())
+        self.assertIn("convert", coach.ASSESSMENT_SYSTEM_PROMPT.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
