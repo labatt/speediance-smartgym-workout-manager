@@ -221,7 +221,7 @@ def list_models(provider, pc):
 
 # --------------------------------------------------------------------------- chat
 
-def _chat_provider(provider, pc, prompt, timeout):
+def _chat_provider(provider, pc, prompt, timeout, system=None):
     endpoint = (pc.get("endpoint") or PROVIDERS[provider]["endpoint"]).rstrip("/")
     if not endpoint_allowed(provider, endpoint):
         return False, "Endpoint not allowed."
@@ -231,16 +231,18 @@ def _chat_provider(provider, pc, prompt, timeout):
     if provider != "gemini" and not pc.get("api_key") and provider != "ollama":
         return False, "No API key set for this provider."
 
+    sys_prompt = system or SYSTEM_PROMPT
+
     if provider in ("openai", "grok"):
         body = {"model": model, "temperature": 0.3, "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+            {"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]}
         ok, data, err = _request("POST", endpoint + "/v1/chat/completions", _auth_headers(provider, pc), body, timeout)
         if not ok:
             return False, _err_reason(provider, *err)
         return True, ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
 
     if provider == "anthropic":
-        body = {"model": model, "max_tokens": 2000, "system": SYSTEM_PROMPT,
+        body = {"model": model, "max_tokens": 2000, "system": sys_prompt,
                 "messages": [{"role": "user", "content": prompt}]}
         ok, data, err = _request("POST", endpoint + "/v1/messages", _auth_headers(provider, pc), body, timeout)
         if not ok:
@@ -250,7 +252,7 @@ def _chat_provider(provider, pc, prompt, timeout):
 
     if provider == "gemini":
         url = endpoint + "/v1beta/models/" + urllib.parse.quote(model) + ":generateContent?key=" + urllib.parse.quote(pc.get("api_key", ""))
-        body = {"system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        body = {"system_instruction": {"parts": [{"text": sys_prompt}]},
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": 0.3}}
         ok, data, err = _request("POST", url, _auth_headers(provider, pc), body, timeout)
@@ -261,18 +263,19 @@ def _chat_provider(provider, pc, prompt, timeout):
 
     # ollama
     body = {"model": model, "stream": False, "options": {"temperature": 0.3},
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]}
+            "messages": [{"role": "system", "content": sys_prompt}, {"role": "user", "content": prompt}]}
     ok, data, err = _request("POST", endpoint + "/api/chat", _auth_headers(provider, pc), body, timeout)
     if not ok:
         return False, _err_reason(provider, *err)
     return True, ((data.get("message") or {}).get("content") or "").strip()
 
 
-def chat(prompt, config=None, timeout=120):
-    """Run the coaching prompt through the ACTIVE provider. (ok, text_or_reason)."""
+def chat(prompt, config=None, timeout=120, system=None):
+    """Run a prompt through the ACTIVE provider. (ok, text_or_reason).
+    `system` overrides the default single-session SYSTEM_PROMPT (used by assessments)."""
     config = config or load_config()
     provider = active_provider(config)
-    return _chat_provider(provider, provider_cfg(config, provider), prompt, timeout)
+    return _chat_provider(provider, provider_cfg(config, provider), prompt, timeout, system)
 
 
 def status(config=None):
@@ -348,6 +351,33 @@ def _feel(notes, name):
     return FEEL_WORDS.get((notes.get("exercises") or {}).get(name))
 
 
+def _exercise_line(e, notes, cmp_by=None):
+    """One '- ...' fact line for an exercise. Pure. Shared by the single-session
+    read and the multi-day assessment so both speak the facts identically."""
+    cmp_by = cmp_by or {}
+    felt = _feel(notes, e["name"])
+    if e["kind"] == "level":
+        sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
+                         for s in e["sets"] if not s["skipped"])
+        return f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}."
+    sets = ", ".join(
+        f"{s['done']}/{s['target']} @ {s['load']:g}"
+        + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
+        for s in e["sets"] if not s["skipped"]
+    )
+    sc = e["scores"]
+    score_str = f"force {sc.get('force_control')}/5, amplitude-stability {sc.get('amplitude_stable')}/5"
+    complete = "all reps completed" if e["all_complete"] else "MISSED some reps"
+    rom = ""
+    if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
+        rom = f", range {e['rom_change_pct']:+.0f}% across sets"
+    cmp = cmp_by.get(e["name"])
+    vs = ""
+    if cmp and cmp.get("load_delta") not in (None, 0):
+        vs = f", top load {cmp['load_delta']:+g} vs last session"
+    return f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}."
+
+
 def build_prompt(snapshot, notes, comparison=None):
     """Compact, factual brief for the model. Pure — no I/O."""
     notes = notes or {}
@@ -364,29 +394,7 @@ def build_prompt(snapshot, notes, comparison=None):
     for region in sorted({e["region"] for e in snapshot["exercises"]}):
         lines.append(f"== {region} ==")
         for e in [x for x in snapshot["exercises"] if x["region"] == region]:
-            felt = _feel(notes, e["name"])
-            if e["kind"] == "level":
-                sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
-                                 for s in e["sets"] if not s["skipped"])
-                lines.append(f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}.")
-                continue
-
-            sets = ", ".join(
-                f"{s['done']}/{s['target']} @ {s['load']:g}"
-                + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
-                for s in e["sets"] if not s["skipped"]
-            )
-            sc = e["scores"]
-            score_str = f"force {sc.get('force_control')}/5, amplitude-stability {sc.get('amplitude_stable')}/5"
-            complete = "all reps completed" if e["all_complete"] else "MISSED some reps"
-            rom = ""
-            if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
-                rom = f", range {e['rom_change_pct']:+.0f}% across sets"
-            cmp = cmp_by.get(e["name"])
-            vs = ""
-            if cmp and cmp.get("load_delta") not in (None, 0):
-                vs = f", top load {cmp['load_delta']:+g} vs last session"
-            lines.append(f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}.")
+            lines.append(_exercise_line(e, notes, cmp_by))
         lines.append("")
 
     lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
