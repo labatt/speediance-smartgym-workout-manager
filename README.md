@@ -87,6 +87,23 @@ were shown as failed rep targets, in red:
   - The model's markdown is rendered to formatted HTML through an **escape-first** renderer, so
     the output is styled without ever letting the model's text inject markup.
 
+### Multi-day performance assessment
+
+- **Assessment page** (in the top nav) — pick a window of **1, 3, 7, or 14 days** and get one
+  coach's read over *every* completed workout in that period: where you're **strong**, **weak**,
+  **improving**, **regressing or plateauing**, where to **increase weight or resistance**, and
+  other observations — grouped by muscle region.
+- **Same facts, same guardrails, whole window** — it reuses the active AI provider and the exact
+  per-exercise facts the single-session coach uses (each session laid out by date, oldest first),
+  under an assessment prompt that keeps the same rules: cite only the given numbers, never invent,
+  speak in *levels* for Vita, and let your **felt rating outrank** any sensor metric. Trends are
+  judged only from the dated facts (a load or rep count rising across sessions is improvement;
+  stalling with hard or failed sets is a plateau).
+- **Cached, shown with its date** — the latest assessment is saved (owner-only, never committed)
+  and shown instantly on return with when it was run and which model produced it, plus one-click
+  buttons to run a fresh one over any window. The window is rolling, so it always tells you the
+  date rather than pretending a cached read is current.
+
 ### API compatibility with newer machine software
 
 - **Current app version advertised** — the client previously announced an outdated version, and
