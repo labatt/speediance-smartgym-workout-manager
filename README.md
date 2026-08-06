@@ -137,10 +137,27 @@ were shown as failed rep targets, in red:
   a spurious unit conversion; preset IDs (including `0`) are preserved rather than coerced to
   custom mode.
 
-### AI workout generation
+### AI workout generation (in-app)
 
-- **Exercise contracts made explicit in the prompt** — the generated prompt tags exercises the
-  model cannot describe as plain reps-and-weight, and explains the rules:
+- **Describe it on the Build Workout page and it loads straight into the builder** — a
+  "Generate Workout" box takes a plain description (e.g. "a short 20-minute back workout,
+  4 exercises") and drops the result into the same builder used for manual workouts, so you
+  review, edit, name and save it exactly as you would one you built by hand. This replaces the
+  old **Generate Prompt** button, which only produced text to copy into an external AI chat and
+  paste back as JSON. **Import JSON** remains, as a manual fallback.
+- **Provider and model picked in Settings** — choose Anthropic, OpenAI or Google (Gemini) for
+  the workout generator, reusing the same per-provider API keys already saved for the AI coach;
+  there is nothing extra to configure or key in twice.
+- **Two-stage generation** — a cheap first pass reads only exercise names and narrows the full
+  library down to a relevant pool for the request; a second pass then generates the actual
+  workout from just that pool, which keeps the expensive call's context small and its exercise
+  choices grounded in what the library actually has. A malformed response gets one repair retry
+  before the generator gives up.
+- **Loads follow your account's unit and are never converted** — the model is told whether the
+  account is lb or kg and writes directly in it; nothing is converted after the fact, the same
+  rule the coach's reads and the builder's Imperial/metric handling already follow.
+- **Exercise contracts made explicit in the prompt** — exercises the model cannot describe as
+  plain reps-and-weight are tagged, and the rules spelled out:
   - `[TIMED]` / `[TIMED+LEVEL]` — the goal is a duration in **seconds**, not reps; and for
     level-based exercises the intensity is a **level** (stepping up across sets, e.g.
     10 → 12 → 14 → 16, is normal), not a weight or an RM value.
