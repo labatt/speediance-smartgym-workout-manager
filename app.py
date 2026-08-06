@@ -4,6 +4,7 @@ from debug_routes import init_debug
 import schedule_planner
 import progression
 import coach
+import workout_gen
 import datetime
 import json
 import os
@@ -715,6 +716,35 @@ def _unit_label():
     return 'lbs' if client.credentials.get('unit', 0) == 1 else 'kg'
 
 
+def _extract_json(text):
+    """Best-effort parse of a JSON object out of a model reply (handles ```json fences and
+    surrounding prose). Returns the dict or None."""
+    if not text:
+        return None
+    import re as _re
+    s = text.strip()
+    s = _re.sub(r"^```(?:json)?", "", s).strip()
+    s = _re.sub(r"```$", "", s).strip()
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+    start, depth = s.find("{"), 0
+    if start == -1:
+        return None
+    for i in range(start, len(s)):
+        if s[i] == "{":
+            depth += 1
+        elif s[i] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(s[start:i + 1])
+                except Exception:
+                    return None
+    return None
+
+
 def _assessment_date(ts):
     """A record's startTimestamp is Unix seconds; render it as YYYY-MM-DD."""
     try:
@@ -930,6 +960,87 @@ def api_coach_check_updates():
         coach.save_config(cfg)
         return jsonify({"new": new_by_provider, "checked": cfg.get("last_model_check")})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/workout/config', methods=['GET', 'POST'])
+def api_workout_config():
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    cfg = coach.load_config()
+    if request.method == 'GET':
+        return jsonify({"provider": coach.workout_provider(cfg),
+                        "model": coach.workout_model(cfg),
+                        "providers": {p: {"label": coach.PROVIDERS[p]["label"],
+                                          "has_key": bool(coach.provider_cfg(cfg, p).get("api_key"))}
+                                      for p in ("anthropic", "openai", "gemini")}})
+    incoming = request.get_json(silent=True) or {}
+    provider = incoming.get("provider")
+    if provider not in ("anthropic", "openai", "gemini"):
+        return jsonify({"error": "provider must be anthropic, openai or gemini"}), 400
+    cfg["workout_generator"] = {"provider": provider, "model": incoming.get("model", "") or ""}
+    coach.save_config(cfg)
+    return jsonify({"saved": True, "provider": provider, "model": cfg["workout_generator"]["model"]})
+
+
+@app.route('/api/workout/generate', methods=['POST'])
+def api_workout_generate():
+    """Two-stage generation: cheap select pass narrows the pool, then a full generation pass
+    writes the workout JSON, which is validated before it goes to the builder."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    user_request = (body.get("request") or "").strip()
+    if not user_request:
+        return jsonify({"error": "Describe the workout you want."}), 400
+
+    cfg = coach.load_config()
+    provider, model = coach.workout_provider(cfg), coach.workout_model(cfg)
+    if not model or not coach.provider_cfg(cfg, provider).get("api_key"):
+        return jsonify({"ok": False,
+                        "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
+                                "and choose a model in Settings."}), 200
+    try:
+        library = client.get_library()
+        catalog = workout_gen.compact_catalog(library)
+
+        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(user_request, catalog), cfg)
+        pool_ids = workout_gen.parse_selected_ids(sel if ok else "", library, request=user_request)
+
+        details = {}
+        try:
+            for d in (client.get_batch_details(pool_ids) or []):
+                if d.get("id") is not None:
+                    details[int(d["id"])] = d
+        except Exception:
+            details = {}   # descriptions are a nicety; proceed without them
+
+        libmap = {int(e["id"]): e for e in library}
+        merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
+
+        system = workout_gen.build_generation_system_prompt(merged, _unit_label().upper())
+        user = workout_gen.build_generation_user_prompt(user_request)
+        ok, text = coach.chat_with(provider, model, user, cfg, system=system)
+        if not ok:
+            return jsonify({"ok": False, "text": text}), 200
+
+        parsed = _extract_json(text)
+        if parsed is None:   # one repair retry
+            ok, text = coach.chat_with(provider, model,
+                                       "Return ONLY the workout as valid JSON, nothing else:\n" + text, cfg,
+                                       system=system)
+            parsed = _extract_json(text) if ok else None
+        if parsed is None:
+            return jsonify({"ok": False, "text": "The model did not return valid JSON. Try again or rephrase."}), 200
+
+        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library)
+        if not ok:
+            return jsonify({"ok": False, "text": "The generated workout had no usable exercises. Try again.",
+                            "warnings": warnings}), 200
+        return jsonify({"ok": True, "workout": cleaned, "pool_ids": pool_ids, "warnings": warnings})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
 
 
