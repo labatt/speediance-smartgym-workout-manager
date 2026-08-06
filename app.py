@@ -947,6 +947,7 @@ def api_coach_models():
     ok, result = coach.list_models(provider, coach.provider_cfg(cfg, provider))
     if not ok:
         return jsonify({"ok": False, "error": result})
+    # Cache the list so role dropdowns populate instantly next load (intentional GET-time write).
     cfg.setdefault("known_models", {})[provider] = result
     coach.save_config(cfg)
     return jsonify({"ok": True, "models": result})
