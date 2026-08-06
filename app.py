@@ -896,6 +896,7 @@ def _coach_public_config(cfg):
             "has_key": bool(pc.get("api_key")),
         }
     return {"provider": coach.active_provider(cfg), "providers": providers,
+            "known_models": cfg.get("known_models", {}),
             "status": coach.status(cfg)}
 
 
@@ -946,6 +947,8 @@ def api_coach_models():
     ok, result = coach.list_models(provider, coach.provider_cfg(cfg, provider))
     if not ok:
         return jsonify({"ok": False, "error": result})
+    cfg.setdefault("known_models", {})[provider] = result
+    coach.save_config(cfg)
     return jsonify({"ok": True, "models": result})
 
 
@@ -973,11 +976,11 @@ def api_workout_config():
                         "model": coach.workout_model(cfg),
                         "providers": {p: {"label": coach.PROVIDERS[p]["label"],
                                           "has_key": bool(coach.provider_cfg(cfg, p).get("api_key"))}
-                                      for p in ("anthropic", "openai", "gemini")}})
+                                      for p in coach.PROVIDERS}})
     incoming = request.get_json(silent=True) or {}
     provider = incoming.get("provider")
-    if provider not in ("anthropic", "openai", "gemini"):
-        return jsonify({"error": "provider must be anthropic, openai or gemini"}), 400
+    if provider not in coach.PROVIDERS:
+        return jsonify({"error": "unknown provider"}), 400
     cfg["workout_generator"] = {"provider": provider, "model": incoming.get("model", "") or ""}
     coach.save_config(cfg)
     return jsonify({"saved": True, "provider": provider, "model": cfg["workout_generator"]["model"]})
