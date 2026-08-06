@@ -74,13 +74,16 @@ were shown as failed rep targets, in red:
   small stabiliser burns without ever producing high wattage). A sensor cannot measure effort —
   your felt rating is the ground truth it misses, and the analysis code is unit-tested to never
   emit a verdict.
-- **Optional coach (Ollama)** — a "Coach's read" button sends the *computed facts and your felt
-  ratings* to an Ollama model (Cloud by default, so nothing runs on this machine) and gets back
-  a short read grouped by muscle group. Deterministic code produces every number; the model
-  only interprets, under a prompt that forbids inventing figures and makes your felt rating
-  outrank any metric. It speaks in *levels* for Vita, and recommends changes only where the
-  evidence and your rating agree. Configure the endpoint, model, and API key in Settings; the
-  key is stored owner-only and never leaves the machine except in the model call itself.
+- **Optional coach, any provider** — a "Coach's read" button sends the *computed facts and your
+  felt ratings* to the provider and model chosen for the Coach role and gets back a short read
+  grouped by muscle group. Deterministic code produces every number; the model only interprets,
+  under a prompt that forbids inventing figures and makes your felt rating outrank any metric.
+  It speaks in *levels* for Vita, and recommends changes only where the evidence and your rating
+  agree. Settings has a key row per provider (Anthropic, OpenAI, Google, Ollama, xAI Grok) —
+  paste a key and **Test & load models** validates it and caches its model list — then the
+  Coach picker chooses any provider and, once cached, any of its models, independently of the
+  Workout Generator's own picker below. Ollama can point at the cloud (default) or a local
+  daemon; keys are stored owner-only and never leave the machine except in the model call itself.
   - The read is **saved once generated** and shown instantly when you reopen the session
     (no re-billing the model), timestamped so a stale read is obvious — "Re-analyze" refreshes
     it after you change a rating.
@@ -145,9 +148,11 @@ were shown as failed rep targets, in red:
   review, edit, name and save it exactly as you would one you built by hand. This replaces the
   old **Generate Prompt** button, which only produced text to copy into an external AI chat and
   paste back as JSON. **Import JSON** remains, as a manual fallback.
-- **Provider and model picked in Settings** — choose Anthropic, OpenAI or Google (Gemini) for
-  the workout generator, reusing the same per-provider API keys already saved for the AI coach;
-  there is nothing extra to configure or key in twice.
+- **Provider and model picked in Settings, independently of the coach** — the Workout Generator
+  has its own picker covering all five providers (Anthropic, OpenAI, Google, Ollama, xAI Grok),
+  reusing whichever per-provider keys are already saved; there is nothing extra to key in twice.
+  Model dropdowns are populated from the cached list built by **Test & load models**, so
+  switching providers shows every available model rather than just the one already saved.
 - **Two-stage generation** — a cheap first pass reads only exercise names and narrows the full
   library down to a relevant pool for the request; a second pass then generates the actual
   workout from just that pool, which keeps the expensive call's context small and its exercise
