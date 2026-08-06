@@ -251,7 +251,7 @@
         anthropic: ['console.anthropic.com',           'https://console.anthropic.com/settings/keys'],
         openai:    ['platform.openai.com',             'https://platform.openai.com/api-keys'],
         gemini:    ['aistudio.google.com',             'https://aistudio.google.com/app/apikey'],
-        grok:      ['console.x.ai',                     'https://console.x.ai'],
+        grok:      ['console.x.ai',                    'https://console.x.ai'],
     };
 
     let coachCfg = null;                 // /api/coach/config: {provider, providers, known_models, status}
@@ -341,9 +341,13 @@
         const sel = document.getElementById(`${role}-model`);
         const models = modelsByProvider[p] || [];
         const saved = role === 'coach' ? pcfg(p).model : (wgCfg && wgCfg.provider === p ? wgCfg.model : '');
-        sel.innerHTML = models.length
-            ? models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('')
-            : `<option value="">— Test & load models above —</option>`;
+        if (models.length) {
+            sel.innerHTML = models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('');
+        } else if (saved) {
+            sel.innerHTML = `<option value="${saved}" selected>${saved}</option>`;
+        } else {
+            sel.innerHTML = `<option value="">— Test & load models above —</option>`;
+        }
     }
     function onRoleProviderChange(role) { fillRoleModels(role); }
     async function refreshRole(role) {
