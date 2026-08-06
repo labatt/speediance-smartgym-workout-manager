@@ -199,77 +199,41 @@
     </details>
 
     <div class="mt-8 pt-6 border-t border-gray-700">
-        <h3 class="text-lg font-bold text-white mb-1">AI Coach</h3>
+        <h3 class="text-lg font-bold text-white mb-1">AI providers &amp; keys</h3>
         <p class="text-xs text-gray-500 mb-3">
-            Powers the "Coach's read" on each session in History. Pick a provider, paste its key,
-            then load its models and choose one. Your session facts and felt ratings are sent to
-            the chosen model. Keys are stored in <code>coach_config.json</code> on this machine
-            (owner-only) and never leave it except in the model call.
+            Add an API key for each provider you want to use, then <strong>Test &amp; load models</strong>
+            to verify the key and download its model list. Keys live in <code>coach_config.json</code>
+            on this machine (owner-only) and never leave it except in the model call. Ollama can point at
+            the cloud (default) or a local daemon.
         </p>
-
-        <div class="mb-3">
-            <label class="block text-xs font-bold mb-1 text-gray-400">Active provider</label>
-            <select id="coach-provider" onchange="onProviderChange()"
-                    class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-        </div>
-
-        <!-- Ollama endpoint (only shown for Ollama) -->
-        <div id="coach-endpoint-row" class="mb-3 hidden">
-            <label class="block text-xs font-bold mb-1 text-gray-400">Endpoint <span class="text-gray-600">(Ollama only)</span></label>
-            <input type="text" id="coach-endpoint" placeholder="https://ollama.com"
-                   class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
-        </div>
-
-        <div class="mb-3">
-            <label class="block text-xs font-bold mb-1 text-gray-400">
-                API key <span id="coach-keyset" class="text-green-400 text-[11px]"></span>
-                <a id="coach-key-link" href="#" target="_blank" class="text-indigo-400 hover:underline text-[11px] ml-1"></a>
-            </label>
-            <div class="flex gap-2">
-                <input type="password" id="coach-key" placeholder="paste to set / change"
-                       class="flex-grow p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
-                <button onclick="saveKeyAndLoadModels()" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-3 rounded text-sm whitespace-nowrap">Save key &amp; load models</button>
-            </div>
-            <p class="text-[11px] text-gray-600 mt-1">Leave blank to keep the current key.</p>
-        </div>
-
-        <div class="mb-3">
-            <label class="block text-xs font-bold mb-1 text-gray-400">Model</label>
-            <select id="coach-model" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm">
-                <option value="">— load models first —</option>
-            </select>
-            <p id="coach-models-msg" class="text-[11px] text-gray-500 mt-1"></p>
-        </div>
-
-        <div class="flex items-center gap-3">
-            <button onclick="saveCoach()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded text-sm">Save</button>
-            <span id="coach-status" class="text-xs text-gray-400"></span>
-        </div>
-
+        <div id="provider-rows" class="space-y-2"></div>
         <div id="coach-new-models" class="hidden mt-3 p-2 rounded bg-green-900/30 border border-green-700 text-xs text-green-300"></div>
     </div>
 
     <div class="mt-8 pt-6 border-t border-gray-700">
-        <h3 class="text-lg font-bold text-white mb-1">AI Workout Generator</h3>
-        <p class="text-gray-400 text-sm mb-4">Generate workouts in-app on the Build Workout page.
-            Uses the same API keys as the coach; pick which provider and model to generate with.</p>
-        <label class="block text-sm text-gray-300 mb-1">Provider</label>
-        <select id="wg-provider" onchange="wgLoadModels()"
-                class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm mb-3">
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI (ChatGPT)</option>
-            <option value="gemini">Google (Gemini)</option>
-        </select>
-        <div class="mb-3">
-            <label class="block text-sm text-gray-300 mb-1">Model</label>
-            <select id="wg-model" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-            <p id="wg-msg" class="text-[11px] text-gray-500 mt-1"></p>
+        <h3 class="text-lg font-bold text-white mb-1">Assign models</h3>
+        <p class="text-xs text-gray-500 mb-3">Pick which provider and model powers each feature — they can differ.</p>
+
+        <div class="mb-4">
+            <label class="block text-xs font-bold mb-1 text-gray-400">Coach <span class="text-gray-600 font-normal">— the "Coach's read" on each History session</span></label>
+            <div class="flex flex-wrap gap-2 items-center">
+                <select id="coach-provider" onchange="onRoleProviderChange('coach')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                <select id="coach-model" class="flex-grow min-w-[12rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                <button type="button" onclick="refreshRole('coach')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
+                <button type="button" onclick="saveCoach()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+                <span id="coach-status" class="text-xs text-gray-400"></span>
+            </div>
         </div>
-        <div class="flex gap-2">
-            <button onclick="wgLoadModels()" type="button"
-                    class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">Load models</button>
-            <button onclick="wgSave()" type="button"
-                    class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+
+        <div class="mb-2">
+            <label class="block text-xs font-bold mb-1 text-gray-400">Workout Generator <span class="text-gray-600 font-normal">— "Generate Workout" on the Build Workout page</span></label>
+            <div class="flex flex-wrap gap-2 items-center">
+                <select id="wg-provider" onchange="onRoleProviderChange('wg')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                <select id="wg-model" class="flex-grow min-w-[12rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                <button type="button" onclick="refreshRole('wg')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
+                <button type="button" onclick="wgSave()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+                <span id="wg-status" class="text-xs text-gray-400"></span>
+            </div>
         </div>
     </div>
 
@@ -289,153 +253,158 @@
         gemini:    ['aistudio.google.com',             'https://aistudio.google.com/app/apikey'],
         grok:      ['console.x.ai',                    'https://console.x.ai'],
     };
-    let coachCfg = null;   // last-loaded public config
 
-    function currentProvider() { return document.getElementById('coach-provider').value; }
+    let coachCfg = null;                 // /api/coach/config: {provider, providers, known_models, status}
+    let wgCfg = null;                    // /api/workout/config: {provider, model, providers}
+    const modelsByProvider = {};         // provider -> [model ids], seeded from known_models
+
     function pcfg(p) { return (coachCfg && coachCfg.providers[p]) || {}; }
+    function keyed(p) { return pcfg(p).has_key || p === 'ollama'; }
 
-    async function loadCoach() {
-        try {
-            coachCfg = await (await fetch('/api/coach/config')).json();
-        } catch (e) { return; }
-        const sel = document.getElementById('coach-provider');
-        sel.innerHTML = Object.entries(coachCfg.providers)
-            .map(([p, v]) => `<option value="${p}" ${p === coachCfg.provider ? 'selected' : ''}>${v.label}</option>`).join('');
-        onProviderChange();
-    }
-
-    function onProviderChange() {
-        const p = currentProvider();
-        const v = pcfg(p);
-        // endpoint row only for Ollama
-        document.getElementById('coach-endpoint-row').classList.toggle('hidden', !v.editable);
-        document.getElementById('coach-endpoint').value = v.endpoint || '';
-        // key state + provider-specific link
-        document.getElementById('coach-keyset').textContent = v.has_key ? '· key set'
-            : (p === 'ollama' ? '· optional for local' : '· no key');
-        const [label, url] = KEY_LINKS[p] || ['', '#'];
-        const link = document.getElementById('coach-key-link');
-        link.textContent = label ? `get one → ${label}` : '';
-        link.href = url;
-        document.getElementById('coach-key').value = '';
-        // model dropdown: show saved model as the only option until models are loaded
-        const msel = document.getElementById('coach-model');
-        msel.innerHTML = v.model
-            ? `<option value="${v.model}" selected>${v.model}</option>`
-            : `<option value="">— load models first —</option>`;
-        document.getElementById('coach-models-msg').textContent = '';
-        showStatus();
-    }
-
-    function showStatus(msg, cls) {
-        const el = document.getElementById('coach-status');
-        if (msg) { el.innerHTML = `<span class="${cls || 'text-gray-400'}">${msg}</span>`; return; }
-        const p = currentProvider(), v = pcfg(p);
-        const active = coachCfg && coachCfg.provider === p;
-        if (v.has_key || p === 'ollama') {
-            el.innerHTML = v.model
-                ? `<span class="text-green-400">● ${active ? 'active' : 'configured'} — ${v.model}</span>`
-                : `<span class="text-yellow-400">● key set — pick a model</span>`;
-        } else {
-            el.innerHTML = `<span class="text-gray-500">● add a key to use ${v.label}</span>`;
+    // ---------- Part A: provider key rows ----------
+    function renderProviderRows() {
+        const box = document.getElementById('provider-rows');
+        box.innerHTML = '';
+        for (const [p, v] of Object.entries(coachCfg.providers)) {
+            const [linkLabel, url] = KEY_LINKS[p] || ['', '#'];
+            const row = document.createElement('div');
+            row.className = 'p-2 rounded border border-gray-700 bg-gray-800/40';
+            row.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="w-28 text-sm text-gray-200 font-medium">${v.label}</span>
+                    ${v.editable ? `<input type="text" id="ep-${p}" placeholder="https://ollama.com" class="w-44 p-2 bg-gray-700 rounded text-white border border-gray-600 text-xs font-mono">` : ''}
+                    <input type="password" id="key-${p}" placeholder="${v.has_key ? 'key set — paste to change' : 'paste API key'}" class="flex-grow min-w-[10rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
+                    <button type="button" data-p="${p}" class="test-btn px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-bold whitespace-nowrap">Test &amp; load models</button>
+                </div>
+                <div class="flex items-center gap-2 mt-1 pl-1">
+                    <span id="pstat-${p}" class="text-[11px]"></span>
+                    ${linkLabel ? `<a href="${url}" target="_blank" class="text-indigo-400 hover:underline text-[11px]">get one &#8594; ${linkLabel}</a>` : ''}
+                </div>`;
+            box.appendChild(row);
+            if (v.editable) document.getElementById(`ep-${p}`).value = v.endpoint || '';
+            paintProviderStatus(p);
         }
+        box.querySelectorAll('.test-btn').forEach(b => b.addEventListener('click', () => testProvider(b.dataset.p)));
     }
 
-    // Save the key (and Ollama endpoint) for the current provider, then fetch its models.
-    async function saveKeyAndLoadModels() {
-        const p = currentProvider();
+    function paintProviderStatus(p, override) {
+        const st = document.getElementById(`pstat-${p}`);
+        if (!st) return;
+        if (override) { st.className = 'text-[11px] ' + override.cls; st.textContent = override.text; return; }
+        const n = (modelsByProvider[p] || []).length;
+        if (n) { st.className = 'text-[11px] text-green-400'; st.textContent = `✓ ${n} models cached`; }
+        else if (keyed(p)) { st.className = 'text-[11px] text-yellow-400'; st.textContent = '● key set — Test & load models'; }
+        else { st.className = 'text-[11px] text-gray-500'; st.textContent = '● no key'; }
+    }
+
+    async function testProvider(p) {
+        paintProviderStatus(p, { cls: 'text-gray-400', text: 'Testing…' });
+        const keyEl = document.getElementById(`key-${p}`);
+        const epEl = document.getElementById(`ep-${p}`);
         const fields = {};
-        const key = document.getElementById('coach-key').value.trim();
-        if (key) fields.api_key = key;
-        if (pcfg(p).editable) fields.endpoint = document.getElementById('coach-endpoint').value.trim();
-        if (Object.keys(fields).length) {
-            document.getElementById('coach-models-msg').textContent = 'Saving key…';
-            const d = await (await fetch('/api/coach/config', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ providers: { [p]: fields } })
-            })).json();
-            if (d.error) { document.getElementById('coach-models-msg').innerHTML = `<span class="text-red-400">${d.error}</span>`; return; }
-            coachCfg = d; document.getElementById('coach-key').value = '';
+        if (keyEl && keyEl.value.trim()) fields.api_key = keyEl.value.trim();
+        if (epEl) fields.endpoint = epEl.value.trim();
+        try {
+            if (Object.keys(fields).length) {
+                const s = await (await fetch('/api/coach/config', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ providers: { [p]: fields } }) })).json();
+                if (s.error) { paintProviderStatus(p, { cls: 'text-red-400', text: '✗ ' + s.error }); return; }
+                coachCfg = s;
+                if (keyEl) keyEl.value = '';
+            }
+            const d = await (await fetch('/api/coach/models?provider=' + encodeURIComponent(p))).json();
+            if (!d.ok) { paintProviderStatus(p, { cls: 'text-red-400', text: '✗ ' + (d.error || 'key rejected') }); return; }
+            modelsByProvider[p] = d.models;
+            paintProviderStatus(p, { cls: 'text-green-400', text: `✓ key valid · ${d.models.length} models` });
+            markKeyedProviders();
+            if (document.getElementById('coach-provider').value === p) fillRoleModels('coach');
+            if (document.getElementById('wg-provider').value === p) fillRoleModels('wg');
+        } catch (e) {
+            paintProviderStatus(p, { cls: 'text-red-400', text: '✗ ' + e });
         }
-        await loadModels();
     }
 
-    async function loadModels() {
-        const p = currentProvider();
-        const msg = document.getElementById('coach-models-msg');
-        msg.textContent = 'Loading models…';
-        const d = await (await fetch(`/api/coach/models?provider=${p}`)).json();
-        if (!d.ok) { msg.innerHTML = `<span class="text-red-400">${d.error}</span>`; return; }
-        const saved = pcfg(p).model;
-        const msel = document.getElementById('coach-model');
-        msel.innerHTML = d.models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('')
-            || `<option value="">no chat models returned</option>`;
-        msg.innerHTML = `<span class="text-green-400">${d.models.length} models loaded — choose one and Save.</span>`;
+    // ---------- Part B: role selectors ----------
+    function providerOptions(selected) {
+        return Object.entries(coachCfg.providers).map(([p, v]) =>
+            `<option value="${p}" ${p === selected ? 'selected' : ''}>${v.label}${keyed(p) ? '' : ' (no key)'}</option>`).join('');
+    }
+    function markKeyedProviders() {
+        const cs = document.getElementById('coach-provider'), ws = document.getElementById('wg-provider');
+        const cp = cs.value, wp = ws.value;
+        cs.innerHTML = providerOptions(cp);
+        ws.innerHTML = providerOptions(wp);
+    }
+    function fillRoleModels(role) {
+        const p = document.getElementById(`${role}-provider`).value;
+        const sel = document.getElementById(`${role}-model`);
+        const models = modelsByProvider[p] || [];
+        const saved = role === 'coach' ? pcfg(p).model : (wgCfg && wgCfg.provider === p ? wgCfg.model : '');
+        if (models.length) {
+            sel.innerHTML = models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('');
+        } else if (saved) {
+            sel.innerHTML = `<option value="${saved}" selected>${saved}</option>`;
+        } else {
+            sel.innerHTML = `<option value="">— Test & load models above —</option>`;
+        }
+    }
+    function onRoleProviderChange(role) { fillRoleModels(role); }
+    async function refreshRole(role) {
+        await testProvider(document.getElementById(`${role}-provider`).value);
+        fillRoleModels(role);
     }
 
-    // Save active provider + chosen model.
     async function saveCoach() {
-        const p = currentProvider();
+        const p = document.getElementById('coach-provider').value;
         const model = document.getElementById('coach-model').value;
-        showStatus('Saving…');
+        const st = document.getElementById('coach-status');
+        st.className = 'text-xs text-gray-400'; st.textContent = 'Saving…';
         const d = await (await fetch('/api/coach/config', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ provider: p, providers: { [p]: { model } } })
-        })).json();
-        if (d.error) { showStatus(d.error, 'text-red-400'); return; }
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: p, providers: { [p]: { model } } }) })).json();
+        if (d.error) { st.className = 'text-xs text-red-400'; st.textContent = d.error; return; }
         coachCfg = d;
-        showStatus(`Saved — ${d.status.label} · ${d.status.model || 'no model'}`, 'text-green-400');
+        st.className = 'text-xs text-green-400';
+        st.textContent = `Saved · ${d.status.label} · ${d.status.model || 'no model'}`;
+    }
+    async function wgSave() {
+        const p = document.getElementById('wg-provider').value;
+        const model = document.getElementById('wg-model').value;
+        const st = document.getElementById('wg-status');
+        st.className = 'text-xs text-gray-400'; st.textContent = 'Saving…';
+        const d = await (await fetch('/api/workout/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: p, model }) })).json();
+        if (d.error) { st.className = 'text-xs text-red-400'; st.textContent = d.error; return; }
+        wgCfg = { provider: d.provider, model: d.model, providers: (wgCfg || {}).providers };
+        st.className = 'text-xs text-green-400';
+        st.textContent = `Saved · ${d.provider} · ${d.model || 'no model'}`;
     }
 
-    // Weekly new-model check (throttled server-side); surface anything new.
     async function checkNewModels() {
         try {
             const d = await (await fetch('/api/coach/check_updates', { method: 'POST' })).json();
             const box = document.getElementById('coach-new-models');
             const entries = Object.entries(d.new || {});
             if (entries.length) {
-                box.innerHTML = '<strong>New models available:</strong> ' +
+                box.textContent = 'New models available: ' +
                     entries.map(([p, ms]) => `${(pcfg(p).label || p)}: ${ms.slice(0, 6).join(', ')}`).join(' · ');
                 box.classList.remove('hidden');
             }
         } catch (e) { /* best effort */ }
     }
 
-    loadCoach().then(checkNewModels);
-
-    async function wgInit() {
-        try {
-            const r = await fetch('/api/workout/config');
-            const d = await r.json();
-            if (d.provider) document.getElementById('wg-provider').value = d.provider;
-            await wgLoadModels(d.model);
-        } catch (e) { /* not configured yet */ }
+    async function initAI() {
+        try { coachCfg = await (await fetch('/api/coach/config')).json(); } catch (e) { return; }
+        try { wgCfg = await (await fetch('/api/workout/config')).json(); } catch (e) { wgCfg = null; }
+        Object.assign(modelsByProvider, coachCfg.known_models || {});
+        renderProviderRows();
+        document.getElementById('coach-provider').innerHTML = providerOptions(coachCfg.provider);
+        document.getElementById('wg-provider').innerHTML = providerOptions(wgCfg && wgCfg.provider);
+        fillRoleModels('coach');
+        fillRoleModels('wg');
     }
-    async function wgLoadModels(selectModel) {
-        const provider = document.getElementById('wg-provider').value;
-        const sel = document.getElementById('wg-model');
-        const msg = document.getElementById('wg-msg');
-        msg.textContent = 'Loading models…';
-        try {
-            const r = await fetch('/api/coach/models?provider=' + encodeURIComponent(provider));
-            const d = await r.json();
-            if (!d.ok) { msg.textContent = d.error || 'Could not load models (is the key set for this provider?)'; sel.innerHTML = ''; return; }
-            sel.innerHTML = d.models.map(m => `<option value="${m}">${m}</option>`).join('');
-            if (selectModel && d.models.includes(selectModel)) sel.value = selectModel;
-            msg.textContent = `${d.models.length} models`;
-        } catch (e) { msg.textContent = 'Could not load models.'; }
-    }
-    async function wgSave() {
-        const provider = document.getElementById('wg-provider').value;
-        const model = document.getElementById('wg-model').value;
-        const msg = document.getElementById('wg-msg');
-        const r = await fetch('/api/workout/config', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ provider, model })
-        });
-        const d = await r.json();
-        msg.textContent = d.saved ? `Saved · ${d.model || '(no model)'}` : (d.error || 'Save failed');
-    }
-    wgInit();
+    initAI().then(checkNewModels);
 </script>
 {% endblock %}
