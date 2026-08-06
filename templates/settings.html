@@ -1,19 +1,32 @@
 {% extends "layout.html" %}
 {% block content %}
-<div class="max-w-md mx-auto bg-gray-800 p-8 rounded-lg">
-    
-    <h2 class="text-2xl font-bold text-white mb-6">Account Login</h2>
-    {% if creds.token %}
-        <div class="bg-green-900/30 border border-green-600 p-4 rounded mb-4">
-            <p class="text-green-400 mb-2">
+<div class="max-w-5xl mx-auto">
+
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-white">Settings</h1>
+        <p class="text-sm text-gray-500">Your connection, preferences, equipment, and AI — all in one place.</p>
+    </div>
+
+    <div class="space-y-5">
+
+    <!-- ============================ CONNECTION ============================ -->
+    <section class="bg-gray-800 rounded-xl border border-gray-700 p-5 md:p-6">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full {% if creds.token %}bg-green-500{% else %}bg-red-500{% endif %}"></span>
+            Connection
+        </h2>
+
+        {% if creds.token %}
+        <div class="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p class="text-green-400">
                 Connected{% if creds.saved_email %} as {{ creds.saved_email }}{% else %} — User ID: {{ creds.user_id }}{% endif %}
             </p>
-            <a href="/logout" class="block w-full text-center bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Logout</a>
+            <a href="/logout" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded whitespace-nowrap">Logout</a>
         </div>
-    {% endif %}
+        {% endif %}
 
-    {% if creds.saved_email %}
-        <div class="bg-gray-900 border border-gray-700 p-3 rounded mb-4 flex items-center justify-between gap-3">
+        {% if creds.saved_email %}
+        <div class="bg-gray-900 border border-gray-700 p-3 rounded-lg mb-4 flex items-center justify-between gap-3">
             <p class="text-xs text-gray-400">
                 Sign-in remembered for <span class="text-gray-200">{{ creds.saved_email }}</span>.
                 The app re-authenticates itself when the phone app logs it out.
@@ -25,27 +38,28 @@
                 </button>
             </form>
         </div>
-    {% endif %}
+        {% endif %}
 
-    {% if not creds.token %}
-        <form action="/login" method="POST" class="mb-4 pb-4 border-b border-gray-700">
-            <div class="mb-4">
+        {% if not creds.token %}
+        <form action="/login" method="POST" class="grid md:grid-cols-2 gap-4">
+            <div>
                 <label class="block text-sm font-bold mb-2 text-gray-300">Region</label>
                 <select name="region" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
                     <option value="Global" {% if creds.region != 'EU' %}selected{% endif %}>Global (USA/Asia)</option>
                     <option value="EU" {% if creds.region == 'EU' %}selected{% endif %}>Europe</option>
                 </select>
             </div>
-            <div class="mb-4">
+            <div class="hidden md:block"></div>
+            <div>
                 <label class="block text-sm font-bold mb-2 text-gray-300">Email</label>
                 <input type="email" name="email" required class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
             </div>
-            <div class="mb-4">
+            <div>
                 <label class="block text-sm font-bold mb-2 text-gray-300">Password</label>
                 <input type="password" name="password" required class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
             </div>
 
-            <label class="flex items-start gap-2 mb-4 cursor-pointer">
+            <label class="md:col-span-2 flex items-start gap-2 cursor-pointer">
                 <input type="checkbox" name="remember" value="1" checked
                        class="mt-1 h-4 w-4 rounded bg-gray-700 border-gray-600">
                 <span class="text-sm text-gray-300">
@@ -61,187 +75,228 @@
                 </span>
             </label>
 
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Login</button>
+            <button type="submit" class="md:col-span-2 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Login</button>
         </form>
-    {% endif %}
+        {% endif %}
+    </section>
 
-    <form action="/settings/unit" method="POST" class="mb-4 pb-4 border-b border-gray-700">
-        <label class="block text-sm font-bold mb-2 text-gray-300">Unit System</label>
-        <div class="flex gap-2">
-            <select name="unit" class="flex-grow p-2 bg-gray-700 rounded text-white border border-gray-600">
-                <option value="0" {% if creds.unit == 0 %}selected{% endif %}>Metric (KG)</option>
-                <option value="1" {% if creds.unit == 1 %}selected{% endif %}>Imperial (LBS)</option>
-            </select>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save</button>
-        </div>
-    </form>
+    <!-- ============================ PREFERENCES ============================ -->
+    <section class="bg-gray-800 rounded-xl border border-gray-700 p-5 md:p-6">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            Preferences
+        </h2>
 
-    <div class="mb-4 pb-4 border-b border-gray-700">
-        <label class="block text-sm font-bold mb-2 text-gray-300">First Day of Week</label>
-        <select id="firstDayOfWeek" onchange="localStorage.setItem('firstDayOfWeek', this.value)" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
-            <option value="1">Monday</option>
-            <option value="0">Sunday</option>
-        </select>
-    </div>
-    <script>
-        document.getElementById('firstDayOfWeek').value = localStorage.getItem('firstDayOfWeek') || '1';
-    </script>
-
-    <form action="/settings/owned_devices" method="POST" class="mb-4 pb-4 border-b border-gray-700">
-        <label class="block text-sm font-bold mb-3 text-gray-300">Owned Devices</label>
-        <p class="text-xs text-gray-500 mb-3">Select the devices you own. Workouts for unchecked devices will be hidden on the Browse page.</p>
-        <div class="grid grid-cols-3 gap-2 mb-3">
-            <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                <input type="checkbox" name="owned_devices" value="1" class="h-4 w-4 flex-shrink-0"
-                    {% if 1 in creds.owned_devices %}checked{% endif %}>
-                <span class="text-sm text-gray-200">Gym Monster</span>
-            </label>
-            <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                <input type="checkbox" name="owned_devices" value="2" class="h-4 w-4 flex-shrink-0"
-                    {% if 2 in creds.owned_devices %}checked{% endif %}>
-                <span class="text-sm text-gray-200">Gym Pal</span>
-            </label>
-            <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                <input type="checkbox" name="owned_devices" value="3" class="h-4 w-4 flex-shrink-0"
-                    {% if 3 in creds.owned_devices %}checked{% endif %}>
-                <span class="text-sm text-gray-200">Velonix</span>
-            </label>
-        </div>
-        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Devices</button>
-    </form>
-
-    {% if accessories %}
-    <form action="/settings/accessories" method="POST" class="mb-4 pb-4 border-b border-gray-700">
-        <label class="block text-sm font-bold mb-3 text-gray-300">Owned Accessories</label>
-        <p class="text-xs text-gray-500 mb-3">Select the accessories you own. Workouts and exercises requiring unchecked accessories will be hidden across all pages.</p>
-        <div class="grid grid-cols-2 gap-2 mb-3">
-            {% for acc in accessories %}
-            <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                <input type="checkbox" name="accessories" value="{{ acc.id }}" class="h-4 w-4 flex-shrink-0"
-                    {% if acc.id in creds.owned_accessories %}checked{% endif %}>
-                {% if acc.img %}
-                <img src="{{ acc.img }}" alt="" class="w-8 h-8 object-contain flex-shrink-0">
-                {% endif %}
-                <span class="text-sm text-gray-200 truncate">{{ acc.name }}</span>
-            </label>
-            {% endfor %}
-        </div>
-        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Accessories</button>
-    </form>
-    {% endif %}
-
-    <details class="mb-4 group">
-        <summary class="text-xl font-bold text-white mb-4 cursor-pointer flex items-center select-none">
-            <svg class="w-4 h-4 mr-2 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            Manual Config (Token/Region)
-        </summary>
-        <div class="pl-6 border-l-2 border-gray-700">
-            <p class="text-sm text-gray-400 mb-4">
-                These values are automatically filled when you log in above. You only need to change them manually if you are debugging or using a captured token.
-            </p>
-            <form method="POST">
-                <div class="mb-4">
-                    <label class="block text-sm font-bold mb-2 text-gray-300">Region</label>
-                    <select name="region" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
-                        <option value="Global" {% if creds.region != 'EU' %}selected{% endif %}>Global (USA/Asia)</option>
-                        <option value="EU" {% if creds.region == 'EU' %}selected{% endif %}>Europe</option>
+        <div class="grid sm:grid-cols-2 gap-4 max-w-2xl">
+            <form action="/settings/unit" method="POST">
+                <label class="block text-sm font-bold mb-2 text-gray-300">Unit System</label>
+                <div class="flex gap-2">
+                    <select name="unit" class="flex-grow p-2 bg-gray-700 rounded text-white border border-gray-600">
+                        <option value="0" {% if creds.unit == 0 %}selected{% endif %}>Metric (KG)</option>
+                        <option value="1" {% if creds.unit == 1 %}selected{% endif %}>Imperial (LBS)</option>
                     </select>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save</button>
                 </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-bold mb-2 text-gray-300">App User ID</label>
-                    <input type="text" name="user_id" value="{{ creds.user_id }}" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 font-mono text-sm">
-                </div>
-                <div class="mb-6">
-                    <label class="block text-sm font-bold mb-2 text-gray-300">Token (MD5)</label>
-                    <input type="text" name="token" value="{{ creds.token }}" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 font-mono text-sm">
-                    <p class="text-xs text-gray-500 mt-2">You can find this in the header of a logged request (e.g. via PCAPdroid or Charles Proxy).</p>
-                </div>
-                <!-- Preserve existing values on save -->
-                <input type="hidden" name="unit" value="{{ creds.unit }}">
-                <input type="hidden" name="device_type" value="{{ creds.device_type }}">
-                {% if creds.allow_monster_moves %}<input type="hidden" name="allow_monster_moves" value="on">{% endif %}
-                <input type="hidden" name="custom_instruction" value="{{ creds.custom_instruction }}">
-                
-                <button type="submit" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded border border-gray-600">Save Manual Config</button>
             </form>
-        </div>
-    </details>
 
-    <details class="mt-8 pt-8 border-t border-gray-700 group">
-        <summary class="text-xl font-bold text-white mb-4 cursor-pointer flex items-center select-none">
-            <svg class="w-4 h-4 mr-2 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-            Offline Content (Preload)
-        </summary>
-        <div class="pl-6 border-l-2 border-gray-700">
-            <div class="bg-blue-900/30 border border-blue-600 p-4 rounded mb-4">
-                <p class="text-blue-200 text-sm font-bold mb-2">ℹ️ Automatic Caching Active</p>
-                <p class="text-gray-300 text-sm">
-                    The app automatically caches images and videos as you browse the library. 
-                    This ensures you only download what you view, saving bandwidth and avoiding unnecessary requests to Speediance servers.
+            <div>
+                <label class="block text-sm font-bold mb-2 text-gray-300">First Day of Week</label>
+                <select id="firstDayOfWeek" onchange="localStorage.setItem('firstDayOfWeek', this.value)" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
+                    <option value="1">Monday</option>
+                    <option value="0">Sunday</option>
+                </select>
+                <p class="text-xs text-gray-600 mt-1">Saved in this browser.</p>
+            </div>
+        </div>
+        <script>
+            document.getElementById('firstDayOfWeek').value = localStorage.getItem('firstDayOfWeek') || '1';
+        </script>
+    </section>
+
+    <!-- ============================= EQUIPMENT ============================= -->
+    <section class="bg-gray-800 rounded-xl border border-gray-700 p-5 md:p-6">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            Equipment
+        </h2>
+
+        <form action="/settings/owned_devices" method="POST" class="mb-5">
+            <label class="block text-sm font-bold mb-1 text-gray-300">Owned Devices</label>
+            <p class="text-xs text-gray-500 mb-3">Workouts for unchecked devices are hidden on the Browse page.</p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
+                <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
+                    <input type="checkbox" name="owned_devices" value="1" class="h-4 w-4 flex-shrink-0"
+                        {% if 1 in creds.owned_devices %}checked{% endif %}>
+                    <span class="text-sm text-gray-200">Gym Monster</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
+                    <input type="checkbox" name="owned_devices" value="2" class="h-4 w-4 flex-shrink-0"
+                        {% if 2 in creds.owned_devices %}checked{% endif %}>
+                    <span class="text-sm text-gray-200">Gym Pal</span>
+                </label>
+                <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
+                    <input type="checkbox" name="owned_devices" value="3" class="h-4 w-4 flex-shrink-0"
+                        {% if 3 in creds.owned_devices %}checked{% endif %}>
+                    <span class="text-sm text-gray-200">Velonix</span>
+                </label>
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Devices</button>
+        </form>
+
+        {% if accessories %}
+        <form action="/settings/accessories" method="POST" class="pt-5 border-t border-gray-700">
+            <label class="block text-sm font-bold mb-1 text-gray-300">Owned Accessories</label>
+            <p class="text-xs text-gray-500 mb-3">Workouts and exercises needing unchecked accessories are hidden everywhere.</p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
+                {% for acc in accessories %}
+                <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
+                    <input type="checkbox" name="accessories" value="{{ acc.id }}" class="h-4 w-4 flex-shrink-0"
+                        {% if acc.id in creds.owned_accessories %}checked{% endif %}>
+                    {% if acc.img %}
+                    <img src="{{ acc.img }}" alt="" class="w-8 h-8 object-contain flex-shrink-0">
+                    {% endif %}
+                    <span class="text-sm text-gray-200 truncate">{{ acc.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Accessories</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <!-- ================================ AI ================================ -->
+    <section class="bg-gray-800 rounded-xl border border-gray-700 p-5 md:p-6">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-1 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            AI
+        </h2>
+        <p class="text-xs text-gray-500 mb-5">Add a key per provider, test it, then assign a model to the Coach and to the Workout Generator — they can differ.</p>
+
+        <!-- Part A: providers & keys -->
+        <div class="mb-6">
+            <h3 class="text-sm font-bold text-white mb-1">Providers &amp; keys</h3>
+            <p class="text-xs text-gray-500 mb-3">
+                Paste a key, then <strong>Test &amp; load models</strong> to verify it and download its model list. Keys live in
+                <code>coach_config.json</code> on this machine (owner-only) and never leave it except in the model call.
+                Ollama can point at the cloud (default) or a local daemon.
+            </p>
+            <div id="provider-rows" class="space-y-2"></div>
+            <div id="coach-new-models" class="hidden mt-3 p-2 rounded bg-green-900/30 border border-green-700 text-xs text-green-300"></div>
+        </div>
+
+        <!-- Part B: assign models -->
+        <div class="pt-5 border-t border-gray-700">
+            <h3 class="text-sm font-bold text-white mb-1">Assign models</h3>
+            <p class="text-xs text-gray-500 mb-3">Pick which provider and model powers each feature.</p>
+
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="p-3 rounded-lg border border-gray-700 bg-gray-900/40">
+                    <label class="block text-xs font-bold text-gray-300 mb-0.5">Coach</label>
+                    <p class="text-[11px] text-gray-600 mb-2">The "Coach's read" on each History session.</p>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <select id="coach-provider" onchange="onRoleProviderChange('coach')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                        <select id="coach-model" class="flex-grow min-w-[10rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                        <button type="button" onclick="refreshRole('coach')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
+                        <button type="button" onclick="saveCoach()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+                    </div>
+                    <span id="coach-status" class="block text-xs text-gray-400 mt-2"></span>
+                </div>
+
+                <div class="p-3 rounded-lg border border-gray-700 bg-gray-900/40">
+                    <label class="block text-xs font-bold text-gray-300 mb-0.5">Workout Generator</label>
+                    <p class="text-[11px] text-gray-600 mb-2">"Generate Workout" on the Build Workout page.</p>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <select id="wg-provider" onchange="onRoleProviderChange('wg')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                        <select id="wg-model" class="flex-grow min-w-[10rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+                        <button type="button" onclick="refreshRole('wg')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
+                        <button type="button" onclick="wgSave()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+                    </div>
+                    <span id="wg-status" class="block text-xs text-gray-400 mt-2"></span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================= ADVANCED ============================= -->
+    <section class="bg-gray-800 rounded-xl border border-gray-700 p-5 md:p-6">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+            Advanced
+        </h2>
+
+        <details class="group border-b border-gray-700 pb-3 mb-3">
+            <summary class="text-base font-bold text-gray-200 cursor-pointer flex items-center select-none hover:text-white">
+                <svg class="w-4 h-4 mr-2 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                Manual Config (Token / Region)
+            </summary>
+            <div class="pl-6 border-l-2 border-gray-700 mt-4">
+                <p class="text-sm text-gray-400 mb-4">
+                    These values are filled automatically when you log in above. Change them by hand only if you're debugging or using a captured token.
                 </p>
+                <form method="POST" class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold mb-2 text-gray-300">Region</label>
+                        <select name="region" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600">
+                            <option value="Global" {% if creds.region != 'EU' %}selected{% endif %}>Global (USA/Asia)</option>
+                            <option value="EU" {% if creds.region == 'EU' %}selected{% endif %}>Europe</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-2 text-gray-300">App User ID</label>
+                        <input type="text" name="user_id" value="{{ creds.user_id }}" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 font-mono text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-bold mb-2 text-gray-300">Token (MD5)</label>
+                        <input type="text" name="token" value="{{ creds.token }}" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 font-mono text-sm">
+                        <p class="text-xs text-gray-500 mt-2">Found in the header of a logged request (e.g. via PCAPdroid or Charles Proxy).</p>
+                    </div>
+                    <!-- Preserve existing values on save -->
+                    <input type="hidden" name="unit" value="{{ creds.unit }}">
+                    <input type="hidden" name="device_type" value="{{ creds.device_type }}">
+                    {% if creds.allow_monster_moves %}<input type="hidden" name="allow_monster_moves" value="on">{% endif %}
+                    <input type="hidden" name="custom_instruction" value="{{ creds.custom_instruction }}">
+                    <button type="submit" class="md:col-span-2 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded border border-gray-600">Save Manual Config</button>
+                </form>
             </div>
+        </details>
 
-            <div class="bg-red-900/30 border border-red-600 p-4 rounded mb-4">
-                <p class="text-red-200 text-sm font-bold mb-2">⚠️ Warning: High Bandwidth Usage</p>
-                <p class="text-gray-300 text-sm mb-2">
-                    The "Download All Assets" button below will attempt to download the <strong>entire library (>100 GB)</strong> at once.
-                </p>
-                <p class="text-gray-300 text-sm">
-                    <strong>Do not use this unless absolutely necessary.</strong> 
-                    Downloading this amount of data in a short time may trigger security alerts and could lead to your <strong>account being blocked</strong> by Speediance.
-                </p>
+        <details class="group">
+            <summary class="text-base font-bold text-gray-200 cursor-pointer flex items-center select-none hover:text-white">
+                <svg class="w-4 h-4 mr-2 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                Offline Content (Preload)
+            </summary>
+            <div class="pl-6 border-l-2 border-gray-700 mt-4">
+                <div class="bg-blue-900/30 border border-blue-600 p-4 rounded-lg mb-4">
+                    <p class="text-blue-200 text-sm font-bold mb-2">ℹ️ Automatic caching active</p>
+                    <p class="text-gray-300 text-sm">
+                        The app caches images and videos as you browse the library, so you only download what you view —
+                        saving bandwidth and avoiding unnecessary requests to Speediance servers.
+                    </p>
+                </div>
+
+                <div class="bg-red-900/30 border border-red-600 p-4 rounded-lg mb-4">
+                    <p class="text-red-200 text-sm font-bold mb-2">⚠️ Warning: high bandwidth usage</p>
+                    <p class="text-gray-300 text-sm mb-2">
+                        "Download All Assets" attempts to download the <strong>entire library (&gt;100 GB)</strong> at once.
+                    </p>
+                    <p class="text-gray-300 text-sm">
+                        <strong>Don't use this unless absolutely necessary.</strong>
+                        Downloading this much data quickly may trigger security alerts and could get your
+                        <strong>account blocked</strong> by Speediance.
+                    </p>
+                </div>
+
+                <a href="/settings/preload" target="_blank" class="block w-full text-center bg-gray-700 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors border border-gray-600">
+                    Download All Assets (Not Recommended)
+                </a>
             </div>
+        </details>
+    </section>
 
-            <a href="/settings/preload" target="_blank" class="block w-full text-center bg-gray-700 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors border border-gray-600">
-                Download All Assets (Not Recommended)
-            </a>
-        </div>
-    </details>
+    <p class="text-xs text-gray-600 text-center pt-2">
+        Unofficial tool — not affiliated with, endorsed by, or connected to Speediance. Use at your own risk.
+    </p>
 
-    <div class="mt-8 pt-6 border-t border-gray-700">
-        <h3 class="text-lg font-bold text-white mb-1">AI providers &amp; keys</h3>
-        <p class="text-xs text-gray-500 mb-3">
-            Add an API key for each provider you want to use, then <strong>Test &amp; load models</strong>
-            to verify the key and download its model list. Keys live in <code>coach_config.json</code>
-            on this machine (owner-only) and never leave it except in the model call. Ollama can point at
-            the cloud (default) or a local daemon.
-        </p>
-        <div id="provider-rows" class="space-y-2"></div>
-        <div id="coach-new-models" class="hidden mt-3 p-2 rounded bg-green-900/30 border border-green-700 text-xs text-green-300"></div>
-    </div>
-
-    <div class="mt-8 pt-6 border-t border-gray-700">
-        <h3 class="text-lg font-bold text-white mb-1">Assign models</h3>
-        <p class="text-xs text-gray-500 mb-3">Pick which provider and model powers each feature — they can differ.</p>
-
-        <div class="mb-4">
-            <label class="block text-xs font-bold mb-1 text-gray-400">Coach <span class="text-gray-600 font-normal">— the "Coach's read" on each History session</span></label>
-            <div class="flex flex-wrap gap-2 items-center">
-                <select id="coach-provider" onchange="onRoleProviderChange('coach')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-                <select id="coach-model" class="flex-grow min-w-[12rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-                <button type="button" onclick="refreshRole('coach')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
-                <button type="button" onclick="saveCoach()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
-                <span id="coach-status" class="text-xs text-gray-400"></span>
-            </div>
-        </div>
-
-        <div class="mb-2">
-            <label class="block text-xs font-bold mb-1 text-gray-400">Workout Generator <span class="text-gray-600 font-normal">— "Generate Workout" on the Build Workout page</span></label>
-            <div class="flex flex-wrap gap-2 items-center">
-                <select id="wg-provider" onchange="onRoleProviderChange('wg')" class="p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-                <select id="wg-model" class="flex-grow min-w-[12rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
-                <button type="button" onclick="refreshRole('wg')" title="Reload this provider's models" class="px-2 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">&#8635;</button>
-                <button type="button" onclick="wgSave()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
-                <span id="wg-status" class="text-xs text-gray-400"></span>
-            </div>
-        </div>
-    </div>
-
-    <div class="mt-8 pt-8 border-t border-gray-700 text-center">
-        <p class="text-xs text-gray-500">
-            Disclaimer: This is an unofficial tool and is not affiliated with, endorsed by, or connected to Speediance.
-            Use at your own risk.
-        </p>
     </div>
 </div>
 
@@ -268,10 +323,10 @@
         for (const [p, v] of Object.entries(coachCfg.providers)) {
             const [linkLabel, url] = KEY_LINKS[p] || ['', '#'];
             const row = document.createElement('div');
-            row.className = 'p-2 rounded border border-gray-700 bg-gray-800/40';
+            row.className = 'p-2 rounded border border-gray-700 bg-gray-900/40';
             row.innerHTML = `
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="w-28 text-sm text-gray-200 font-medium">${v.label}</span>
+                    <span class="w-40 shrink-0 text-sm text-gray-200 font-medium">${v.label}</span>
                     ${v.editable ? `<input type="text" id="ep-${p}" placeholder="https://ollama.com" class="w-44 p-2 bg-gray-700 rounded text-white border border-gray-600 text-xs font-mono">` : ''}
                     <input type="password" id="key-${p}" placeholder="${v.has_key ? 'key set — paste to change' : 'paste API key'}" class="flex-grow min-w-[10rem] p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm font-mono">
                     <button type="button" data-p="${p}" class="test-btn px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-bold whitespace-nowrap">Test &amp; load models</button>
@@ -359,26 +414,26 @@
         const p = document.getElementById('coach-provider').value;
         const model = document.getElementById('coach-model').value;
         const st = document.getElementById('coach-status');
-        st.className = 'text-xs text-gray-400'; st.textContent = 'Saving…';
+        st.className = 'block text-xs text-gray-400 mt-2'; st.textContent = 'Saving…';
         const d = await (await fetch('/api/coach/config', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ provider: p, providers: { [p]: { model } } }) })).json();
-        if (d.error) { st.className = 'text-xs text-red-400'; st.textContent = d.error; return; }
+        if (d.error) { st.className = 'block text-xs text-red-400 mt-2'; st.textContent = d.error; return; }
         coachCfg = d;
-        st.className = 'text-xs text-green-400';
+        st.className = 'block text-xs text-green-400 mt-2';
         st.textContent = `Saved · ${d.status.label} · ${d.status.model || 'no model'}`;
     }
     async function wgSave() {
         const p = document.getElementById('wg-provider').value;
         const model = document.getElementById('wg-model').value;
         const st = document.getElementById('wg-status');
-        st.className = 'text-xs text-gray-400'; st.textContent = 'Saving…';
+        st.className = 'block text-xs text-gray-400 mt-2'; st.textContent = 'Saving…';
         const d = await (await fetch('/api/workout/config', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ provider: p, model }) })).json();
-        if (d.error) { st.className = 'text-xs text-red-400'; st.textContent = d.error; return; }
+        if (d.error) { st.className = 'block text-xs text-red-400 mt-2'; st.textContent = d.error; return; }
         wgCfg = { provider: d.provider, model: d.model, providers: (wgCfg || {}).providers };
-        st.className = 'text-xs text-green-400';
+        st.className = 'block text-xs text-green-400 mt-2';
         st.textContent = `Saved · ${d.provider} · ${d.model || 'no model'}`;
     }
 
