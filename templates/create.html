@@ -57,25 +57,26 @@
                 <div class="mb-4 bg-gray-800 p-3 rounded border border-gray-600">
                     <h4 class="font-bold text-white mb-2">How to create workouts with AI:</h4>
                     <ol class="list-decimal list-inside space-y-1 text-gray-300">
-                        <li>Click <strong class="text-purple-400">Generate Prompt</strong> and describe your workout goal (e.g., "30 min HIIT").</li>
-                        <li>Copy the generated text and paste it into ChatGPT, Claude, or DeepSeek.</li>
-                        <li>Copy the JSON code they give you back.</li>
-                        <li>Click <strong class="text-blue-400">Import JSON</strong> and paste the code to build your workout instantly.</li>
+                        <li>Describe what you want in the <strong class="text-purple-400">Describe the workout you want the AI to build</strong> box below, then click <strong class="text-purple-400">Generate Workout</strong>.</li>
+                        <li>Requires an AI Workout Generator provider and model set in Settings.</li>
+                        <li>The workout appears in the builder below — review it, adjust sets/reps/rest/exercises, give it a name, and Save.</li>
                     </ol>
                     <p class="text-gray-400 text-xs border-t border-gray-600 pt-2 mt-2">
-                        <strong class="text-green-400">Tip:</strong> Use <strong class="text-green-400">Export JSON</strong> to save your current workout and share it with an AI to ask for adjustments or improvements.
+                        <strong class="text-blue-400">Tip:</strong> Prefer to build it yourself with another AI? Use <strong class="text-blue-400">Import JSON</strong> to paste a workout JSON by hand as a fallback.
                     </p>
                 </div>
                 
                 <div class="flex flex-wrap gap-3">
-                    <div class="relative group/btn">
-                        <button onclick="openPromptGenerator()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold transition shadow-lg shadow-purple-900/20 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                            Generate Prompt
+                    <div class="w-full">
+                        <label class="block text-sm text-gray-300 mb-1">Describe the workout you want the AI to build</label>
+                        <textarea id="wg-request" rows="2"
+                            class="w-full bg-gray-900 text-white p-3 rounded border border-gray-600 focus:border-purple-500 outline-none text-sm"
+                            placeholder="e.g. A 40-minute back and biceps day, moderate volume, include some eccentric work."></textarea>
+                        <button onclick="generateWorkout()" id="wg-generate-btn"
+                            class="mt-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold transition shadow-lg shadow-purple-900/20">
+                            Generate Workout
                         </button>
-                        <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                            Create a prompt for ChatGPT
-                        </div>
+                        <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
                     </div>
 
                     <div class="relative group/btn">
@@ -147,60 +148,6 @@
         <div class="flex justify-end gap-3">
             <button onclick="closeImportModal()" class="text-gray-400 hover:text-white px-4 py-2">Cancel</button>
             <button onclick="processImport()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold">Import</button>
-        </div>
-    </div>
-</div>
-
-<!-- Prompt Modal -->
-<div id="prompt-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
-    <div class="bg-gray-800 p-6 rounded-lg w-2/3 h-3/4 flex flex-col border border-gray-700 shadow-2xl">
-        <h3 class="text-xl font-bold text-white mb-4" id="prompt-modal-title">Generate AI Prompt</h3>
-        
-        <!-- Step 1: Input -->
-        <div id="prompt-step-1" class="flex flex-col flex-grow">
-            <p class="text-gray-400 text-sm mb-2">Describe the workout you want (e.g., "30 min HIIT cardio", "Upper body strength focus"):</p>
-            <textarea id="user-request" class="w-full h-24 bg-gray-900 text-white p-4 rounded border border-gray-600 focus:border-purple-500 outline-none mb-4" placeholder="Enter your workout goal..."></textarea>
-            
-            <div class="bg-blue-900/30 border border-blue-800 rounded p-3 mb-4 text-xs text-blue-200">
-                <strong class="font-bold text-blue-100">Tip:</strong> Select only relevant categories to keep the prompt short and focused. 
-                Including everything creates a very long list for the AI. 
-                For example, you can exclude "Row & Ski" here and just manually add a rowing warm-up to your plan later.
-            </div>
-
-            <div class="mb-4">
-                <p class="text-gray-400 text-sm mb-2">Include Categories:</p>
-                <div class="flex flex-wrap gap-3 bg-gray-900 p-3 rounded border border-gray-600 max-h-32 overflow-y-auto">
-                    {% for cat in categories %}
-                    <label class="inline-flex items-center cursor-pointer select-none">
-                        <input type="checkbox" class="form-checkbox h-4 w-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 prompt-cat-filter" value="{{ cat.id }}" data-filter-ids="{{ cat.filter_ids | default(cat.id) }}" {% if cat.name == 'Training' %}checked{% endif %}>
-                        <span class="ml-2 text-gray-300 text-sm">{{ cat.name }}</span>
-                    </label>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <p class="text-gray-400 text-sm mb-2">Custom Instructions (Persistent):</p>
-                <textarea id="prompt-custom-instruction" class="w-full h-24 bg-gray-900 text-gray-300 p-3 rounded border border-gray-600 font-mono text-xs focus:border-purple-500 outline-none" placeholder="e.g. I have a knee injury, avoid jumps.">{{ custom_instruction }}</textarea>
-                <p class="text-xs text-gray-500 mt-1">Changes here will be saved automatically when you generate the prompt.</p>
-            </div>
-
-            <div class="flex-grow"></div>
-            <div class="flex justify-end gap-3">
-                <button onclick="closePromptModal()" class="text-gray-400 hover:text-white px-4 py-2">Cancel</button>
-                <button onclick="generateFullPrompt()" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded font-bold">Generate Full Prompt</button>
-            </div>
-        </div>
-
-        <!-- Step 2: Output -->
-        <div id="prompt-step-2" class="hidden flex-col flex-grow">
-            <p class="text-gray-400 text-sm mb-2">Copy this prompt to ChatGPT/Claude:</p>
-            <textarea id="prompt-text" class="w-full flex-grow bg-gray-900 text-gray-300 p-4 rounded border border-gray-600 font-mono text-xs mb-4 focus:border-purple-500 outline-none" readonly></textarea>
-            <div class="flex justify-end gap-3">
-                <button onclick="resetPromptModal()" class="text-gray-400 hover:text-white px-4 py-2">Back</button>
-                <button onclick="closePromptModal()" class="text-gray-400 hover:text-white px-4 py-2">Close</button>
-                <button onclick="copyPrompt()" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded font-bold">Copy to Clipboard</button>
-            </div>
         </div>
     </div>
 </div>
@@ -959,20 +906,6 @@
         workoutData[exIdx].sets[sIdx][field] = val;
     };
 
-    window.openPromptGenerator = () => {
-        document.getElementById('prompt-modal').classList.remove('hidden');
-        document.getElementById('prompt-modal').classList.add('flex');
-        resetPromptModal();
-    };
-
-    window.resetPromptModal = () => {
-        document.getElementById('prompt-step-1').classList.remove('hidden');
-        document.getElementById('prompt-step-1').classList.add('flex');
-        document.getElementById('prompt-step-2').classList.add('hidden');
-        document.getElementById('prompt-step-2').classList.remove('flex');
-        document.getElementById('prompt-modal-title').innerText = "Generate AI Prompt";
-    };
-
     window.exportJSON = () => {
         if(workoutData.length === 0) return alert("Plan is empty!");
 
@@ -1024,215 +957,6 @@
         renderBuilder();
     };
 
-    window.generateFullPrompt = async () => {
-        const userRequest = document.getElementById('user-request').value;
-        if (!userRequest.trim()) return alert("Please describe your workout goal.");
-
-        // Save Custom Instructions
-        const currentCustomInstruction = document.getElementById('prompt-custom-instruction').value;
-        try {
-            await fetch('/settings/custom_instruction', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ instruction: currentCustomInstruction })
-            });
-        } catch (e) {
-            console.error("Failed to save custom instruction", e);
-        }
-
-        // Get selected categories
-        const selectedCats = new Set();
-        document.querySelectorAll('.prompt-cat-filter:checked').forEach(cb => {
-            const ids = (cb.dataset.filterIds || cb.value || '').split(',');
-            ids.forEach(id => {
-                const parsed = parseInt(id, 10);
-                if (!Number.isNaN(parsed)) {
-                    selectedCats.add(parsed);
-                }
-            });
-        });
-
-        const muscleMap = {
-            11: 'Chest',
-            12: 'Shoulder',
-            13: 'Back',
-            14: 'Glutes',
-            15: 'Legs',
-            16: 'Arms',
-            17: 'Abs'
-        };
-
-        // Weights are stored and returned in the ACCOUNT's configured unit — nothing in the
-        // read or write path converts them. The prompt used to hardcode "KG", so on an
-        // imperial account the model prescribed kilograms and they were saved verbatim as
-        // pounds, i.e. at roughly 45% of the intended load.
-        const weightUnitLabel = userUnit === 1 ? 'LBS' : 'KG';
-
-        let prompt = `You are a professional fitness coach using the Speediance Gym Monster.
-Your task is to create a custom workout plan based on the user's request: "${userRequest}"
-
-AVAILABLE EXERCISES:
-You must ONLY use exercises from the following list. Use the exact 'id'.
-Format: [ID] Title (Category: <Category>, Focus: <Primary>, Target: <Main>[, <Aux>])
-
-MODES:
-- 1: Standard (Normal reps)
-- 2: Chains (Resistance increases at the top)
-- 3: Eccentric (Resistance increases during the lowering phase)
-Use these modes appropriately based on the goal (e.g., Eccentric for hypertrophy/control).
-
-PRESET IDS:
-- -1: Custom (${weightUnitLabel})
-- 1: Gain Muscle (RM)
-- 3: Stamina (RM)
-- 5: Strength (RM)
-Depending on the preset, the training weight can be prescribed either as an absolute weight or as a relative RM value based on the users maximum strength for a specific number of repetitions.
-
-WEIGHT UNIT:
-Absolute weights MUST be given in ${weightUnitLabel}. This account is configured for
-${weightUnitLabel}, and the value you write is stored verbatim — nothing converts it.
-Do NOT prescribe in ${weightUnitLabel === 'LBS' ? 'kilograms' : 'pounds'}.
-When providing a RM value try to keep one repetition in reserve to avoid overtraining.
-Use the preset ID appropriately based on the goal (e.g., Gain Muscle for hypertrophy, Stamina for endurance, Strength for strength/explosiveness).
-For custom workouts, use the -1 preset.
-
-Set the weight and repetitions appropriately for the goal considering the limits of the presets:
-- Gain Muscle: 8-12 repetitions, 9-13 RM
-- Stamina: 13-20 repetitions, 15-20 RM
-- Strength: 4-9 repetitions, 4-9 RMS
-
-`;
-
-        if (currentCustomInstruction && currentCustomInstruction.trim()) {
-            prompt += `CUSTOM INSTRUCTIONS:\n${currentCustomInstruction}\n\n`;
-        }
-
-        let addedCount = 0;
-        let timedCount = 0;
-        let uniCount = 0;
-        fullLibrary.forEach(ex => {
-            // Filter by category
-            if (!selectedCats.has(ex.category_id)) return;
-
-            const focus = muscleMap[ex.trainingPartId2] || 'General';
-            let target = ex.mainMuscleGroupName || '';
-            if (ex.auxiliaryMuscleGroupList && ex.auxiliaryMuscleGroupList.length > 0) {
-                const aux = ex.auxiliaryMuscleGroupList.map(a => a.muscleGroupName).join(', ');
-                if (target) target += ', ' + aux;
-                else target = aux;
-            }
-
-            // Tag exercises the model cannot prescribe with reps+weight. Without this it
-            // happily writes "12 reps @ 40kg" for a Vita movement, and save_workout turns
-            // that 40 into level 10 (clamped) on a set that is actually a seconds window.
-            const isLevelBased = ex.dataStatType === 6;              // Vita: intensity is a 1-10 level
-            const isTimed = getSetGoalUnit(ex) === 'sec';            // goal is a duration, not reps
-            let tag = '';
-            if (isLevelBased) tag = ' [TIMED+LEVEL]';
-            else if (isTimed) tag = ' [TIMED]';
-            if (tag) timedCount++;
-
-            // Unilateral exercises are trained one side at a time and can carry a
-            // different load per side. Unless the model opts in (see below), each set
-            // it writes is duplicated identically to both sides.
-            if (ex.isLeftRight === 1) { tag += ' [UNILATERAL]'; uniCount++; }
-
-            prompt += `[${ex.id}] ${ex.title}${tag} (Category: ${ex.category_name}, Focus: ${focus}, Target: ${target})\n`;
-            addedCount++;
-        });
-
-        if (addedCount === 0) {
-            return alert("No exercises selected! Please check at least one category.");
-        }
-
-        if (timedCount > 0) {
-            prompt += `
-TIMED EXERCISES (tagged [TIMED] or [TIMED+LEVEL] above):
-These are NOT rep-based. The machine runs them for a fixed number of SECONDS.
-- "reps" carries the DURATION IN SECONDS (typical: 20-60), not a repetition count.
-- "unit" MUST be "sec".
-- [TIMED+LEVEL] (the Vita movements): "weight" carries an INTENSITY LEVEL, NOT a weight in
-  kg/lbs and NOT an RM value. Levels start at 1; the device's own workouts commonly run
-  10-16, and it is normal to step the level UP across sets (e.g. 10, 12, 14, 16).
-- Timed exercises have no RM presets: "presetId" MUST be -1.
-Example of one correct timed set: { "reps": 30, "weight": 12, "mode": 1, "rest": 60, "unit": "sec" }
-  -> run this movement for 30 seconds at intensity level 12.
-`;
-        }
-
-        if (uniCount > 0) {
-            prompt += `
-UNILATERAL EXERCISES (tagged [UNILATERAL] above):
-These train one side at a time, so every working set is performed twice — once left, once right.
-By default, just write ONE set per working set and it is applied to BOTH sides identically:
-  "sets": [ { "reps": 12, "weight": 35, "mode": 1, "rest": 60 } ]   -> 12@35 left AND 12@35 right
-
-Only if you deliberately want a DIFFERENT load or rep count per side, opt in by adding
-"isUnilateralExpanded": true to the exercise and listing the sides yourself, ALTERNATING
-LEFT, RIGHT, LEFT, RIGHT (first entry = left). Two working sets then means four entries:
-{
-  "id": 437972850049025,
-  "presetId": -1,
-  "isUnilateralExpanded": true,
-  "sets": [
-    { "reps": 12, "weight": 35, "mode": 1, "rest": 60 },   // set 1 LEFT
-    { "reps": 10, "weight": 30, "mode": 1, "rest": 60 },   // set 1 RIGHT
-    { "reps": 12, "weight": 35, "mode": 1, "rest": 60 },   // set 2 LEFT
-    { "reps": 10, "weight": 30, "mode": 1, "rest": 60 }    // set 2 RIGHT
-  ]
-}
-Do NOT set "isUnilateralExpanded" unless you are listing both sides explicitly — otherwise
-the sets are duplicated and you will get twice the volume you intended.
-`;
-        }
-
-        prompt += `
-OUTPUT FORMAT:
-You must output a JSON object with the following structure:
-{
-  "name": "Workout Name",
-  "exercises": [
-    {
-      "id": "Exercise ID",
-      "presetId": "Preset ID",
-      "sets": [
-        { "reps": 10, "weight": 10, "mode": 1, "rest": 60 }
-      ]
-    }
-  ]
-}
-
-For a normal rep-based exercise, omit "unit" (it defaults to reps):
-  { "reps": 10, "weight": 40, "mode": 1, "rest": 60 }
-
-For an exercise tagged [TIMED] or [TIMED+LEVEL], "reps" is SECONDS and "unit" is required.
-On [TIMED+LEVEL] (Vita) exercises "weight" is the 1-10 level, and "presetId" must be -1:
-  { "reps": 30, "weight": 6, "mode": 1, "rest": 60, "unit": "sec" }
-`;
-
-        document.getElementById('prompt-text').value = prompt;
-        
-        // Switch to Step 2
-        document.getElementById('prompt-step-1').classList.add('hidden');
-        document.getElementById('prompt-step-1').classList.remove('flex');
-        document.getElementById('prompt-step-2').classList.remove('hidden');
-        document.getElementById('prompt-step-2').classList.add('flex');
-        document.getElementById('prompt-modal-title').innerText = "Your AI Prompt is Ready";
-    };
-
-    window.closePromptModal = () => {
-        document.getElementById('prompt-modal').classList.add('hidden');
-        document.getElementById('prompt-modal').classList.remove('flex');
-    };
-
-    window.copyPrompt = () => {
-        const copyText = document.getElementById("prompt-text");
-        copyText.select();
-        copyText.setSelectionRange(0, 99999); 
-        navigator.clipboard.writeText(copyText.value);
-        alert("Prompt copied to clipboard! You can now close this window and then paste this into a LLM like ChatGPT or Claude to generate a workout plan.");
-    };
-
     window.openImportModal = () => {
         document.getElementById('import-modal').classList.remove('hidden');
         document.getElementById('import-modal').classList.add('flex');
@@ -1243,90 +967,84 @@ On [TIMED+LEVEL] (Vita) exercises "weight" is the 1-10 level, and "presetId" mus
         document.getElementById('import-modal').classList.remove('flex');
     };
 
+    // Load a {name, exercises:[...]} object into the builder. Shared by manual JSON import
+    // and AI generation. Fetches live metadata per exercise so timed/level/unilateral coercion
+    // uses the machine's own truth, not the JSON's claims.
+    window.loadWorkoutIntoBuilder = async (data) => {
+        if (data.name) document.getElementById('plan-name').value = data.name;
+        if (!data.exercises || !Array.isArray(data.exercises)) {
+            alert("Invalid workout: missing 'exercises' array."); return false;
+        }
+        workoutData = [];
+        for (const ex of data.exercises) {
+            const groupId = ex.id;
+            const meta = await fetchExerciseMetadata(groupId);
+            const libEx = fullLibrary.find(e => e.id == groupId);
+            const title = libEx ? libEx.title : (ex.title || "Unknown Exercise");
+            const mandatedUnit = getSetGoalUnit(meta);
+            const setsParsed = ex.sets.map(s => ({
+                reps: parseInt(s.reps),
+                weight: parseFloat(String(s.weight ?? 0).replace(',', '.')),
+                mode: parseInt(s.mode || 1),
+                rest: parseInt(s.rest || 60),
+                unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
+            }));
+            const alreadyExpanded = !!ex.isUnilateralExpanded;
+            const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
+            const rawPreset = ex.preset ?? ex.presetId;
+            const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
+                ? parseInt(rawPreset) : -1;
+            workoutData.push({
+                internalId: Date.now() + Math.random(),
+                groupId: parseInt(groupId), title: title,
+                img: meta.variants?.[0]?.img || (libEx ? libEx.img : ""),
+                isUnilateral: meta.isUnilateral, variants: meta.variants, presets: meta.presets,
+                selectedVariantId: meta.variants?.[0]?.id || groupId,
+                selectedPresetId: importedPresetId, sets: finalSets,
+                cablePosition: meta.cablePosition, completionMethod: meta.completionMethod,
+                selectCompletionMethod: meta.selectCompletionMethod, dataStatType: meta.dataStatType,
+                metValue: meta.metValue, trainingPartId2: meta.trainingPartId2,
+                auxiliaryMuscleGroupList: meta.auxiliaryMuscleGroupList
+            });
+        }
+        renderBuilder();
+        return true;
+    };
+
     window.processImport = async () => {
-        const jsonStr = document.getElementById('import-json').value;
         try {
-            const data = JSON.parse(jsonStr);
-            
-            if (data.name) {
-                document.getElementById('plan-name').value = data.name;
-            }
-
-            if (data.exercises && Array.isArray(data.exercises)) {
-                // Clear existing
-                workoutData = [];
-                
-                // Process sequentially to keep order
-                for (const ex of data.exercises) {
-                    const groupId = ex.id;
-                    const meta = await fetchExerciseMetadata(groupId);
-                    
-                    // Lookup title from fullLibrary
-                    const libEx = fullLibrary.find(e => e.id == groupId);
-                    const title = libEx ? libEx.title : (ex.title || "Unknown Exercise");
-
-                    // The API's own completionMethod is authoritative: a Vita/timed movement is
-                    // a seconds window no matter what the JSON claims. Fall back to the JSON's
-                    // unit (an AI plan may legitimately ask for a timed set on a rep-capable
-                    // exercise), then to reps. Hardcoding 'reps' here silently turned every
-                    // imported timed set into a rep set.
-                    const mandatedUnit = getSetGoalUnit(meta);
-
-                    // Map sets — normalize comma decimal separator for weight (e.g. "11,5" → 11.5)
-                    const setsParsed = ex.sets.map(s => ({
-                        reps: parseInt(s.reps),
-                        weight: parseFloat(String(s.weight ?? 0).replace(',', '.')),
-                        mode: parseInt(s.mode || 1),
-                        rest: parseInt(s.rest || 60),
-                        unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
-                    }));
-
-                    // Handle Unilateral: expand L/R pairs if not already expanded.
-                    // Exports from this app include `isUnilateralExpanded: true`, so we don't double them.
-                    // AI-generated or manual JSON without the flag will be expanded as before.
-                    const alreadyExpanded = !!ex.isUnilateralExpanded;
-                    const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
-
-                    // Determine the preset, else default to Custom (-1).
-                    // Accept BOTH keys: this app's own export writes `preset`, while the
-                    // generated AI prompt asks the model for `presetId`. Reading only `preset`
-                    // silently dropped every AI-chosen preset and fell back to Custom, so an
-                    // RM prescription got re-read as raw kg/lbs.
-                    const rawPreset = ex.preset ?? ex.presetId;
-                    const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
-                        ? parseInt(rawPreset)
-                        : -1;
-
-                    workoutData.push({
-                        internalId: Date.now() + Math.random(),
-                        groupId: parseInt(groupId),
-                        title: title,
-                        img: meta.variants?.[0]?.img || (libEx ? libEx.img : ""),
-                        isUnilateral: meta.isUnilateral,
-                        variants: meta.variants,
-                        presets: meta.presets,
-                        selectedVariantId: meta.variants?.[0]?.id || groupId,
-                        selectedPresetId: importedPresetId,
-                        sets: finalSets,
-                        cablePosition: meta.cablePosition,
-                        completionMethod: meta.completionMethod,
-                        selectCompletionMethod: meta.selectCompletionMethod,
-                        dataStatType: meta.dataStatType,
-                        metValue: meta.metValue,
-                        trainingPartId2: meta.trainingPartId2,
-                        auxiliaryMuscleGroupList: meta.auxiliaryMuscleGroupList
-                    });
-                }
-                renderBuilder();
-                closeImportModal();
-                alert("Workout imported successfully!");
-            } else {
-                alert("Invalid JSON format: Missing 'exercises' array.");
-            }
-
+            const data = JSON.parse(document.getElementById('import-json').value);
+            if (await loadWorkoutIntoBuilder(data)) { closeImportModal(); alert("Workout imported successfully!"); }
         } catch (e) {
-            console.error(e);
-            alert("Error parsing JSON: " + e.message);
+            alert("Invalid JSON: " + e.message);
+        }
+    };
+
+    window.generateWorkout = async () => {
+        const request = document.getElementById('wg-request').value.trim();
+        const msg = document.getElementById('wg-generate-msg');
+        const btn = document.getElementById('wg-generate-btn');
+        if (!request) { msg.textContent = 'Describe the workout first.'; return; }
+        btn.disabled = true; msg.textContent = 'Generating… this can take a moment.';
+        try {
+            const r = await fetch('/api/workout/generate', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ request })
+            });
+            const d = await r.json();
+            if (d.error) { msg.textContent = d.error; return; }
+            if (!d.ok) { msg.textContent = d.text || 'Generation failed.'; return; }
+            const loaded = await loadWorkoutIntoBuilder(d.workout);
+            if (loaded) {
+                msg.textContent = (d.warnings && d.warnings.length)
+                    ? `Loaded with notes: ${d.warnings.join(' ')}`
+                    : 'Loaded below — review, tweak, name it, and Save.';
+                document.getElementById('plan-name').focus();
+            }
+        } catch (e) {
+            msg.textContent = 'Request failed: ' + e;
+        } finally {
+            btn.disabled = false;
         }
     };
 

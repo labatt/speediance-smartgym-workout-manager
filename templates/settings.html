@@ -249,6 +249,30 @@
         <div id="coach-new-models" class="hidden mt-3 p-2 rounded bg-green-900/30 border border-green-700 text-xs text-green-300"></div>
     </div>
 
+    <div class="mt-8 pt-6 border-t border-gray-700">
+        <h3 class="text-lg font-bold text-white mb-1">AI Workout Generator</h3>
+        <p class="text-gray-400 text-sm mb-4">Generate workouts in-app on the Build Workout page.
+            Uses the same API keys as the coach; pick which provider and model to generate with.</p>
+        <label class="block text-sm text-gray-300 mb-1">Provider</label>
+        <select id="wg-provider" onchange="wgLoadModels()"
+                class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm mb-3">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (ChatGPT)</option>
+            <option value="gemini">Google (Gemini)</option>
+        </select>
+        <div class="mb-3">
+            <label class="block text-sm text-gray-300 mb-1">Model</label>
+            <select id="wg-model" class="w-full p-2 bg-gray-700 rounded text-white border border-gray-600 text-sm"></select>
+            <p id="wg-msg" class="text-[11px] text-gray-500 mt-1"></p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="wgLoadModels()" type="button"
+                    class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm border border-gray-600">Load models</button>
+            <button onclick="wgSave()" type="button"
+                    class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm font-bold">Save</button>
+        </div>
+    </div>
+
     <div class="mt-8 pt-8 border-t border-gray-700 text-center">
         <p class="text-xs text-gray-500">
             Disclaimer: This is an unofficial tool and is not affiliated with, endorsed by, or connected to Speediance.
@@ -378,5 +402,40 @@
     }
 
     loadCoach().then(checkNewModels);
+
+    async function wgInit() {
+        try {
+            const r = await fetch('/api/workout/config');
+            const d = await r.json();
+            if (d.provider) document.getElementById('wg-provider').value = d.provider;
+            await wgLoadModels(d.model);
+        } catch (e) { /* not configured yet */ }
+    }
+    async function wgLoadModels(selectModel) {
+        const provider = document.getElementById('wg-provider').value;
+        const sel = document.getElementById('wg-model');
+        const msg = document.getElementById('wg-msg');
+        msg.textContent = 'Loading models…';
+        try {
+            const r = await fetch('/api/coach/models?provider=' + encodeURIComponent(provider));
+            const d = await r.json();
+            if (!d.ok) { msg.textContent = d.error || 'Could not load models (is the key set for this provider?)'; sel.innerHTML = ''; return; }
+            sel.innerHTML = d.models.map(m => `<option value="${m}">${m}</option>`).join('');
+            if (selectModel && d.models.includes(selectModel)) sel.value = selectModel;
+            msg.textContent = `${d.models.length} models`;
+        } catch (e) { msg.textContent = 'Could not load models.'; }
+    }
+    async function wgSave() {
+        const provider = document.getElementById('wg-provider').value;
+        const model = document.getElementById('wg-model').value;
+        const msg = document.getElementById('wg-msg');
+        const r = await fetch('/api/workout/config', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider, model })
+        });
+        const d = await r.json();
+        msg.textContent = d.saved ? `Saved · ${d.model || '(no model)'}` : (d.error || 'Save failed');
+    }
+    wgInit();
 </script>
 {% endblock %}
