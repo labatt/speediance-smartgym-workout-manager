@@ -68,14 +68,16 @@
                 </div>
                 
                 <div class="flex flex-wrap gap-3">
-                    <div class="relative group/btn">
-                        <button onclick="openPromptGenerator()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold transition shadow-lg shadow-purple-900/20 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                            Generate Prompt
+                    <div class="w-full">
+                        <label class="block text-sm text-gray-300 mb-1">Describe the workout you want the AI to build</label>
+                        <textarea id="wg-request" rows="2"
+                            class="w-full bg-gray-900 text-white p-3 rounded border border-gray-600 focus:border-purple-500 outline-none text-sm"
+                            placeholder="e.g. A 40-minute back and biceps day, moderate volume, include some eccentric work."></textarea>
+                        <button onclick="generateWorkout()" id="wg-generate-btn"
+                            class="mt-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold transition shadow-lg shadow-purple-900/20">
+                            Generate Workout
                         </button>
-                        <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover/btn:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                            Create a prompt for ChatGPT
-                        </div>
+                        <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
                     </div>
 
                     <div class="relative group/btn">
@@ -1243,90 +1245,84 @@ On [TIMED+LEVEL] (Vita) exercises "weight" is the 1-10 level, and "presetId" mus
         document.getElementById('import-modal').classList.remove('flex');
     };
 
+    // Load a {name, exercises:[...]} object into the builder. Shared by manual JSON import
+    // and AI generation. Fetches live metadata per exercise so timed/level/unilateral coercion
+    // uses the machine's own truth, not the JSON's claims.
+    window.loadWorkoutIntoBuilder = async (data) => {
+        if (data.name) document.getElementById('plan-name').value = data.name;
+        if (!data.exercises || !Array.isArray(data.exercises)) {
+            alert("Invalid workout: missing 'exercises' array."); return false;
+        }
+        workoutData = [];
+        for (const ex of data.exercises) {
+            const groupId = ex.id;
+            const meta = await fetchExerciseMetadata(groupId);
+            const libEx = fullLibrary.find(e => e.id == groupId);
+            const title = libEx ? libEx.title : (ex.title || "Unknown Exercise");
+            const mandatedUnit = getSetGoalUnit(meta);
+            const setsParsed = ex.sets.map(s => ({
+                reps: parseInt(s.reps),
+                weight: parseFloat(String(s.weight ?? 0).replace(',', '.')),
+                mode: parseInt(s.mode || 1),
+                rest: parseInt(s.rest || 60),
+                unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
+            }));
+            const alreadyExpanded = !!ex.isUnilateralExpanded;
+            const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
+            const rawPreset = ex.preset ?? ex.presetId;
+            const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
+                ? parseInt(rawPreset) : -1;
+            workoutData.push({
+                internalId: Date.now() + Math.random(),
+                groupId: parseInt(groupId), title: title,
+                img: meta.variants?.[0]?.img || (libEx ? libEx.img : ""),
+                isUnilateral: meta.isUnilateral, variants: meta.variants, presets: meta.presets,
+                selectedVariantId: meta.variants?.[0]?.id || groupId,
+                selectedPresetId: importedPresetId, sets: finalSets,
+                cablePosition: meta.cablePosition, completionMethod: meta.completionMethod,
+                selectCompletionMethod: meta.selectCompletionMethod, dataStatType: meta.dataStatType,
+                metValue: meta.metValue, trainingPartId2: meta.trainingPartId2,
+                auxiliaryMuscleGroupList: meta.auxiliaryMuscleGroupList
+            });
+        }
+        renderBuilder();
+        return true;
+    };
+
     window.processImport = async () => {
-        const jsonStr = document.getElementById('import-json').value;
         try {
-            const data = JSON.parse(jsonStr);
-            
-            if (data.name) {
-                document.getElementById('plan-name').value = data.name;
-            }
-
-            if (data.exercises && Array.isArray(data.exercises)) {
-                // Clear existing
-                workoutData = [];
-                
-                // Process sequentially to keep order
-                for (const ex of data.exercises) {
-                    const groupId = ex.id;
-                    const meta = await fetchExerciseMetadata(groupId);
-                    
-                    // Lookup title from fullLibrary
-                    const libEx = fullLibrary.find(e => e.id == groupId);
-                    const title = libEx ? libEx.title : (ex.title || "Unknown Exercise");
-
-                    // The API's own completionMethod is authoritative: a Vita/timed movement is
-                    // a seconds window no matter what the JSON claims. Fall back to the JSON's
-                    // unit (an AI plan may legitimately ask for a timed set on a rep-capable
-                    // exercise), then to reps. Hardcoding 'reps' here silently turned every
-                    // imported timed set into a rep set.
-                    const mandatedUnit = getSetGoalUnit(meta);
-
-                    // Map sets — normalize comma decimal separator for weight (e.g. "11,5" → 11.5)
-                    const setsParsed = ex.sets.map(s => ({
-                        reps: parseInt(s.reps),
-                        weight: parseFloat(String(s.weight ?? 0).replace(',', '.')),
-                        mode: parseInt(s.mode || 1),
-                        rest: parseInt(s.rest || 60),
-                        unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
-                    }));
-
-                    // Handle Unilateral: expand L/R pairs if not already expanded.
-                    // Exports from this app include `isUnilateralExpanded: true`, so we don't double them.
-                    // AI-generated or manual JSON without the flag will be expanded as before.
-                    const alreadyExpanded = !!ex.isUnilateralExpanded;
-                    const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
-
-                    // Determine the preset, else default to Custom (-1).
-                    // Accept BOTH keys: this app's own export writes `preset`, while the
-                    // generated AI prompt asks the model for `presetId`. Reading only `preset`
-                    // silently dropped every AI-chosen preset and fell back to Custom, so an
-                    // RM prescription got re-read as raw kg/lbs.
-                    const rawPreset = ex.preset ?? ex.presetId;
-                    const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
-                        ? parseInt(rawPreset)
-                        : -1;
-
-                    workoutData.push({
-                        internalId: Date.now() + Math.random(),
-                        groupId: parseInt(groupId),
-                        title: title,
-                        img: meta.variants?.[0]?.img || (libEx ? libEx.img : ""),
-                        isUnilateral: meta.isUnilateral,
-                        variants: meta.variants,
-                        presets: meta.presets,
-                        selectedVariantId: meta.variants?.[0]?.id || groupId,
-                        selectedPresetId: importedPresetId,
-                        sets: finalSets,
-                        cablePosition: meta.cablePosition,
-                        completionMethod: meta.completionMethod,
-                        selectCompletionMethod: meta.selectCompletionMethod,
-                        dataStatType: meta.dataStatType,
-                        metValue: meta.metValue,
-                        trainingPartId2: meta.trainingPartId2,
-                        auxiliaryMuscleGroupList: meta.auxiliaryMuscleGroupList
-                    });
-                }
-                renderBuilder();
-                closeImportModal();
-                alert("Workout imported successfully!");
-            } else {
-                alert("Invalid JSON format: Missing 'exercises' array.");
-            }
-
+            const data = JSON.parse(document.getElementById('import-json').value);
+            if (await loadWorkoutIntoBuilder(data)) { closeImportModal(); alert("Workout imported successfully!"); }
         } catch (e) {
-            console.error(e);
-            alert("Error parsing JSON: " + e.message);
+            alert("Invalid JSON: " + e.message);
+        }
+    };
+
+    window.generateWorkout = async () => {
+        const request = document.getElementById('wg-request').value.trim();
+        const msg = document.getElementById('wg-generate-msg');
+        const btn = document.getElementById('wg-generate-btn');
+        if (!request) { msg.textContent = 'Describe the workout first.'; return; }
+        btn.disabled = true; msg.textContent = 'Generating… this can take a moment.';
+        try {
+            const r = await fetch('/api/workout/generate', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ request })
+            });
+            const d = await r.json();
+            if (d.error) { msg.textContent = d.error; return; }
+            if (!d.ok) { msg.textContent = d.text || 'Generation failed.'; return; }
+            const loaded = await loadWorkoutIntoBuilder(d.workout);
+            if (loaded) {
+                msg.textContent = (d.warnings && d.warnings.length)
+                    ? `Loaded with notes: ${d.warnings.join(' ')}`
+                    : 'Loaded below — review, tweak, name it, and Save.';
+                document.getElementById('plan-name').focus();
+            }
+        } catch (e) {
+            msg.textContent = 'Request failed: ' + e;
+        } finally {
+            btn.disabled = false;
         }
     };
 
