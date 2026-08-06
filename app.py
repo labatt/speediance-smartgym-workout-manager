@@ -1012,8 +1012,10 @@ def api_workout_generate():
             for d in (client.get_batch_details(pool_ids) or []):
                 if d.get("id") is not None:
                     details[int(d["id"])] = d
-        except Exception:
-            details = {}   # descriptions are a nicety; proceed without them
+        except Exception as e:
+            if _is_auth_error(e):
+                raise                      # let the outer handler map auth loss to 401
+            details = {}                   # other errors: descriptions are a nicety, proceed
 
         libmap = {int(e["id"]): e for e in library}
         merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
