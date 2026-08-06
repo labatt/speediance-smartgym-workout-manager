@@ -217,5 +217,36 @@ class TestUnitLabelling(unittest.TestCase):
         self.assertIn("convert", coach.ASSESSMENT_SYSTEM_PROMPT.lower())
 
 
+class TestWorkoutGeneratorConfig(unittest.TestCase):
+    def _cfg(self):
+        return {"provider": "ollama",
+                "providers": {p: coach._blank_provider(p) for p in coach.PROVIDERS},
+                "known_models": {}, "last_model_check": None,
+                "workout_generator": {"provider": "anthropic", "model": "claude-x"}}
+
+    def test_reads_workout_provider_and_model(self):
+        cfg = self._cfg()
+        self.assertEqual(coach.workout_provider(cfg), "anthropic")
+        self.assertEqual(coach.workout_model(cfg), "claude-x")
+
+    def test_defaults_when_missing(self):
+        cfg = {"provider": "ollama",
+               "providers": {p: coach._blank_provider(p) for p in coach.PROVIDERS}}
+        self.assertIn(coach.workout_provider(cfg), coach.PROVIDERS)  # a valid provider
+        self.assertEqual(coach.workout_model(cfg), "")
+
+    def test_chat_with_refuses_without_model(self):
+        cfg = self._cfg()
+        ok, msg = coach.chat_with("anthropic", "", "hi", cfg, timeout=2)
+        self.assertFalse(ok)
+        self.assertIn("model", msg.lower())
+
+    def test_chat_with_refuses_without_key(self):
+        cfg = self._cfg()   # anthropic has a blank api_key
+        ok, msg = coach.chat_with("anthropic", "claude-x", "hi", cfg, timeout=2)
+        self.assertFalse(ok)
+        self.assertIn("key", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

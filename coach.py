@@ -50,6 +50,7 @@ def load_config():
         "providers": {p: _blank_provider(p) for p in PROVIDERS},
         "known_models": {},
         "last_model_check": None,
+        "workout_generator": {"provider": "anthropic", "model": ""},
     }
     if os.path.exists(_CONFIG_FILE):
         try:
@@ -64,6 +65,8 @@ def load_config():
             cfg["provider"] = saved.get("provider", cfg["provider"])
             cfg["known_models"] = saved.get("known_models", {})
             cfg["last_model_check"] = saved.get("last_model_check")
+            if isinstance(saved.get("workout_generator"), dict):
+                cfg["workout_generator"].update({k: v for k, v in saved["workout_generator"].items() if v is not None})
         elif saved.get("api_key") or saved.get("model"):
             # Legacy {endpoint, model, api_key} — it was Ollama-only.
             cfg["providers"]["ollama"].update({
@@ -97,6 +100,28 @@ def active_provider(config):
 
 def provider_cfg(config, provider):
     return config["providers"].get(provider) or _blank_provider(provider)
+
+
+def workout_provider(config):
+    wg = config.get("workout_generator") or {}
+    p = wg.get("provider", "anthropic")
+    return p if p in PROVIDERS else "anthropic"
+
+
+def workout_model(config):
+    return (config.get("workout_generator") or {}).get("model", "") or ""
+
+
+def chat_with(provider, model, prompt, config=None, system=None, timeout=120):
+    """Run a prompt through a SPECIFIC provider+model, using that provider's shared API key.
+    Reuses the tested _chat_provider dispatch (and its SSRF allowlist)."""
+    config = config or load_config()
+    if provider not in PROVIDERS:
+        return False, "Unknown provider."
+    base = provider_cfg(config, provider)
+    pc = {"api_key": base.get("api_key", ""), "endpoint": base.get("endpoint", PROVIDERS[provider]["endpoint"]),
+          "model": model}
+    return _chat_provider(provider, pc, prompt, timeout, system)
 
 
 # --------------------------------------------------------------------------- endpoint safety
