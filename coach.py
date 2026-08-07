@@ -195,12 +195,19 @@ def _err_reason(provider, code, detail):
 # --------------------------------------------------------------------------- model discovery
 
 def _looks_like_chat_model(mid):
-    """OpenAI lists embeddings/tts/whisper/etc.; keep the chat-capable ones."""
+    """Keep chat-capable models; drop the clearly-non-chat ones OpenAI also lists.
+
+    A DENYLIST, deliberately — an allowlist keyed on today's naming ('gpt', 'o'+digit)
+    would silently hide a newly-released chat model with an unfamiliar name, which is the
+    opposite of always surfacing the latest. So drop only the categories that are plainly
+    not text chat (embeddings, audio, image, moderation, legacy completions) and keep
+    everything else."""
     mid = mid.lower()
-    if any(x in mid for x in ("embedding", "whisper", "tts", "dall-e", "moderation",
-                              "audio", "realtime", "transcribe", "image", "search")):
-        return False
-    return mid.startswith("gpt") or mid.startswith("chatgpt") or (len(mid) > 1 and mid[0] == "o" and mid[1].isdigit())
+    return not any(x in mid for x in (
+        "embedding", "whisper", "tts", "dall-e", "moderation", "audio", "realtime",
+        "transcribe", "image", "search",
+        "davinci", "babbage", "curie", "ada",   # legacy (non-chat) completion models
+    ))
 
 
 def list_models(provider, pc):
