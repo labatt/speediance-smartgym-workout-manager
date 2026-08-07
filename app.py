@@ -753,6 +753,38 @@ def _assessment_date(ts):
         return '?'
 
 
+RECENT_PERF_DAYS = {7, 14, 30}   # windows offered to the workout generator (default 30)
+
+
+def _gather_recent_sessions(days):
+    """Completed sessions in the last `days`, oldest->newest, each {date,title,snapshot,notes}.
+    Shared by the assessment and the workout generator. Returns (sessions, truncated)."""
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=days - 1)
+    records = [r for r in (client.get_training_records(start.isoformat(), end.isoformat()) or [])
+               if r.get('trainingId')]
+    truncated = len(records) > ASSESSMENT_MAX_SESSIONS
+    records = records[:ASSESSMENT_MAX_SESSIONS]   # API returns newest first
+    journal = load_journal()
+    sessions = []
+    for r in records:
+        tid = r.get('trainingId')
+        try:
+            snap = _analyze_training(tid)
+        except Exception:
+            continue
+        if not snap or not snap.get('exercises'):
+            continue
+        sessions.append({
+            "date": _assessment_date(r.get('startTimestamp')),
+            "title": r.get('title') or 'Workout',
+            "snapshot": snap,
+            "notes": journal.get(str(tid), {}),
+        })
+    sessions.reverse()   # oldest -> newest
+    return sessions, truncated
+
+
 def _analyze_training(training_id):
     """Facts for one session, enriched with muscle names from the library."""
     detail = client.get_training_detail(training_id, 'custom')
@@ -1024,8 +1056,22 @@ def api_workout_generate():
         libmap = {int(e["id"]): e for e in library}
         merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
 
-        system = workout_gen.build_generation_system_prompt(merged, _unit_label().upper())
-        user = workout_gen.build_generation_user_prompt(user_request)
+        recent_txt = ""
+        try:
+            rd = int(body.get('recent_days', 30))
+        except (TypeError, ValueError):
+            rd = 30
+        if rd in RECENT_PERF_DAYS:
+            try:
+                rsessions, _ = _gather_recent_sessions(rd)
+                recent_txt = workout_gen.build_recent_performance(rsessions, _unit_label().upper(), rd)
+            except Exception as e:
+                if _is_auth_error(e):
+                    raise                 # a mid-request auth loss must still 401
+                recent_txt = ""           # otherwise recent-perf is a nicety; never block
+        system = workout_gen.build_generation_system_prompt(
+            merged, _unit_label().upper(), has_recent=bool(recent_txt))
+        user = workout_gen.build_generation_user_prompt(user_request, recent_performance=recent_txt)
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
         if not ok:
             return jsonify({"ok": False, "text": text}), 200
@@ -1320,31 +1366,7 @@ def api_assessment():
             return jsonify({"ok": False,
                             "text": "No AI provider is ready. Add a key and pick a model in Settings."}), 200
 
-        end = datetime.date.today()
-        start = end - datetime.timedelta(days=days - 1)
-        records = [r for r in (client.get_training_records(start.isoformat(), end.isoformat()) or [])
-                   if r.get('trainingId')]
-
-        truncated = len(records) > ASSESSMENT_MAX_SESSIONS
-        records = records[:ASSESSMENT_MAX_SESSIONS]      # API returns newest first
-
-        journal = load_journal()
-        sessions = []
-        for r in records:
-            tid = r.get('trainingId')
-            try:
-                snap = _analyze_training(tid)
-            except Exception:
-                continue
-            if not snap or not snap.get('exercises'):
-                continue
-            sessions.append({
-                "date": _assessment_date(r.get('startTimestamp')),
-                "title": r.get('title') or 'Workout',
-                "snapshot": snap,
-                "notes": journal.get(str(tid), {}),
-            })
-        sessions.reverse()   # oldest -> newest for the read
+        sessions, truncated = _gather_recent_sessions(days)
 
         if not sessions:
             return jsonify({"ok": True, "empty": True, "session_count": 0,
