@@ -123,6 +123,56 @@ def _top_set(ex):
     return None, (best.get("done") or 0), (best.get("seconds") or 0)
 
 
+def _csv_nums(s):
+    """Parse a comma string like '10,10,8' into [10, 10, 8] (ints where whole)."""
+    out = []
+    for part in str(s or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            v = float(part)
+            out.append(int(v) if v == int(v) else v)
+        except ValueError:
+            pass
+    return out
+
+
+def _summarize(nums):
+    """'10' when every value is equal, else '12/10/8'."""
+    if not nums:
+        return "?"
+    if all(n == nums[0] for n in nums):
+        return f"{nums[0]:g}"
+    return "/".join(f"{n:g}" for n in nums)
+
+
+def build_reference_workouts(references, unit_label):
+    """Readable digest of referenced workouts for the prompt. Pure — facts only.
+    references: [{"name", "exercises":[{"title","setsAndReps","weights","level","is_level","is_timed"}]}]."""
+    blocks = []
+    for w in references:
+        exs = w.get("exercises") or []
+        if not exs:
+            continue
+        lines = [f"{w.get('name', 'Workout')}:"]
+        for e in exs:
+            title = e.get("title", "Exercise")
+            reps = _csv_nums(e.get("setsAndReps"))
+            n = len(reps)
+            if e.get("is_level"):
+                lines.append(f"- {title}: {n} sets × {_summarize(reps)}s, levels {_summarize(_csv_nums(e.get('level')))} (timed)")
+            elif e.get("is_timed"):
+                lines.append(f"- {title}: {n} sets × {_summarize(reps)}s (timed)")
+            else:
+                lines.append(f"- {title}: {n}×{_summarize(reps)} @ {_summarize(_csv_nums(e.get('weights')))} {unit_label}")
+        blocks.append("\n".join(lines))
+    if not blocks:
+        return ""
+    return ("REFERENCE WORKOUTS (structure/inspiration — adapt to the request, don't copy verbatim):\n"
+            + "\n\n".join(blocks))
+
+
 def build_recent_performance(sessions, unit_label, days):
     """Compact per-exercise table of the athlete's most recent lifts, with trend vs the
     prior occurrence. Pure — facts only; the 'how to progress' rules live in the system
@@ -169,7 +219,7 @@ def build_recent_performance(sessions, unit_label, days):
     return "\n".join(lines)
 
 
-def build_generation_system_prompt(exercises, unit_label, has_recent=False):
+def build_generation_system_prompt(exercises, unit_label, has_recent=False, has_refs=False):
     """Full 'professional fitness coach' system prompt for the selected exercise pool."""
     other = "kilograms" if unit_label == "LBS" else "pounds"
     has_timed = any(e["is_timed"] for e in exercises)
@@ -232,6 +282,13 @@ def build_generation_system_prompt(exercises, unit_label, has_recent=False):
             "- No recent entry for an exercise -> estimate conservatively from similar lifts.",
             "- Still never output weight 0.",
         ]
+    if has_refs:
+        p += [
+            "",
+            "REFERENCE WORKOUTS are provided in the user prompt as structure to adapt: reuse their "
+            "exercises where they fit the request, but tailor sets and loads to the request and the "
+            "athlete's recent performance rather than copying them verbatim.",
+        ]
     p += [
         "",
         "OUTPUT FORMAT — output ONLY a JSON object, no prose:",
@@ -250,20 +307,13 @@ def build_generation_system_prompt(exercises, unit_label, has_recent=False):
     return "\n".join(p)
 
 
-def build_generation_user_prompt(user_request, references=None, assessment=None, recent_performance=""):
-    """The user's request, plus optional referenced-workout context and an assessment
-    summary (both wired in Phase 2; empty here)."""
+def build_generation_user_prompt(user_request, references="", recent_performance=""):
+    """The user's request, plus optional referenced-workout digest and recent-performance
+    table (both preformatted strings; appended when non-empty)."""
     parts = [f'Build this workout: "{user_request}"']
-    for ref in (references or []):
+    if references:
         parts.append("")
-        parts.append(f"REFERENCE WORKOUT \"{ref.get('name','')}\" (JSON + exercise notes):")
-        parts.append(json.dumps(ref.get("detail", {}), ensure_ascii=False))
-        if ref.get("notes"):
-            parts.append(ref["notes"])
-    if assessment:
-        parts.append("")
-        parts.append("RECENT PERFORMANCE ASSESSMENT (use it to tune difficulty and progression):")
-        parts.append(assessment)
+        parts.append(references)
     if recent_performance:
         parts.append("")
         parts.append(recent_performance)
