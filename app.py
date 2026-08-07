@@ -1101,7 +1101,7 @@ def api_workout_generate():
         pool_ids = workout_gen.parse_selected_ids(sel if ok else "", library, request=user_request)
 
         # Referenced workouts: build a readable summary AND make their exercises available to
-        # the model (prepend their ids so they survive the pool cap and validation).
+        # the model (prepend their ids so they land in the pool the model may choose from and survive the 60-cap).
         ref_norm, ref_ids = [], []
         for code in (body.get('references') or [])[:5]:
             try:
@@ -1115,8 +1115,11 @@ def api_workout_generate():
             exs = []
             for a in (det.get('actionLibraryList') or []):
                 gid = a.get('groupId') or a.get('actionLibraryId')
-                if gid:
-                    ref_ids.append(int(gid))
+                if gid is not None:
+                    try:
+                        ref_ids.append(int(gid))
+                    except (TypeError, ValueError):
+                        pass                       # skip a malformed id, never 500 the request
                 cm = a.get('completionMethod')
                 exs.append({
                     "title": a.get('title', 'Exercise'),
