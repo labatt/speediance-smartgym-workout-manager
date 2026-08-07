@@ -19,6 +19,7 @@ const {
     kgToLbs,
     parseImportedSets,
     buildExportJSON,
+    resolveAlreadyExpanded,
 } = require(path.join(__dirname, '..', 'static', 'workout-logic.js'));
 
 // ---------------------------------------------------------------------------
@@ -261,4 +262,30 @@ test('buildExportJSON: name is used', () => {
 test('buildExportJSON: fallback name when empty', () => {
     const result = buildExportJSON([], '');
     assert.equal(result.name, 'Custom Workout');
+});
+
+// ---------------------------------------------------------------------------
+// resolveAlreadyExpanded — the unilateral refine-round-trip guard
+// ---------------------------------------------------------------------------
+test('resolveAlreadyExpanded: model flag true -> expanded', () => {
+    assert.equal(resolveAlreadyExpanded(true, 123, undefined), true);
+});
+
+test('resolveAlreadyExpanded: no flag, no hint -> not expanded (generation doubles)', () => {
+    assert.equal(resolveAlreadyExpanded(false, 123, undefined), false);
+});
+
+test('resolveAlreadyExpanded: no flag but id in expandedIds -> expanded (refine echo, flag dropped)', () => {
+    const ids = new Set([123, 456]);
+    assert.equal(resolveAlreadyExpanded(undefined, 123, ids), true);
+});
+
+test('resolveAlreadyExpanded: no flag, id NOT in expandedIds -> not expanded (freshly swapped-in)', () => {
+    const ids = new Set([456]);
+    assert.equal(resolveAlreadyExpanded(false, 123, ids), false);
+});
+
+test('resolveAlreadyExpanded: coerces string groupId against numeric id set', () => {
+    const ids = new Set([437972850049025]);
+    assert.equal(resolveAlreadyExpanded(false, '437972850049025', ids), true);
 });
