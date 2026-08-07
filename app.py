@@ -714,21 +714,31 @@ def save_assessment(data):
 # you can read back), so we keep the last request AND the full assembled prompt locally, both
 # to show/reuse it and to make it transparent exactly what the model was told.
 WORKOUT_GEN_LAST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'workout_gen_last.json')
+MAX_GEN_HISTORY = 20   # keep the last N generations (request + full assembled prompt)
 
 
-def load_workout_gen_last():
+def load_workout_gen_history():
+    """The recent generations, newest first. Tolerates the legacy single-object shape."""
     if os.path.exists(WORKOUT_GEN_LAST_FILE):
         try:
             with open(WORKOUT_GEN_LAST_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):        # migrate the old single-entry file
+                return [data]
         except Exception as e:
-            print(f"Could not read last generation: {e}")
-    return None
+            print(f"Could not read generation history: {e}")
+    return []
 
 
-def save_workout_gen_last(data):
+def save_workout_gen_last(entry):
+    """Prepend a generation and keep only the most recent MAX_GEN_HISTORY."""
+    history = [entry] + load_workout_gen_history()
+    history = history[:MAX_GEN_HISTORY]
     with open(WORKOUT_GEN_LAST_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
+        json.dump(history, f, indent=2)
+    return history
 
 
 def _unit_label():
@@ -1045,7 +1055,8 @@ def api_workout_last():
     """The last in-app generation (request + full assembled prompt), or {last: null}."""
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
-    return jsonify({"last": load_workout_gen_last()})
+    history = load_workout_gen_history()
+    return jsonify({"last": history[0] if history else None, "history": history})
 
 
 @app.route('/api/workout/generate', methods=['POST'])
