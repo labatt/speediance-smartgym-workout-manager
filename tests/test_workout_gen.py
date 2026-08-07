@@ -196,5 +196,59 @@ class TestProgressionBlock(unittest.TestCase):
         self.assertIn("- Row", u)
 
 
+class TestReferenceWorkouts(unittest.TestCase):
+    def setUp(self):
+        self.refs = [{
+            "name": "Back Day A",
+            "exercises": [
+                {"title": "Seated Row", "setsAndReps": "10,10,10", "weights": "40,40,40",
+                 "level": "", "is_level": False, "is_timed": False},
+                {"title": "Lat Pulldown", "setsAndReps": "12,10,8", "weights": "45,50,55",
+                 "level": "", "is_level": False, "is_timed": False},
+                {"title": "Vita Pull", "setsAndReps": "30,30,30", "weights": "0,0,0",
+                 "level": "10,12,14", "is_level": True, "is_timed": True},
+            ],
+        }]
+        self.p = wg.build_reference_workouts(self.refs, "LBS")
+
+    def test_names_the_workout(self):
+        self.assertIn("Back Day A", self.p)
+
+    def test_uniform_sets_summarised(self):
+        self.assertIn("Seated Row: 3×10 @ 40 LBS", self.p)
+
+    def test_varying_sets_listed(self):
+        self.assertIn("Lat Pulldown: 3×12/10/8 @ 45/50/55 LBS", self.p)
+
+    def test_vita_shows_levels_seconds_no_unit(self):
+        row = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
+        self.assertIn("30s", row)
+        self.assertIn("levels 10/12/14", row)
+        self.assertNotIn("LBS", row)
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(wg.build_reference_workouts([], "LBS"), "")
+
+
+class TestReferencePromptHooks(unittest.TestCase):
+    def setUp(self):
+        self.merged = [wg.merge_exercise(LIB[0])]
+
+    def test_system_prompt_refs_note_when_has_refs(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS", has_refs=True).lower()
+        self.assertIn("reference workout", p)
+
+    def test_system_prompt_no_refs_note_by_default(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS").lower()
+        self.assertNotIn("reference workouts are provided", p)
+
+    def test_user_prompt_includes_references_and_recent(self):
+        u = wg.build_generation_user_prompt("back day", references="REFERENCE WORKOUTS...\n- Row",
+                                            recent_performance="RECENT PERFORMANCE...\n- Curl")
+        self.assertIn("REFERENCE WORKOUTS", u)
+        self.assertIn("RECENT PERFORMANCE", u)
+        self.assertIn("back day", u)
+
+
 if __name__ == "__main__":
     unittest.main()
