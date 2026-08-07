@@ -460,6 +460,15 @@
         fillRoleModels('coach');
         fillRoleModels('wg');
     }
-    initAI().then(checkNewModels);
+
+    // After the cached lists paint instantly, quietly re-fetch each keyed provider's LIVE
+    // model list so the dropdowns always reflect the latest models the provider serves now,
+    // not a stored snapshot. Listing models is a cheap/free GET, so it's fine on every open.
+    async function refreshLatestModels() {
+        for (const p of Object.keys((coachCfg && coachCfg.providers) || {})) {
+            if (keyed(p)) { try { await testProvider(p); } catch (e) { /* ignore */ } }
+        }
+    }
+    initAI().then(() => { checkNewModels(); refreshLatestModels(); });
 </script>
 {% endblock %}
