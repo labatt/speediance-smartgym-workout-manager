@@ -76,6 +76,14 @@
                             class="mt-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold transition shadow-lg shadow-purple-900/20">
                             Generate Workout
                         </button>
+                        <label class="text-xs text-gray-400 ml-2">Recent performance:
+                            <select id="wg-recent-days" class="ml-1 p-1 bg-gray-700 rounded text-white border border-gray-600 text-xs">
+                                <option value="30" selected>Last 30 days</option>
+                                <option value="14">Last 14 days</option>
+                                <option value="7">Last 7 days</option>
+                                <option value="0">Off</option>
+                            </select>
+                        </label>
                         <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
                     </div>
 
@@ -1027,9 +1035,10 @@
         if (!request) { msg.textContent = 'Describe the workout first.'; return; }
         btn.disabled = true; msg.textContent = 'Generating… this can take a moment.';
         try {
+            const recentDays = parseInt(document.getElementById('wg-recent-days').value, 10) || 0;
             const r = await fetch('/api/workout/generate', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ request })
+                body: JSON.stringify({ request, recent_days: recentDays })
             });
             const d = await r.json();
             if (d.error) { msg.textContent = d.error; return; }
