@@ -84,6 +84,8 @@
                                 <option value="0">Off</option>
                             </select>
                         </label>
+                        <button type="button" onclick="openRefModal()" class="ml-2 px-3 py-2 text-xs rounded bg-gray-700 hover:bg-gray-600 border border-gray-600">+ Add reference</button>
+                        <div id="ref-chips" class="flex flex-wrap gap-2 mt-2"></div>
                         <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
 
                         <div id="wg-last" class="hidden mt-3 p-3 rounded-lg border border-gray-700 bg-gray-900/40 text-sm">
@@ -173,6 +175,17 @@
             <button onclick="closeImportModal()" class="text-gray-400 hover:text-white px-4 py-2">Cancel</button>
             <button onclick="processImport()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-bold">Import</button>
         </div>
+    </div>
+</div>
+
+<div id="ref-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-lg p-6 w-full max-w-lg max-h-[80vh] flex flex-col border border-gray-600">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-bold text-white">Reference a workout</h3>
+            <button onclick="closeRefModal()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">Pick one or more of your workouts. The AI will use them as structure and may reuse their exercises.</p>
+        <div id="ref-list" class="flex-grow overflow-auto space-y-1 text-sm text-gray-300">Loading…</div>
     </div>
 </div>
 
@@ -1089,6 +1102,52 @@
     };
     loadLastGeneration();
 
+    let references = [];   // [{code, name}]
+    function renderRefChips() {
+        const box = document.getElementById('ref-chips');
+        box.innerHTML = '';
+        references.forEach(r => {
+            const chip = document.createElement('span');
+            chip.className = 'inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-purple-900/40 border border-purple-700 text-purple-200';
+            chip.textContent = r.name;                        // textContent — never HTML
+            const x = document.createElement('button');
+            x.type = 'button'; x.textContent = '✕'; x.className = 'text-purple-300 hover:text-white';
+            x.onclick = () => { references = references.filter(z => z.code !== r.code); renderRefChips(); };
+            chip.appendChild(x);
+            box.appendChild(chip);
+        });
+    }
+    window.openRefModal = async () => {
+        document.getElementById('ref-modal').classList.remove('hidden');
+        document.getElementById('ref-modal').classList.add('flex');
+        const list = document.getElementById('ref-list');
+        list.textContent = 'Loading…';
+        try {
+            const d = await (await fetch('/api/workout/list')).json();
+            if (d.error) { list.textContent = d.error; return; }
+            const ws = d.workouts || [];
+            if (!ws.length) { list.textContent = 'No workouts found.'; return; }
+            list.innerHTML = '';
+            ws.forEach(w => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'block w-full text-left p-2 rounded hover:bg-gray-700 border border-gray-700';
+                const meta = [w.exercises ? w.exercises + ' exercises' : null, w.duration ? '~' + w.duration + ' min' : null].filter(Boolean).join(' · ');
+                row.textContent = w.name + (meta ? '  (' + meta + ')' : '');   // textContent — safe
+                row.onclick = () => {
+                    if (!references.some(z => z.code === w.code)) references.push({ code: w.code, name: w.name });
+                    renderRefChips();
+                    closeRefModal();
+                };
+                list.appendChild(row);
+            });
+        } catch (e) { list.textContent = 'Could not load workouts.'; }
+    };
+    window.closeRefModal = () => {
+        document.getElementById('ref-modal').classList.add('hidden');
+        document.getElementById('ref-modal').classList.remove('flex');
+    };
+
     window.generateWorkout = async () => {
         const request = document.getElementById('wg-request').value.trim();
         const msg = document.getElementById('wg-generate-msg');
@@ -1099,7 +1158,7 @@
             const recentDays = parseInt(document.getElementById('wg-recent-days').value, 10) || 0;
             const r = await fetch('/api/workout/generate', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ request, recent_days: recentDays })
+                body: JSON.stringify({ request, recent_days: recentDays, references: references.map(r => r.code) })
             });
             const d = await r.json();
             if (d.error) { msg.textContent = d.error; return; }
