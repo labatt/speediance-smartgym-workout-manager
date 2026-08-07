@@ -87,6 +87,17 @@ class TestModelFilter(unittest.TestCase):
         for bad in ("text-embedding-3-large", "whisper-1", "tts-1", "dall-e-3", "omni-moderation-latest"):
             self.assertFalse(coach._looks_like_chat_model(bad), bad)
 
+    def test_keeps_novel_chat_names(self):
+        # Denylist-only: a newly-released chat model must not be hidden just because its
+        # name doesn't match a known prefix. This is the "always show the latest" guarantee.
+        for good in ("gpt-6", "o5", "o5-pro", "gpt-5.5-flagship", "claude-style-new-reasoner"):
+            self.assertTrue(coach._looks_like_chat_model(good), good)
+
+    def test_drops_legacy_and_specialized(self):
+        for bad in ("davinci-002", "babbage-002", "gpt-4o-audio-preview",
+                    "gpt-4o-realtime-preview", "gpt-image-1", "gpt-4o-search-preview"):
+            self.assertFalse(coach._looks_like_chat_model(bad), bad)
+
 
 class TestProviderDispatchOffline(unittest.TestCase):
     def _cfg(self, provider, **pfields):
