@@ -167,6 +167,14 @@ class TestRecentPerformance(unittest.TestCase):
     def test_empty_sessions_empty_string(self):
         self.assertEqual(wg.build_recent_performance([], "LBS", 30), "")
 
+    def test_all_skipped_exercise_omitted_no_crash(self):
+        s = [{"date": "2026-07-18", "title": "A", "notes": {},
+              "snapshot": {"exercises": [self._ex("Bailed Row", "reps",
+                  [{"done": 0, "target": 10, "complete": False, "skipped": True, "load": 40}],
+                  all_complete=False)]}}]
+        out = wg.build_recent_performance(s, "LBS", 30)
+        self.assertNotIn("Bailed Row", out)   # omitted, and no TypeError raised
+
 
 class TestProgressionBlock(unittest.TestCase):
     def setUp(self):
