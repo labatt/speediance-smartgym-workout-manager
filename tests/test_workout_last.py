@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -8,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app  # noqa: E402
 
 
-class WorkoutLastRoute(unittest.TestCase):
+class WorkoutLastHistory(unittest.TestCase):
     def setUp(self):
         # Satisfy the auth gate and isolate the on-disk file.
         self._tok = app.client.credentials.get("token")
@@ -16,7 +17,7 @@ class WorkoutLastRoute(unittest.TestCase):
         self._orig = app.WORKOUT_GEN_LAST_FILE
         fd, self._tmp = tempfile.mkstemp(suffix=".json")
         os.close(fd)
-        os.remove(self._tmp)                 # start with no file → load returns None
+        os.remove(self._tmp)                 # start with no file → empty history
         app.WORKOUT_GEN_LAST_FILE = self._tmp
         self.c = app.app.test_client()
 
@@ -31,22 +32,34 @@ class WorkoutLastRoute(unittest.TestCase):
         except OSError:
             pass
 
-    def test_last_null_when_none(self):
-        self.assertIsNone(self.c.get("/api/workout/last").get_json()["last"])
+    def test_empty_when_none(self):
+        d = self.c.get("/api/workout/last").get_json()
+        self.assertIsNone(d["last"])
+        self.assertEqual(d["history"], [])
 
-    def test_save_then_get_roundtrips(self):
-        app.save_workout_gen_last({
-            "request": "back and biceps day", "recent_days": 30,
-            "provider": "gemini", "model": "m", "at": "2026-08-06T10:00:00",
-            "system_prompt": "SYSTEM TEXT", "user_prompt": "USER TEXT",
-        })
-        d = self.c.get("/api/workout/last").get_json()["last"]
-        self.assertEqual(d["request"], "back and biceps day")
-        self.assertEqual(d["recent_days"], 30)
-        self.assertEqual(d["system_prompt"], "SYSTEM TEXT")
-        self.assertEqual(d["user_prompt"], "USER TEXT")
+    def test_save_prepends_newest_first(self):
+        app.save_workout_gen_last({"request": "one", "at": "1"})
+        app.save_workout_gen_last({"request": "two", "at": "2"})
+        d = self.c.get("/api/workout/last").get_json()
+        self.assertEqual(d["last"]["request"], "two")                       # newest is 'last'
+        self.assertEqual([e["request"] for e in d["history"]], ["two", "one"])
 
-    def test_last_requires_auth(self):
+    def test_caps_at_20_dropping_oldest(self):
+        for i in range(25):
+            app.save_workout_gen_last({"request": f"r{i}", "at": str(i)})
+        h = app.load_workout_gen_history()
+        self.assertEqual(len(h), 20)
+        self.assertEqual(h[0]["request"], "r24")     # newest kept
+        self.assertEqual(h[-1]["request"], "r5")     # r0..r4 dropped
+
+    def test_legacy_single_dict_is_wrapped(self):
+        with open(self._tmp, "w") as f:
+            json.dump({"request": "legacy", "at": "0"}, f)
+        d = self.c.get("/api/workout/last").get_json()
+        self.assertEqual(d["last"]["request"], "legacy")
+        self.assertEqual(len(d["history"]), 1)
+
+    def test_requires_auth(self):
         app.client.credentials.pop("token", None)
         self.assertEqual(self.c.get("/api/workout/last").status_code, 401)
 
