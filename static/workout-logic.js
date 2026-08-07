@@ -115,6 +115,26 @@ function kgToLbs(kg) {
 }
 
 /**
+ * Decide whether an incoming exercise's sets are already L/R-expanded.
+ *
+ * Trusts the model-returned `isUnilateralExpanded` flag, OR our own knowledge that we sent
+ * this exercise expanded on a refine round-trip (`expandedIds`). The AI can echo the expanded
+ * sets but drop the boolean; without this, `parseImportedSets` would re-double them. A newly
+ * swapped-in unilateral exercise won't be in `expandedIds`, so it still expands correctly.
+ * @param {*} exFlag - the incoming exercise's isUnilateralExpanded value
+ * @param {*} groupId - the exercise's group id
+ * @param {Set|undefined} expandedIds - ids we sent already-expanded this round (numbers)
+ * @returns {boolean}
+ */
+function resolveAlreadyExpanded(exFlag, groupId, expandedIds) {
+    if (exFlag) return true;
+    if (expandedIds && typeof expandedIds.has === 'function') {
+        return expandedIds.has(Number(groupId));
+    }
+    return false;
+}
+
+/**
  * Expand/not-expand sets for a unilateral exercise based on import context.
  * @param {Array} sets - array of set objects from imported JSON
  * @param {boolean} isUnilateral
@@ -164,8 +184,8 @@ function buildExportJSON(workoutData, planName) {
 // Export for Node.js (tests) and browser (WorkoutLogic namespace)
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON };
+    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
 } else if (typeof window !== 'undefined') {
     // Use a namespace to avoid colliding with identically-named functions in create.html
-    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON };
+    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
 }
