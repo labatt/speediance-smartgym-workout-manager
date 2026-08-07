@@ -1026,7 +1026,7 @@
     // Load a {name, exercises:[...]} object into the builder. Shared by manual JSON import
     // and AI generation. Fetches live metadata per exercise so timed/level/unilateral coercion
     // uses the machine's own truth, not the JSON's claims.
-    window.loadWorkoutIntoBuilder = async (data) => {
+    window.loadWorkoutIntoBuilder = async (data, opts = {}) => {
         if (data.name) document.getElementById('plan-name').value = data.name;
         if (!data.exercises || !Array.isArray(data.exercises)) {
             alert("Invalid workout: missing 'exercises' array."); return false;
@@ -1045,7 +1045,10 @@
                 rest: parseInt(s.rest || 60),
                 unit: mandatedUnit || (String(s.unit || '').toLowerCase() === 'sec' ? 'sec' : 'reps')
             }));
-            const alreadyExpanded = !!ex.isUnilateralExpanded;
+            // Trust our own knowledge over the round-tripped flag: on refine we pass the ids
+            // we sent already-expanded, so a model that echoes the L/R sets but drops the
+            // isUnilateralExpanded boolean can't cause them to be doubled again.
+            const alreadyExpanded = WorkoutLogic.resolveAlreadyExpanded(ex.isUnilateralExpanded, groupId, opts.expandedIds);
             const finalSets = parseImportedSets(setsParsed, meta.isUnilateral, alreadyExpanded);
             const rawPreset = ex.preset ?? ex.presetId;
             const importedPresetId = (rawPreset !== undefined && rawPreset !== null && rawPreset !== '')
@@ -1109,6 +1112,9 @@
         if (!comment) { msg.textContent = 'Describe the change first.'; return; }
         if (!workoutData.length) { msg.textContent = 'Nothing to refine yet.'; return; }
         btn.disabled = true; msg.textContent = 'Adjusting… this can take a moment.';
+        // Ids we're about to send already-expanded; used on reload so the model dropping the
+        // isUnilateralExpanded flag can't cause the L/R sets to be doubled.
+        const expandedIds = new Set(workoutData.filter(ex => ex.isUnilateral).map(ex => Number(ex.groupId)));
         try {
             const recentDays = parseInt((document.getElementById('wg-recent-days') || {}).value, 10) || 0;
             const r = await fetch('/api/workout/refine', {
@@ -1119,7 +1125,7 @@
             const d = await r.json();
             if (d.error) { msg.textContent = d.error; return; }
             if (!d.ok) { msg.textContent = d.text || 'Adjustment failed.'; return; }
-            const loaded = await loadWorkoutIntoBuilder(d.workout);
+            const loaded = await loadWorkoutIntoBuilder(d.workout, { expandedIds });
             if (loaded) {
                 commentLog.push(comment);
                 renderCommentLog();
