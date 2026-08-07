@@ -85,6 +85,17 @@
                             </select>
                         </label>
                         <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
+
+                        <div id="wg-last" class="hidden mt-3 p-3 rounded-lg border border-gray-700 bg-gray-900/40 text-sm">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-gray-400">Last request:</span>
+                                <span id="wg-last-req" class="text-gray-200 italic"></span>
+                                <span id="wg-last-meta" class="text-[11px] text-gray-500"></span>
+                                <button type="button" onclick="reuseLastGeneration()" class="ml-auto px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 border border-gray-600">Reuse</button>
+                                <button type="button" onclick="document.getElementById('wg-last-prompt').classList.toggle('hidden')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 border border-gray-600">View full prompt</button>
+                            </div>
+                            <pre id="wg-last-prompt" class="hidden mt-2 max-h-72 overflow-auto whitespace-pre-wrap bg-gray-900 p-2 rounded border border-gray-700 text-[11px] text-gray-300"></pre>
+                        </div>
                     </div>
 
                     <div class="relative group/btn">
@@ -1028,6 +1039,33 @@
         }
     };
 
+    let lastGen = null;
+    async function loadLastGeneration() {
+        try {
+            const d = await (await fetch('/api/workout/last')).json();
+            lastGen = d.last;
+            if (!lastGen) return;
+            // textContent throughout — the prompt/request are shown as inert text, never HTML.
+            document.getElementById('wg-last-req').textContent = lastGen.request || '(no text)';
+            const when = (lastGen.at || '').replace('T', ' ');
+            document.getElementById('wg-last-meta').textContent =
+                `· ${when}` + (lastGen.provider ? ` · ${lastGen.provider}${lastGen.model ? '/' + lastGen.model : ''}` : '')
+                + (lastGen.recent_days ? ` · recent ${lastGen.recent_days}d` : ' · recent off');
+            document.getElementById('wg-last-prompt').textContent =
+                '=== SYSTEM PROMPT ===\n' + (lastGen.system_prompt || '') +
+                '\n\n=== USER PROMPT ===\n' + (lastGen.user_prompt || '');
+            document.getElementById('wg-last').classList.remove('hidden');
+        } catch (e) { /* nothing generated yet */ }
+    }
+    window.reuseLastGeneration = () => {
+        if (!lastGen) return;
+        document.getElementById('wg-request').value = lastGen.request || '';
+        const sel = document.getElementById('wg-recent-days');
+        if (lastGen.recent_days !== undefined && lastGen.recent_days !== null) sel.value = String(lastGen.recent_days);
+        document.getElementById('wg-request').focus();
+    };
+    loadLastGeneration();
+
     window.generateWorkout = async () => {
         const request = document.getElementById('wg-request').value.trim();
         const msg = document.getElementById('wg-generate-msg');
@@ -1049,6 +1087,7 @@
                     ? `Loaded with notes: ${d.warnings.join(' ')}`
                     : 'Loaded below — review, tweak, name it, and Save.';
                 document.getElementById('plan-name').focus();
+                loadLastGeneration();   // refresh the "last request" panel with this run
             }
         } catch (e) {
             msg.textContent = 'Request failed: ' + e;
