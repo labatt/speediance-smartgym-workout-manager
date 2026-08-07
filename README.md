@@ -181,6 +181,12 @@ were shown as failed rep targets, in red:
   replaced with Custom, which meant an RM prescription was re-read as a raw weight.
 - **Import/export round-trips faithfully** — exporting a timed workout no longer loses its
   seconds.
+- **Refine it by comment instead of regenerating** — once a workout is generated or imported into
+  the builder, a **Refine with AI** panel takes a follow-up comment ("make leg day harder", "swap
+  the squat for a hinge", "add a set to the rows") and adjusts the workout in place. Each round
+  sends the current builder state plus the full comment log, so a later comment never undoes an
+  earlier one or reverts manual edits made in between. Works with whichever of the five providers
+  is picked for the generator.
 
 ### Adaptive planner
 
