@@ -148,6 +148,10 @@ were shown as failed rep targets, in red:
   review, edit, name and save it exactly as you would one you built by hand. This replaces the
   old **Generate Prompt** button, which only produced text to copy into an external AI chat and
   paste back as JSON. **Import JSON** remains, as a manual fallback.
+- **Reference your own workouts** — **+ Add reference** opens a picker over your workout history;
+  pick one or more and they show as chips next to the Generate box. The model gets a readable
+  summary of each referenced workout and its exercises are made available to reuse, adapting sets
+  and loads to your request and recent performance rather than copying them as-is.
 - **Provider and model picked in Settings, independently of the coach** — the Workout Generator
   has its own picker covering all five providers (Anthropic, OpenAI, Google, Ollama, xAI Grok),
   reusing whichever per-provider keys are already saved; there is nothing extra to key in twice.
