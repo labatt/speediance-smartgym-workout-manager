@@ -340,6 +340,9 @@ def build_refinement_user_prompt(current_workout, comment, comment_log=None):
     parts.append("Return the FULL updated workout in the same JSON format. Preserve every exercise, "
                  "set, and value not affected by the change (including any I edited by hand); change "
                  "only what the instruction requires.")
+    parts.append("Keep each exercise's structure fields exactly as given (especially "
+                 "\"isUnilateralExpanded\" and its per-side sets) unless the change specifically "
+                 "requires altering that exercise.")
     return "\n".join(parts)
 
 

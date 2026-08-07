@@ -279,6 +279,10 @@ class TestRefinementPrompt(unittest.TestCase):
         self.assertNotIn("KEEP honoring", p)
         self.assertIn("lighter", p)
 
+    def test_preserves_structure_fields(self):
+        p = wg.build_refinement_user_prompt(self.cur, "heavier", [])
+        self.assertIn("isUnilateralExpanded", p)
+
 
 if __name__ == "__main__":
     unittest.main()
