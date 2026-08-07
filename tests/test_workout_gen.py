@@ -84,6 +84,15 @@ class TestGenerationPrompt(unittest.TestCase):
         u = wg.build_generation_user_prompt("30 minute back day")
         self.assertIn("30 minute back day", u)
 
+    def test_system_prompt_requires_nonzero_weight_and_places_rm(self):
+        # Regression: models returned weight:0 on RM presets because the prompt never said
+        # the RM value goes in the weight field and must be > 0.
+        p = wg.build_generation_system_prompt(self.merged, "LBS")
+        low = p.lower()
+        self.assertIn("greater than 0", low)     # weight must never be 0
+        self.assertIn("rm value", low)           # where the RM number goes
+        self.assertIn('"weight"', low)           # it names the weight field explicitly
+
 
 class TestValidateWorkout(unittest.TestCase):
     def test_drops_unknown_ids_and_warns(self):

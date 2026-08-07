@@ -135,10 +135,12 @@ def build_generation_system_prompt(exercises, unit_label):
         "- 1: Gain Muscle (RM 9-13, 8-12 reps)  - 3: Stamina (RM 15-20, 13-20 reps)  - 5: Strength (RM 4-9, 4-9 reps).",
         "Pick the preset that fits the goal; use -1 for absolute-weight/custom work.",
         "",
-        "WEIGHT UNIT:",
-        f"Absolute weights MUST be in {unit_label}. This account is configured for {unit_label} and the "
-        f"value is stored verbatim — nothing converts it. Do NOT prescribe in {other}.",
-        "Keep about one rep in reserve on RM prescriptions.",
+        "WEIGHT — REQUIRED on every rep-based set, and it must be greater than 0. NEVER write \"weight\": 0.",
+        f"- presetId -1: \"weight\" is the ABSOLUTE load in {unit_label} (e.g. 40). Configured for {unit_label}; "
+        f"the value is stored verbatim — nothing converts it, so do NOT prescribe in {other}.",
+        "- presetId 1, 3 or 5: \"weight\" is the RM VALUE — the rep-max within that preset's range (e.g. a 6RM "
+        "for Strength), a small integer, NOT an absolute load and NOT 0. Keep about one rep in reserve.",
+        "If you are unsure of a load, prefer presetId -1 with a sensible absolute weight rather than leaving it 0.",
     ]
     if has_timed:
         p += [
@@ -161,8 +163,11 @@ def build_generation_system_prompt(exercises, unit_label):
         "",
         "OUTPUT FORMAT — output ONLY a JSON object, no prose:",
         '{ "name": "Workout Name", "exercises": [',
-        '  { "id": 1001, "presetId": -1, "sets": [ { "reps": 10, "weight": 40, "mode": 1, "rest": 60 } ] }',
+        '  { "id": 1001, "presetId": -1, "sets": [ { "reps": 10, "weight": 40, "mode": 1, "rest": 60 } ] },',
+        '  { "id": 1002, "presetId": 5,  "sets": [ { "reps": 6,  "weight": 7,  "mode": 1, "rest": 90 } ] }',
         "] }",
+        "In the first line weight 40 is an absolute load; in the second, presetId 5 with weight 7 means a 7RM. "
+        "Every rep-based set needs a weight greater than 0.",
     ]
     if has_timed:
         p.append("For a normal exercise omit \"unit\" (defaults to reps). For [TIMED]/[TIMED+LEVEL], \"reps\" is seconds "
