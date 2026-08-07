@@ -710,6 +710,27 @@ def save_assessment(data):
         json.dump(data, f, indent=2)
 
 
+# Last AI workout-generation: the Gemini/OpenAI/etc. APIs are stateless (they store no prompt
+# you can read back), so we keep the last request AND the full assembled prompt locally, both
+# to show/reuse it and to make it transparent exactly what the model was told.
+WORKOUT_GEN_LAST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'workout_gen_last.json')
+
+
+def load_workout_gen_last():
+    if os.path.exists(WORKOUT_GEN_LAST_FILE):
+        try:
+            with open(WORKOUT_GEN_LAST_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Could not read last generation: {e}")
+    return None
+
+
+def save_workout_gen_last(data):
+    with open(WORKOUT_GEN_LAST_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
 def _unit_label():
     """The athlete's display unit for weighted loads (0=Metric, 1=Imperial). The API returns
     loads already in this unit; we only LABEL them for the model, never convert."""
@@ -1019,6 +1040,14 @@ def api_workout_config():
     return jsonify({"saved": True, "provider": provider, "model": cfg["workout_generator"]["model"]})
 
 
+@app.route('/api/workout/last')
+def api_workout_last():
+    """The last in-app generation (request + full assembled prompt), or {last: null}."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"last": load_workout_gen_last()})
+
+
 @app.route('/api/workout/generate', methods=['POST'])
 def api_workout_generate():
     """Two-stage generation: cheap select pass narrows the pool, then a full generation pass
@@ -1089,6 +1118,14 @@ def api_workout_generate():
         if not ok:
             return jsonify({"ok": False, "text": "The generated workout had no usable exercises. Try again.",
                             "warnings": warnings}), 200
+        # Keep the request and the exact prompt sent — the provider stores nothing retrievable.
+        save_workout_gen_last({
+            "request": user_request,
+            "recent_days": rd if recent_txt else 0,
+            "provider": provider, "model": model,
+            "at": datetime.datetime.now().isoformat(timespec='seconds'),
+            "system_prompt": system, "user_prompt": user,
+        })
         return jsonify({"ok": True, "workout": cleaned, "pool_ids": pool_ids, "warnings": warnings})
     except Exception as e:
         if _is_auth_error(e):
