@@ -1605,7 +1605,16 @@ def api_history_detail(training_id):
     training_type = request.args.get('type', 'custom')  # 'course' or 'custom'
     try:
         detail = client.get_training_detail(training_id, training_type)
-        session_info = client.get_training_session_info(training_id)
+        # Session info (name/duration/calories) is an optional summary fetched from a
+        # course-specific endpoint that 403s for some Custom workouts. It must never take
+        # down the exercise breakdown — the frontend already falls back to the record's own
+        # summary fields (rec.*) when session is empty. Only re-raise genuine auth errors.
+        try:
+            session_info = client.get_training_session_info(training_id)
+        except Exception as se:
+            if _is_auth_error(se):
+                raise
+            session_info = {}
         return jsonify({"detail": detail, "session": session_info})
     except Exception as e:
         if _is_auth_error(e):
