@@ -1278,6 +1278,7 @@ def api_workout_refine():
             "provider": provider, "model": model,
             "at": datetime.datetime.now().isoformat(timespec='seconds'),
             "system_prompt": system, "user_prompt": user,
+            "recent_days": rd if recent_txt else 0,
         })
         return jsonify({"ok": True, "workout": cleaned, "warnings": warnings})
     except Exception as e:

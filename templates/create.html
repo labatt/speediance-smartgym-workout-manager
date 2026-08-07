@@ -151,7 +151,8 @@
             <div class="flex gap-2">
                 <input id="refine-comment" type="text"
                        class="flex-grow bg-gray-900 text-white p-2 rounded border border-gray-600 focus:border-purple-500 outline-none text-sm"
-                       placeholder="e.g. make leg day harder · swap the squat for a hinge · add a set to the rows">
+                       placeholder="e.g. make leg day harder · swap the squat for a hinge · add a set to the rows"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();applyRefinement();}">
                 <button onclick="applyRefinement()" id="refine-btn"
                         class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold text-sm whitespace-nowrap">Apply AI adjustment</button>
             </div>
