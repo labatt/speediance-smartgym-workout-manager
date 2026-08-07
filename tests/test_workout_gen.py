@@ -250,5 +250,39 @@ class TestReferencePromptHooks(unittest.TestCase):
         self.assertIn("back day", u)
 
 
+class TestRefinementPrompt(unittest.TestCase):
+    def setUp(self):
+        self.cur = {"name": "Back Day", "exercises": [
+            {"id": 1001, "presetId": -1, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]},
+        ]}
+
+    def test_frames_as_edit_and_returns_full(self):
+        p = wg.build_refinement_user_prompt(self.cur, "add a set to the row", [])
+        low = p.lower()
+        self.assertIn("edit of an existing workout", low)
+        self.assertIn("add a set to the row", p)
+        self.assertIn("full updated workout", low)
+
+    def test_includes_current_workout_json(self):
+        p = wg.build_refinement_user_prompt(self.cur, "heavier", [])
+        self.assertIn("1001", p)          # the current workout's exercise id appears
+        self.assertIn("Back Day", p)
+
+    def test_includes_full_comment_log(self):
+        p = wg.build_refinement_user_prompt(self.cur, "now add abs", ["make it harder", "swap squat for hinge"])
+        self.assertIn("make it harder", p)
+        self.assertIn("swap squat for hinge", p)
+        self.assertIn("keep honoring", p.lower())
+
+    def test_empty_log_no_section_no_crash(self):
+        p = wg.build_refinement_user_prompt(self.cur, "lighter", None)
+        self.assertNotIn("KEEP honoring", p)
+        self.assertIn("lighter", p)
+
+    def test_preserves_structure_fields(self):
+        p = wg.build_refinement_user_prompt(self.cur, "heavier", [])
+        self.assertIn("isUnilateralExpanded", p)
+
+
 if __name__ == "__main__":
     unittest.main()

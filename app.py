@@ -1192,6 +1192,101 @@ def api_workout_generate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/workout/refine', methods=['POST'])
+def api_workout_refine():
+    """Adjust the current workout by a natural-language comment, statelessly: the current
+    builder state + the full comment log are the source of truth every round, so nothing the
+    athlete changed (by AI or by hand) is silently reverted."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    current = body.get('current_workout') or {}
+    comment = (body.get('comment') or "").strip()
+    if not comment:
+        return jsonify({"error": "Describe the change you want."}), 400
+    cur_exs = current.get('exercises') if isinstance(current, dict) else None
+    if not cur_exs:
+        return jsonify({"error": "No current workout to refine."}), 400
+
+    cfg = coach.load_config()
+    provider, model = coach.workout_provider(cfg), coach.workout_model(cfg)
+    if not model or not coach.provider_cfg(cfg, provider).get("api_key"):
+        return jsonify({"ok": False,
+                        "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
+                                "and choose a model in Settings."}), 200
+    try:
+        library = client.get_library()
+        catalog = workout_gen.compact_catalog(library)
+
+        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
+        selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
+        cur_ids = []
+        for e in cur_exs:
+            try:
+                cur_ids.append(int(e.get('id')))
+            except (TypeError, ValueError):
+                pass
+        pool_ids = list(dict.fromkeys(cur_ids + selected))[:60]   # keep current exercises, then candidates
+
+        details = {}
+        try:
+            for d in (client.get_batch_details(pool_ids) or []):
+                if d.get("id") is not None:
+                    details[int(d["id"])] = d
+        except Exception as e:
+            if _is_auth_error(e):
+                raise
+            details = {}
+        libmap = {int(e["id"]): e for e in library}
+        merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
+
+        recent_txt = ""
+        try:
+            rd = int(body.get('recent_days', 30))
+        except (TypeError, ValueError):
+            rd = 30
+        if rd in RECENT_PERF_DAYS:
+            try:
+                rsessions, _ = _gather_recent_sessions(rd)
+                recent_txt = workout_gen.build_recent_performance(rsessions, _unit_label().upper(), rd)
+            except Exception as e:
+                if _is_auth_error(e):
+                    raise
+                recent_txt = ""
+        system = workout_gen.build_generation_system_prompt(
+            merged, _unit_label().upper(), has_recent=bool(recent_txt))
+        user = workout_gen.build_refinement_user_prompt(current, comment, body.get('comment_log') or [])
+        ok, text = coach.chat_with(provider, model, user, cfg, system=system)
+        if not ok:
+            return jsonify({"ok": False, "text": text}), 200
+
+        parsed = _extract_json(text)
+        if parsed is None:
+            ok, text = coach.chat_with(provider, model,
+                                       "Return ONLY the workout as valid JSON, nothing else:\n" + text, cfg,
+                                       system=system)
+            parsed = _extract_json(text) if ok else None
+        if parsed is None:
+            return jsonify({"ok": False, "text": "The model did not return valid JSON. Try again or rephrase."}), 200
+
+        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library)
+        if not ok:
+            return jsonify({"ok": False, "text": "The adjusted workout had no usable exercises. Try again.",
+                            "warnings": warnings}), 200
+        save_workout_gen_last({
+            "request": comment, "kind": "refine",
+            "provider": provider, "model": model,
+            "at": datetime.datetime.now().isoformat(timespec='seconds'),
+            "system_prompt": system, "user_prompt": user,
+            "recent_days": rd if recent_txt else 0,
+        })
+        return jsonify({"ok": True, "workout": cleaned, "warnings": warnings})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/burn_rate')
 def api_burn_rate():
     """Your personal kcal/min, measured from what the machine actually recorded.
