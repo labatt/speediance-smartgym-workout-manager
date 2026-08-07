@@ -116,5 +116,77 @@ class TestValidateWorkout(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class TestRecentPerformance(unittest.TestCase):
+    def _ex(self, name, kind, sets, all_complete=True):
+        return {"name": name, "kind": kind, "all_complete": all_complete, "sets": sets}
+
+    def setUp(self):
+        # Seated Row done twice (load rose 33 -> 36.5); Vita once; Leg Curl once.
+        self.sessions = [
+            {"date": "2026-07-11", "title": "A", "notes": {"exercises": {"Seated Row": "right"}},
+             "snapshot": {"exercises": [
+                 self._ex("Seated Row", "reps", [{"done": 10, "target": 10, "complete": True, "skipped": False, "load": 33}]),
+             ]}},
+            {"date": "2026-07-18", "title": "B", "notes": {"exercises": {"Seated Row": "easy"}},
+             "snapshot": {"exercises": [
+                 self._ex("Seated Row", "reps", [{"done": 10, "target": 10, "complete": True, "skipped": False, "load": 36.5}]),
+                 self._ex("Standing Leg Curl", "reps", [{"done": 12, "target": 12, "complete": True, "skipped": False, "load": 15.5}]),
+                 self._ex("Vita Twist", "level", [{"done": 4, "target": 4, "complete": True, "skipped": False, "load": None, "seconds": 20}]),
+             ]}},
+        ]
+        self.p = wg.build_recent_performance(self.sessions, "LBS", 30)
+
+    def test_header_names_window_and_unit(self):
+        self.assertIn("last 30 days", self.p)
+        self.assertIn("LBS", self.p)
+
+    def test_exercise_appears_once_newest(self):
+        rows = [l for l in self.p.splitlines() if l.startswith("- Seated Row")]
+        self.assertEqual(len(rows), 1)           # deduped to most-recent
+        self.assertIn("2026-07-18", rows[0])     # the newer date
+        self.assertIn("36.5 LBS", rows[0])       # newest load, labelled
+
+    def test_trend_up_shows_prior(self):
+        row = [l for l in self.p.splitlines() if l.startswith("- Seated Row")][0]
+        self.assertIn("↑", row)
+        self.assertIn("33", row)                 # prior load referenced
+
+    def test_new_exercise_marked_new(self):
+        row = [l for l in self.p.splitlines() if l.startswith("- Standing Leg Curl")][0]
+        self.assertIn("(new)", row)
+
+    def test_carries_felt(self):
+        row = [l for l in self.p.splitlines() if l.startswith("- Seated Row")][0]
+        self.assertIn("felt easy", row)
+
+    def test_vita_timed_no_weight_unit(self):
+        row = [l for l in self.p.splitlines() if l.startswith("- Vita Twist")][0]
+        self.assertIn("timed", row)
+        self.assertNotIn("LBS", row)
+
+    def test_empty_sessions_empty_string(self):
+        self.assertEqual(wg.build_recent_performance([], "LBS", 30), "")
+
+
+class TestProgressionBlock(unittest.TestCase):
+    def setUp(self):
+        self.merged = [wg.merge_exercise(LIB[0])]   # one rep-based exercise
+
+    def test_progression_block_present_when_has_recent(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS", has_recent=True).lower()
+        self.assertIn("progression", p)
+        self.assertIn("felt rating outranks", p)
+        self.assertIn("never output weight 0", p)
+
+    def test_progression_block_absent_by_default(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS").lower()
+        self.assertNotIn("progression —", p)
+
+    def test_user_prompt_appends_recent_performance(self):
+        u = wg.build_generation_user_prompt("back day", recent_performance="RECENT PERFORMANCE (last 30 days...)\n- Row")
+        self.assertIn("RECENT PERFORMANCE", u)
+        self.assertIn("- Row", u)
+
+
 if __name__ == "__main__":
     unittest.main()

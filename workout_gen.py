@@ -13,6 +13,9 @@ import re
 MUSCLE_MAP = {11: "Chest", 12: "Shoulder", 13: "Back", 14: "Glutes",
               15: "Legs", 16: "Arms", 17: "Abs"}
 
+FEEL = {"too_easy": "too easy", "easy": "easy", "right": "just right",
+        "hard": "hard", "too_hard": "too hard", None: "not rated"}
+
 
 def exercise_tags(lib_item):
     """(is_level, is_timed, is_unilateral) from a library item. Vita (dataStatType 6) is
@@ -106,7 +109,65 @@ def parse_selected_ids(text, library, request="", limit=60):
     return scored or [int(e["id"]) for e in library[:limit]]
 
 
-def build_generation_system_prompt(exercises, unit_label):
+def _top_set(ex):
+    """The notable set of one exercise occurrence, as (load|None, reps, seconds).
+    reps-based: the worked set with the highest load. level/timed: the worked set with the
+    most reps done (load is None — the read snapshot doesn't expose the Vita level)."""
+    worked = [s for s in ex.get("sets", []) if not s.get("skipped")]
+    if not worked:
+        return None, 0, 0
+    if ex.get("kind") == "reps":
+        best = max(worked, key=lambda s: (s.get("load") or 0))
+        return (best.get("load") or 0), (best.get("done") or 0), 0
+    best = max(worked, key=lambda s: (s.get("done") or 0))
+    return None, (best.get("done") or 0), (best.get("seconds") or 0)
+
+
+def build_recent_performance(sessions, unit_label, days):
+    """Compact per-exercise table of the athlete's most recent lifts, with trend vs the
+    prior occurrence. Pure — facts only; the 'how to progress' rules live in the system
+    prompt. sessions: [{date, title, snapshot:{exercises:[...]}, notes:{...}}], any order."""
+    occ = {}
+    for s in sessions:
+        date = s.get("date", "?")
+        feels = (s.get("notes") or {}).get("exercises") or {}
+        for ex in (s.get("snapshot") or {}).get("exercises", []):
+            name = ex.get("name")
+            if not name:
+                continue
+            occ.setdefault(name, []).append((date, ex, feels.get(name)))
+    if not occ:
+        return ""
+
+    lines = [f"RECENT PERFORMANCE (last {days} days; most recent per exercise, with trend). "
+             f"Loads are in {unit_label}."]
+    for name in sorted(occ, key=lambda n: max(o[0] for o in occ[n]), reverse=True):
+        entries = sorted(occ[name], key=lambda o: o[0], reverse=True)
+        date, ex, feel_key = entries[0]
+        felt = FEEL.get(feel_key, "not rated")
+        prev = entries[1] if len(entries) > 1 else None
+        load, reps, secs = _top_set(ex)
+        if ex.get("kind") == "reps":
+            done_note = "all reps" if ex.get("all_complete") else "missed some"
+            line = f"- {name} — {date}: top set {load:g} {unit_label} × {reps}, {done_note}, felt {felt}"
+            if prev:
+                pl, pr, _ = _top_set(prev[1])
+                arrow = "↑" if (load or 0) > (pl or 0) else ("↓" if (load or 0) < (pl or 0) else "→")
+                line += f" ({arrow} from {pl:g} {unit_label} × {pr} on {prev[0]})"
+            else:
+                line += " (new)"
+        else:
+            line = f"- {name} — {date}: {reps} reps × {secs}s (timed), felt {felt}"
+            if prev:
+                _, pr, ps = _top_set(prev[1])
+                line += f" (prev {pr} × {ps}s on {prev[0]})"
+            else:
+                line += " (new)"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def build_generation_system_prompt(exercises, unit_label, has_recent=False):
     """Full 'professional fitness coach' system prompt for the selected exercise pool."""
     other = "kilograms" if unit_label == "LBS" else "pounds"
     has_timed = any(e["is_timed"] for e in exercises)
@@ -159,6 +220,16 @@ def build_generation_system_prompt(exercises, unit_label):
             "different load/reps per side, add \"isUnilateralExpanded\": true and list sides ALTERNATING "
             "left, right, left, right (first = left).",
         ]
+    if has_recent:
+        p += [
+            "",
+            "PROGRESSION — the user prompt includes a RECENT PERFORMANCE table of the athlete's recent lifts:",
+            "- Set each weight from that data, not a guess. The athlete's FELT rating outranks the numbers.",
+            "- Completed in full AND felt easy/too-easy (trend flat or up) -> progress: add a little load, a rep, or a Vita level.",
+            "- Reps missed or it felt hard -> hold or reduce.",
+            "- No recent entry for an exercise -> estimate conservatively from similar lifts.",
+            "- Still never output weight 0.",
+        ]
     p += [
         "",
         "OUTPUT FORMAT — output ONLY a JSON object, no prose:",
@@ -177,7 +248,7 @@ def build_generation_system_prompt(exercises, unit_label):
     return "\n".join(p)
 
 
-def build_generation_user_prompt(user_request, references=None, assessment=None):
+def build_generation_user_prompt(user_request, references=None, assessment=None, recent_performance=""):
     """The user's request, plus optional referenced-workout context and an assessment
     summary (both wired in Phase 2; empty here)."""
     parts = [f'Build this workout: "{user_request}"']
@@ -191,6 +262,9 @@ def build_generation_user_prompt(user_request, references=None, assessment=None)
         parts.append("")
         parts.append("RECENT PERFORMANCE ASSESSMENT (use it to tune difficulty and progression):")
         parts.append(assessment)
+    if recent_performance:
+        parts.append("")
+        parts.append(recent_performance)
     return "\n".join(parts)
 
 
