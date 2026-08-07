@@ -320,6 +320,32 @@ def build_generation_user_prompt(user_request, references="", recent_performance
     return "\n".join(parts)
 
 
+def build_refinement_user_prompt(current_workout, comment, comment_log=None):
+    """Frame an EDIT of an existing workout. Pure. current_workout is the generation-schema
+    dict {name, exercises:[...]}; comment_log holds prior applied comments to keep honoring."""
+    parts = [
+        "This is an EDIT of an existing workout, not a new one.",
+        "",
+        "CURRENT WORKOUT (JSON, in the output format):",
+        json.dumps(current_workout, ensure_ascii=False),
+        "",
+        f'Apply this change: "{comment}"',
+    ]
+    log = [c for c in (comment_log or []) if c]
+    if log:
+        parts.append("")
+        parts.append("Earlier instructions you must KEEP honoring (do not undo them):")
+        parts.extend(f"- {c}" for c in log)
+    parts.append("")
+    parts.append("Return the FULL updated workout in the same JSON format. Preserve every exercise, "
+                 "set, and value not affected by the change (including any I edited by hand); change "
+                 "only what the instruction requires.")
+    parts.append("Keep each exercise's structure fields exactly as given (especially "
+                 "\"isUnilateralExpanded\" and its per-side sets) unless the change specifically "
+                 "requires altering that exercise.")
+    return "\n".join(parts)
+
+
 def validate_workout(obj, library):
     """(ok, cleaned, warnings). Keep only exercises whose id is in the library and that have
     at least one set. Structure/coercion of timed/unilateral fields happens client-side on
