@@ -135,6 +135,8 @@ def build_recent_performance(sessions, unit_label, days):
             name = ex.get("name")
             if not name:
                 continue
+            if not any(not s.get("skipped") for s in ex.get("sets", [])):
+                continue   # an all-skipped exercise isn't "performance" — omit it
             occ.setdefault(name, []).append((date, ex, feels.get(name)))
     if not occ:
         return ""
