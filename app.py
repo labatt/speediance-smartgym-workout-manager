@@ -1059,6 +1059,23 @@ def api_workout_last():
     return jsonify({"last": history[0] if history else None, "history": history})
 
 
+@app.route('/api/workout/list')
+def api_workout_list():
+    """The athlete's workouts, for the 'Add reference' picker."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        ws = client.get_user_workouts() or []
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"workouts": [
+        {"name": w.get("name") or "Workout", "code": w.get("code"),
+         "exercises": w.get("actionNum"), "duration": w.get("durationMinute")}
+        for w in ws if w.get("code")]})
+
+
 @app.route('/api/workout/generate', methods=['POST'])
 def api_workout_generate():
     """Two-stage generation: cheap select pass narrows the pool, then a full generation pass
@@ -1082,6 +1099,33 @@ def api_workout_generate():
 
         ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(user_request, catalog), cfg)
         pool_ids = workout_gen.parse_selected_ids(sel if ok else "", library, request=user_request)
+
+        # Referenced workouts: build a readable summary AND make their exercises available to
+        # the model (prepend their ids so they survive the pool cap and validation).
+        ref_norm, ref_ids = [], []
+        for code in (body.get('references') or [])[:5]:
+            try:
+                det = client.get_workout_detail(code)
+            except Exception as e:
+                if _is_auth_error(e):
+                    raise
+                continue
+            if not det:
+                continue
+            exs = []
+            for a in (det.get('actionLibraryList') or []):
+                gid = a.get('groupId') or a.get('actionLibraryId')
+                if gid:
+                    ref_ids.append(int(gid))
+                cm = a.get('completionMethod')
+                exs.append({
+                    "title": a.get('title', 'Exercise'),
+                    "setsAndReps": a.get('setsAndReps'), "weights": a.get('weights'),
+                    "level": a.get('level'), "is_level": cm == 5, "is_timed": cm in (0, 2, 5),
+                })
+            ref_norm.append({"name": det.get('name', 'Workout'), "exercises": exs})
+        pool_ids = list(dict.fromkeys(ref_ids + pool_ids))[:60]   # referenced first, then selected
+        ref_txt = workout_gen.build_reference_workouts(ref_norm, _unit_label().upper())
 
         details = {}
         try:
@@ -1110,8 +1154,9 @@ def api_workout_generate():
                     raise                 # a mid-request auth loss must still 401
                 recent_txt = ""           # otherwise recent-perf is a nicety; never block
         system = workout_gen.build_generation_system_prompt(
-            merged, _unit_label().upper(), has_recent=bool(recent_txt))
-        user = workout_gen.build_generation_user_prompt(user_request, recent_performance=recent_txt)
+            merged, _unit_label().upper(), has_recent=bool(recent_txt), has_refs=bool(ref_txt))
+        user = workout_gen.build_generation_user_prompt(
+            user_request, references=ref_txt, recent_performance=recent_txt)
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
         if not ok:
             return jsonify({"ok": False, "text": text}), 200
