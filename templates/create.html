@@ -87,12 +87,17 @@
                         <span id="wg-generate-msg" class="text-sm text-gray-400 ml-2"></span>
 
                         <div id="wg-last" class="hidden mt-3 p-3 rounded-lg border border-gray-700 bg-gray-900/40 text-sm">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="text-gray-400">Last request:</span>
-                                <span id="wg-last-req" class="text-gray-200 italic"></span>
-                                <span id="wg-last-meta" class="text-[11px] text-gray-500"></span>
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
+                                <span class="text-gray-400">Recent prompts:</span>
+                                <select id="wg-last-pick" onchange="selectGen(parseInt(this.value, 10))"
+                                        class="p-1 bg-gray-700 rounded text-white border border-gray-600 text-xs max-w-md"></select>
                                 <button type="button" onclick="reuseLastGeneration()" class="ml-auto px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 border border-gray-600">Reuse</button>
                                 <button type="button" onclick="document.getElementById('wg-last-prompt').classList.toggle('hidden')" class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 border border-gray-600">View full prompt</button>
+                            </div>
+                            <div class="text-xs">
+                                <span class="text-gray-400">Request:</span>
+                                <span id="wg-last-req" class="text-gray-200 italic"></span>
+                                <span id="wg-last-meta" class="text-[11px] text-gray-500 ml-1"></span>
                             </div>
                             <pre id="wg-last-prompt" class="hidden mt-2 max-h-72 overflow-auto whitespace-pre-wrap bg-gray-900 p-2 rounded border border-gray-700 text-[11px] text-gray-300"></pre>
                         </div>
@@ -1039,29 +1044,47 @@
         }
     };
 
-    let lastGen = null;
+    let genHistory = [];
+    let currentGen = null;
     async function loadLastGeneration() {
         try {
             const d = await (await fetch('/api/workout/last')).json();
-            lastGen = d.last;
-            if (!lastGen) return;
-            // textContent throughout — the prompt/request are shown as inert text, never HTML.
-            document.getElementById('wg-last-req').textContent = lastGen.request || '(no text)';
-            const when = (lastGen.at || '').replace('T', ' ');
-            document.getElementById('wg-last-meta').textContent =
-                `· ${when}` + (lastGen.provider ? ` · ${lastGen.provider}${lastGen.model ? '/' + lastGen.model : ''}` : '')
-                + (lastGen.recent_days ? ` · recent ${lastGen.recent_days}d` : ' · recent off');
-            document.getElementById('wg-last-prompt').textContent =
-                '=== SYSTEM PROMPT ===\n' + (lastGen.system_prompt || '') +
-                '\n\n=== USER PROMPT ===\n' + (lastGen.user_prompt || '');
+            genHistory = d.history || (d.last ? [d.last] : []);
+            if (!genHistory.length) return;
+            const pick = document.getElementById('wg-last-pick');
+            pick.innerHTML = '';
+            genHistory.forEach((g, i) => {
+                // textContent on the option — the request is user text, never rendered as HTML.
+                const o = document.createElement('option');
+                o.value = String(i);
+                const when = (g.at || '').replace('T', ' ');
+                const req = g.request || '(no text)';
+                o.textContent = `${when} — ${req.length > 60 ? req.slice(0, 60) + '…' : req}`;
+                pick.appendChild(o);
+            });
+            pick.value = '0';
+            selectGen(0);
             document.getElementById('wg-last').classList.remove('hidden');
         } catch (e) { /* nothing generated yet */ }
     }
+    window.selectGen = (i) => {
+        currentGen = genHistory[i] || null;
+        if (!currentGen) return;
+        // textContent throughout — request/prompt are shown as inert text, never HTML.
+        document.getElementById('wg-last-req').textContent = currentGen.request || '(no text)';
+        const when = (currentGen.at || '').replace('T', ' ');
+        document.getElementById('wg-last-meta').textContent =
+            `· ${when}` + (currentGen.provider ? ` · ${currentGen.provider}${currentGen.model ? '/' + currentGen.model : ''}` : '')
+            + (currentGen.recent_days ? ` · recent ${currentGen.recent_days}d` : ' · recent off');
+        document.getElementById('wg-last-prompt').textContent =
+            '=== SYSTEM PROMPT ===\n' + (currentGen.system_prompt || '') +
+            '\n\n=== USER PROMPT ===\n' + (currentGen.user_prompt || '');
+    };
     window.reuseLastGeneration = () => {
-        if (!lastGen) return;
-        document.getElementById('wg-request').value = lastGen.request || '';
+        if (!currentGen) return;
+        document.getElementById('wg-request').value = currentGen.request || '';
         const sel = document.getElementById('wg-recent-days');
-        if (lastGen.recent_days !== undefined && lastGen.recent_days !== null) sel.value = String(lastGen.recent_days);
+        if (currentGen.recent_days !== undefined && currentGen.recent_days !== null) sel.value = String(currentGen.recent_days);
         document.getElementById('wg-request').focus();
     };
     loadLastGeneration();
