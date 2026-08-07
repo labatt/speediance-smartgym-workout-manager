@@ -161,6 +161,11 @@ were shown as failed rep targets, in red:
 - **Loads follow your account's unit and are never converted** — the model is told whether the
   account is lb or kg and writes directly in it; nothing is converted after the fact, the same
   rule the coach's reads and the builder's Imperial/metric handling already follow.
+- **Recent performance grounds the prescribed weights** — the request includes a per-exercise
+  table of your recent lifts (last 30 days by default; a control next to the Generate box offers
+  30/14/7 days or Off), and the model is told to set and progress weights from it instead of
+  guessing: complete everything and it felt easy, progress the load; struggled or it felt hard,
+  hold or reduce. Felt rating outranks the raw numbers.
 - **Exercise contracts made explicit in the prompt** — exercises the model cannot describe as
   plain reps-and-weight are tagged, and the rules spelled out:
   - `[TIMED]` / `[TIMED+LEVEL]` — the goal is a duration in **seconds**, not reps; and for
