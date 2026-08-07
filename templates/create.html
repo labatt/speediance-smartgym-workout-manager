@@ -145,7 +145,20 @@
             </div>
             <button onclick="saveWorkout()" class="bg-green-600 hover:bg-green-700 text-white px-6 rounded font-bold transition shadow-lg shadow-green-900/20 flex items-center">Save</button>
         </div>
-        
+
+        <div id="refine-panel" class="hidden mb-4 p-3 rounded-lg border border-gray-700 bg-gray-900/40">
+            <label class="block text-sm text-gray-300 mb-1">Refine with AI</label>
+            <div class="flex gap-2">
+                <input id="refine-comment" type="text"
+                       class="flex-grow bg-gray-900 text-white p-2 rounded border border-gray-600 focus:border-purple-500 outline-none text-sm"
+                       placeholder="e.g. make leg day harder · swap the squat for a hinge · add a set to the rows">
+                <button onclick="applyRefinement()" id="refine-btn"
+                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold text-sm whitespace-nowrap">Apply AI adjustment</button>
+            </div>
+            <div id="refine-log" class="flex flex-wrap gap-1 mt-2"></div>
+            <span id="refine-msg" class="text-xs text-gray-400"></span>
+        </div>
+
         <details id="radar-section" class="hidden mb-3 shrink-0 group">
             <summary class="cursor-pointer text-sm font-semibold text-gray-400 hover:text-gray-300 flex items-center gap-2 pb-2 border-b border-gray-700 select-none list-none">
                 <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -749,6 +762,8 @@
             container.innerHTML = `<div id="empty-state" class="flex flex-col items-center justify-center h-full text-gray-500 opacity-50"><p>Select exercises from the library</p></div>`;
             calculateWorkoutStats();
             renderRadarChart();
+            const rp = document.getElementById('refine-panel');
+            if (rp) rp.classList.toggle('hidden', workoutData.length === 0);
             return;
         }
 
@@ -907,6 +922,9 @@
             `;
             container.appendChild(card);
         });
+
+        const rp = document.getElementById('refine-panel');
+        if (rp) rp.classList.toggle('hidden', workoutData.length === 0);
     }
 
     // --- LOGIC ---
@@ -1051,9 +1069,68 @@
     window.processImport = async () => {
         try {
             const data = JSON.parse(document.getElementById('import-json').value);
-            if (await loadWorkoutIntoBuilder(data)) { closeImportModal(); alert("Workout imported successfully!"); }
+            if (await loadWorkoutIntoBuilder(data)) {
+                commentLog = []; renderCommentLog();
+                closeImportModal(); alert("Workout imported successfully!");
+            }
         } catch (e) {
             alert("Invalid JSON: " + e.message);
+        }
+    };
+
+    let commentLog = [];
+    function renderCommentLog() {
+        const box = document.getElementById('refine-log');
+        if (!box) return;
+        box.innerHTML = '';
+        commentLog.forEach(cmt => {
+            const chip = document.createElement('span');
+            chip.className = 'inline-block px-2 py-1 text-xs rounded bg-gray-700 border border-gray-600 text-gray-300';
+            chip.textContent = cmt;                     // textContent — never HTML
+            box.appendChild(chip);
+        });
+    }
+    function serializeBuilderForAI() {
+        return {
+            name: document.getElementById('plan-name').value || 'Custom Workout',
+            exercises: workoutData.map(ex => ({
+                id: ex.groupId,
+                presetId: ex.selectedPresetId,
+                isUnilateralExpanded: ex.isUnilateral || undefined,   // sets already hold L/R
+                sets: ex.sets.map(s => ({ reps: s.reps, weight: s.weight, mode: s.mode, rest: s.rest, unit: s.unit })),
+            })),
+        };
+    }
+    window.applyRefinement = async () => {
+        const comment = document.getElementById('refine-comment').value.trim();
+        const msg = document.getElementById('refine-msg');
+        const btn = document.getElementById('refine-btn');
+        if (!comment) { msg.textContent = 'Describe the change first.'; return; }
+        if (!workoutData.length) { msg.textContent = 'Nothing to refine yet.'; return; }
+        btn.disabled = true; msg.textContent = 'Adjusting… this can take a moment.';
+        try {
+            const recentDays = parseInt((document.getElementById('wg-recent-days') || {}).value, 10) || 0;
+            const r = await fetch('/api/workout/refine', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_workout: serializeBuilderForAI(), comment,
+                                       comment_log: commentLog, recent_days: recentDays })
+            });
+            const d = await r.json();
+            if (d.error) { msg.textContent = d.error; return; }
+            if (!d.ok) { msg.textContent = d.text || 'Adjustment failed.'; return; }
+            const loaded = await loadWorkoutIntoBuilder(d.workout);
+            if (loaded) {
+                commentLog.push(comment);
+                renderCommentLog();
+                document.getElementById('refine-comment').value = '';
+                msg.textContent = (d.warnings && d.warnings.length)
+                    ? `Applied with notes: ${d.warnings.join(' ')}` : 'Applied — review below.';
+                if (typeof loadLastGeneration === 'function') loadLastGeneration();
+            }
+        } catch (e) {
+            msg.textContent = 'Request failed: ' + e;
+        } finally {
+            btn.disabled = false;
         }
     };
 
@@ -1165,6 +1242,7 @@
             if (!d.ok) { msg.textContent = d.text || 'Generation failed.'; return; }
             const loaded = await loadWorkoutIntoBuilder(d.workout);
             if (loaded) {
+                commentLog = []; renderCommentLog();
                 msg.textContent = (d.warnings && d.warnings.length)
                     ? `Loaded with notes: ${d.warnings.join(' ')}`
                     : 'Loaded below — review, tweak, name it, and Save.';
