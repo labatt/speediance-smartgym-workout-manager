@@ -711,7 +711,100 @@
 
         tiles.forEach(([label, value, hint]) => grid.appendChild(cardioTile(label, value, hint)));
         container.appendChild(grid);
-        // Task 6 appends the trend chart section here.
+        const trend = document.createElement('div');
+        trend.className = 'mt-4';
+        trend.id = 'cardioTrend';
+        container.appendChild(trend);
+        loadCardioTrend(rec_currentTrainingId(session));
+    }
+
+    function rec_currentTrainingId(session) {
+        return (currentDetailPayload && currentDetailPayload.summary && currentDetailPayload.summary.trainingId)
+            || session.id || null;
+    }
+
+    const CARDIO_METRICS = [
+        { key: 'pace500',  label: 'Pace /500m', fmt: v => { const m = Math.floor(v/60), s = Math.round(v%60); return `${m}:${String(s).padStart(2,'0')}`; } },
+        { key: 'speedMs',  label: 'Speed',      fmt: v => `${v} m/s` },
+        { key: 'avgWatts', label: 'Power',      fmt: v => `${v} W` },
+        { key: 'distanceM',label: 'Distance',   fmt: v => `${Math.round(v)} m` },
+        { key: 'calorie',  label: 'Calories',   fmt: v => `${Math.round(v)} kcal` },
+        { key: 'rpe',      label: 'RPE',        fmt: v => `${v}/10` },
+    ];
+    let cardioTrendState = { sessions: [], currentId: null, metric: 'pace500' };
+
+    async function loadCardioTrend(currentId) {
+        cardioTrendState.currentId = currentId;
+        const box = document.getElementById('cardioTrend');
+        box.innerHTML = '<p class="text-xs text-gray-500">Loading trend…</p>';
+        try {
+            const resp = await fetch('/api/cardio/trend');
+            const data = await resp.json();
+            cardioTrendState.sessions = Array.isArray(data.sessions) ? data.sessions : [];
+            renderCardioTrend();
+        } catch (e) {
+            box.innerHTML = '';
+        }
+    }
+
+    function renderCardioTrend() {
+        const box = document.getElementById('cardioTrend');
+        box.innerHTML = '';
+        const sessions = cardioTrendState.sessions;
+        if (!sessions.length) return;
+
+        // Metric switcher
+        const bar = document.createElement('div');
+        bar.className = 'flex flex-wrap gap-1.5 mb-2';
+        CARDIO_METRICS.forEach(m => {
+            const b = document.createElement('button');
+            const active = m.key === cardioTrendState.metric;
+            b.className = `text-xs px-2 py-1 rounded ${active ? 'bg-blue-600 text-white font-bold' : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'}`;
+            b.textContent = m.label;
+            b.onclick = () => { cardioTrendState.metric = m.key; renderCardioTrend(); };
+            bar.appendChild(b);
+        });
+        box.appendChild(bar);
+
+        const metric = CARDIO_METRICS.find(m => m.key === cardioTrendState.metric);
+        // Only sessions that have this metric; keep index alignment to find "current".
+        const usable = sessions.filter(s => s[metric.key] != null);
+        if (usable.length < 1) { const p = document.createElement('p'); p.className='text-xs text-gray-500'; p.textContent='No data for this metric yet.'; box.appendChild(p); return; }
+
+        const W = 320, H = 120, PAD = 12;
+        const values = usable.map(s => s[metric.key]);
+        const g = WorkoutLogic.chartGeometry(values, W, H, PAD);
+
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.setAttribute('class', 'w-full bg-gray-900 rounded');
+
+        const poly = document.createElementNS(svgNS, 'path');
+        poly.setAttribute('d', g.path);
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', '#60a5fa');
+        poly.setAttribute('stroke-width', '2');
+        svg.appendChild(poly);
+
+        g.points.forEach((p, i) => {
+            const dot = document.createElementNS(svgNS, 'circle');
+            const isCurrent = usable[i].trainingId === cardioTrendState.currentId;
+            dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+            dot.setAttribute('r', isCurrent ? 5 : 3);
+            dot.setAttribute('fill', isCurrent ? '#f59e0b' : '#60a5fa');
+            const title = document.createElementNS(svgNS, 'title');
+            title.textContent = metric.fmt(usable[i][metric.key]);
+            dot.appendChild(title);
+            svg.appendChild(dot);
+        });
+        box.appendChild(svg);
+
+        const cap = document.createElement('p');
+        cap.className = 'text-[11px] text-gray-500 mt-1';
+        cap.textContent = `${metric.label} across ${usable.length} cardio session${usable.length === 1 ? '' : 's'} · orange = this one`
+            + (metric.key === 'pace500' ? ' · lower = faster' : '');
+        box.appendChild(cap);
     }
 
     function renderDetail(data, rec) {
