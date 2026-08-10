@@ -20,6 +20,7 @@ const {
     parseImportedSets,
     buildExportJSON,
     resolveAlreadyExpanded,
+    deriveCardioStats,
 } = require(path.join(__dirname, '..', 'static', 'workout-logic.js'));
 
 // ---------------------------------------------------------------------------
@@ -288,4 +289,37 @@ test('resolveAlreadyExpanded: no flag, id NOT in expandedIds -> not expanded (fr
 test('resolveAlreadyExpanded: coerces string groupId against numeric id set', () => {
     const ids = new Set([437972850049025]);
     assert.equal(resolveAlreadyExpanded(false, '437972850049025', ids), true);
+});
+
+// ---------------------------------------------------------------------------
+// deriveCardioStats — mirrors cardio_stats.py (oracle trainingId 2023440)
+// ---------------------------------------------------------------------------
+const CARDIO_ORACLE = { trainingTime: 530, calorie: 161, totalEnergy: 29580.29,
+                        totalDistance: 892.71, completionRate: 29.0, rpe: 6 };
+
+test('deriveCardioStats: oracle session matches Python twin', () => {
+    const r = deriveCardioStats(CARDIO_ORACLE);
+    assert.equal(r.durationSec, 530);
+    assert.ok(Math.abs(r.distanceM - 892.71) < 0.01);
+    assert.ok(Math.abs(r.pace500 - 296.9) < 0.2, `pace500=${r.pace500}`);
+    assert.ok(Math.abs(r.speedMs - 1.68) < 0.02, `speedMs=${r.speedMs}`);
+    assert.ok(Math.abs(r.calPerMin - 18.2) < 0.2, `calPerMin=${r.calPerMin}`);
+    assert.ok(Math.abs(r.energyKJ - 29.6) < 0.1, `energyKJ=${r.energyKJ}`);
+    assert.ok(Math.abs(r.avgWatts - 56) < 1, `avgWatts=${r.avgWatts}`);
+    assert.equal(r.completion, 29);
+    assert.equal(r.rpe, 6);
+});
+
+test('deriveCardioStats: zero distance nulls pace and speed', () => {
+    const r = deriveCardioStats({ trainingTime: 300, totalDistance: 0, calorie: 50 });
+    assert.equal(r.pace500, null);
+    assert.equal(r.speedMs, null);
+    assert.ok(Math.abs(r.calPerMin - 10.0) < 0.1);
+});
+
+test('deriveCardioStats: missing fields are null, never NaN', () => {
+    const r = deriveCardioStats({});
+    for (const k of ['pace500', 'speedMs', 'calPerMin', 'avgWatts', 'distanceM', 'rpe']) {
+        assert.equal(r[k], null, `${k} should be null`);
+    }
 });
