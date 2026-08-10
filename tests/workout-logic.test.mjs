@@ -323,3 +323,8 @@ test('deriveCardioStats: missing fields are null, never NaN', () => {
         assert.equal(r[k], null, `${k} should be null`);
     }
 });
+
+test('deriveCardioStats: tie case rounds half-up (8.25 -> 8.3)', () => {
+    const r = deriveCardioStats({ totalEnergy: 8250 });
+    assert.equal(r.energyKJ, 8.3);
+});

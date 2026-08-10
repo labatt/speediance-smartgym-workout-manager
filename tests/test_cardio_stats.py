@@ -37,6 +37,11 @@ class TestDeriveCardioStats(unittest.TestCase):
         self.assertIsNone(r["calPerMin"])
         self.assertIsNone(r["avgWatts"])
 
+    def test_tie_case_round_half_up(self):
+        """8.25 rounds half-up to 8.3, not banker's 8.2."""
+        r = derive_cardio_stats({"totalEnergy": 8250})
+        self.assertEqual(r["energyKJ"], 8.3)
+
 
 class TestIsCardioRecord(unittest.TestCase):
     def test_rowing_courseType_2_is_cardio(self):
