@@ -5,6 +5,7 @@ import schedule_planner
 import progression
 import coach
 import workout_gen
+from cardio_stats import is_cardio_record, derive_cardio_stats
 import datetime
 import json
 import os
@@ -739,6 +740,30 @@ def save_workout_gen_last(entry):
     with open(WORKOUT_GEN_LAST_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, indent=2)
     return history
+
+
+CARDIO_TREND_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cardio_trend_cache.json')
+
+
+def load_cardio_cache():
+    """Per-trainingId cardio stats. Completed sessions are immutable, so this never expires."""
+    if os.path.exists(CARDIO_TREND_CACHE_FILE):
+        try:
+            with open(CARDIO_TREND_CACHE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            print(f"Could not read cardio cache: {e}")
+    return {}
+
+
+def save_cardio_cache(cache):
+    try:
+        with open(CARDIO_TREND_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, indent=2)
+    except Exception as e:
+        print(f"Could not write cardio cache: {e}")
 
 
 def _unit_label():
@@ -1616,6 +1641,50 @@ def api_history_detail(training_id):
                 raise
             session_info = {}
         return jsonify({"detail": detail, "session": session_info})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/cardio/trend')
+def api_cardio_trend():
+    """Time-sorted series of the athlete's cardio sessions for the trend chart.
+    Filters records by courseType, derives per-session metrics, and caches each
+    (past sessions never change). One session's info failing must not 500 the route.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        records = client.get_training_records("2020-01-01", datetime.date.today().isoformat())
+        cache = load_cardio_cache()
+        dirty = False
+        out = []
+        for rec in records:
+            if not is_cardio_record(rec):
+                continue
+            tid = rec.get("trainingId")
+            key = str(tid)
+            stats = cache.get(key)
+            if stats is None:
+                try:
+                    info = client.get_training_session_info(tid)
+                except Exception as se:
+                    if _is_auth_error(se):
+                        raise
+                    continue  # skip a session we can't read; don't kill the series
+                stats = derive_cardio_stats(info)
+                cache[key] = stats
+                dirty = True
+            out.append({
+                "trainingId": tid,
+                "startTimestamp": rec.get("startTimestamp"),
+                "title": rec.get("title"),
+                **stats,
+            })
+        if dirty:
+            save_cardio_cache(cache)
+        out.sort(key=lambda x: x.get("startTimestamp") or 0)
+        return jsonify({"sessions": out})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
