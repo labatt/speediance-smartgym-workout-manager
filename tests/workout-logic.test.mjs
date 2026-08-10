@@ -21,6 +21,7 @@ const {
     buildExportJSON,
     resolveAlreadyExpanded,
     deriveCardioStats,
+    chartGeometry,
 } = require(path.join(__dirname, '..', 'static', 'workout-logic.js'));
 
 // ---------------------------------------------------------------------------
@@ -327,4 +328,42 @@ test('deriveCardioStats: missing fields are null, never NaN', () => {
 test('deriveCardioStats: tie case rounds half-up (8.25 -> 8.3)', () => {
     const r = deriveCardioStats({ totalEnergy: 8250 });
     assert.equal(r.energyKJ, 8.3);
+});
+
+// ---------------------------------------------------------------------------
+// chartGeometry — pure SVG line-chart mapping
+// ---------------------------------------------------------------------------
+test('chartGeometry: empty values -> empty', () => {
+    const g = chartGeometry([], 100, 50, 8);
+    assert.deepEqual(g.points, []);
+    assert.equal(g.path, '');
+});
+
+test('chartGeometry: single value -> one centered point', () => {
+    const g = chartGeometry([5], 100, 50, 8);
+    assert.equal(g.points.length, 1);
+    assert.equal(g.points[0].x, 50);
+    assert.equal(g.points[0].y, 25);
+});
+
+test('chartGeometry: flat series -> mid-line (no divide-by-zero)', () => {
+    const g = chartGeometry([3, 3, 3], 100, 50, 8);
+    g.points.forEach(p => assert.equal(p.y, 25));
+    assert.ok(g.points.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});
+
+test('chartGeometry: two values map min to bottom, max to top', () => {
+    const g = chartGeometry([0, 10], 100, 100, 10);
+    assert.equal(g.points[0].x, 10);   // first at left pad
+    assert.equal(g.points[0].y, 90);   // min -> bottom
+    assert.equal(g.points[1].x, 90);   // last at right pad
+    assert.equal(g.points[1].y, 10);   // max -> top
+});
+
+test('chartGeometry: increasing values give strictly decreasing y', () => {
+    const g = chartGeometry([1, 2, 3, 4], 120, 80, 8);
+    for (let i = 1; i < g.points.length; i++) {
+        assert.ok(g.points[i].y < g.points[i - 1].y);
+    }
+    assert.ok(g.path.startsWith('M '));
 });

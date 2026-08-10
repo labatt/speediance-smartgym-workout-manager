@@ -218,12 +218,46 @@ function deriveCardioStats(s) {
     };
 }
 
+/**
+ * Map numeric values to SVG coordinates for a line chart.
+ * Higher value -> higher on chart (smaller y). Pure; no DOM.
+ * @param {number[]} values
+ * @param {number} width
+ * @param {number} height
+ * @param {number} pad - inner padding in px (default 8)
+ * @returns {{points: {x:number,y:number}[], path: string}}
+ */
+function chartGeometry(values, width, height, pad) {
+    pad = (pad === undefined) ? 8 : pad;
+    const pts = [];
+    if (!values || values.length === 0) return { points: [], path: '' };
+
+    const innerW = width - 2 * pad;
+    const innerH = height - 2 * pad;
+    const midY = height / 2;
+
+    if (values.length === 1) {
+        pts.push({ x: width / 2, y: midY });
+    } else {
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = max - min;
+        values.forEach((v, i) => {
+            const x = pad + (innerW * i) / (values.length - 1);
+            const y = range === 0 ? midY : pad + innerH * (1 - (v - min) / range);
+            pts.push({ x, y });
+        });
+    }
+    const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    return { points: pts, path };
+}
+
 // ---------------------------------------------------------------------------
 // Export for Node.js (tests) and browser (WorkoutLogic namespace)
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats };
+    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats, chartGeometry };
 } else if (typeof window !== 'undefined') {
     // Use a namespace to avoid colliding with identically-named functions in create.html
-    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats };
+    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats, chartGeometry };
 }
