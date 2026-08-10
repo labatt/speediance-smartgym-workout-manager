@@ -180,12 +180,84 @@ function buildExportJSON(workoutData, planName) {
     };
 }
 
+/**
+ * Map a session_info object to cardio display/trend metrics.
+ * Twin of cardio_stats.py::derive_cardio_stats — keep in sync (same oracle 2023440).
+ * Missing/zero inputs yield null (never NaN/Infinity).
+ * @param {Object} s - session_info
+ * @returns {Object}
+ */
+function deriveCardioStats(s) {
+    s = s || {};
+    const num = v => {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string' && v.trim() === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const r1 = (n, d) => n === null ? null : Math.round(n * 10 ** d) / 10 ** d;
+
+    const dur = num(s.trainingTime);
+    const dist = num(s.totalDistance);
+    const cal = num(s.calorie);
+    const energy = num(s.totalEnergy);
+    const hasDur = dur !== null && dur > 0;
+    const hasDist = dist !== null && dist > 0;
+
+    return {
+        durationSec: dur === null ? null : Math.trunc(dur),
+        distanceM: dist === null ? null : r1(dist, 2),
+        pace500: (hasDur && hasDist) ? r1(dur / (dist / 500), 1) : null,
+        speedMs: (hasDur && hasDist) ? r1(dist / dur, 2) : null,
+        calorie: cal,
+        calPerMin: (hasDur && cal !== null) ? r1(cal / (dur / 60), 1) : null,
+        energyKJ: energy === null ? null : r1(energy / 1000, 1),
+        avgWatts: (hasDur && energy !== null && energy > 0) ? Math.round(energy / dur) : null,
+        completion: num(s.completionRate),
+        rpe: num(s.rpe),
+    };
+}
+
+/**
+ * Map numeric values to SVG coordinates for a line chart.
+ * Higher value -> higher on chart (smaller y). Pure; no DOM.
+ * @param {number[]} values
+ * @param {number} width
+ * @param {number} height
+ * @param {number} pad - inner padding in px (default 8)
+ * @returns {{points: {x:number,y:number}[], path: string}}
+ */
+function chartGeometry(values, width, height, pad) {
+    pad = (pad === undefined) ? 8 : pad;
+    const pts = [];
+    if (!values || values.length === 0) return { points: [], path: '' };
+
+    const innerW = width - 2 * pad;
+    const innerH = height - 2 * pad;
+    const midY = height / 2;
+
+    if (values.length === 1) {
+        pts.push({ x: width / 2, y: midY });
+    } else {
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = max - min;
+        values.forEach((v, i) => {
+            const x = pad + (innerW * i) / (values.length - 1);
+            const y = range === 0 ? midY : pad + innerH * (1 - (v - min) / range);
+            pts.push({ x, y });
+        });
+    }
+    const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    return { points: pts, path };
+}
+
 // ---------------------------------------------------------------------------
 // Export for Node.js (tests) and browser (WorkoutLogic namespace)
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
+    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats, chartGeometry };
 } else if (typeof window !== 'undefined') {
     // Use a namespace to avoid colliding with identically-named functions in create.html
-    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
+    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats, chartGeometry };
 }
