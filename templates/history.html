@@ -731,19 +731,25 @@
         { key: 'calorie',  label: 'Calories',   fmt: v => `${Math.round(v)} kcal` },
         { key: 'rpe',      label: 'RPE',        fmt: v => `${v}/10` },
     ];
-    let cardioTrendState = { sessions: [], currentId: null, metric: 'pace500' };
+    let cardioTrendState = { sessions: [], currentId: null, metric: 'pace500', seq: 0 };
 
     async function loadCardioTrend(currentId) {
-        cardioTrendState.currentId = currentId;
         const box = document.getElementById('cardioTrend');
-        box.innerHTML = '<p class="text-xs text-gray-500">Loading trend…</p>';
+        const mySeq = ++cardioTrendState.seq;
+        cardioTrendState.currentId = currentId;
+        box.innerHTML = '';
+        const loading = document.createElement('p');
+        loading.className = 'text-xs text-gray-500';
+        loading.textContent = 'Loading trend…';
+        box.appendChild(loading);
         try {
             const resp = await fetch('/api/cardio/trend');
             const data = await resp.json();
+            if (mySeq !== cardioTrendState.seq) return;   // a newer open superseded this fetch
             cardioTrendState.sessions = Array.isArray(data.sessions) ? data.sessions : [];
             renderCardioTrend();
         } catch (e) {
-            box.innerHTML = '';
+            if (mySeq === cardioTrendState.seq) box.innerHTML = '';
         }
     }
 
