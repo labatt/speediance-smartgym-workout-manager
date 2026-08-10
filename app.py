@@ -1672,6 +1672,8 @@ def api_cardio_trend():
                     if _is_auth_error(se):
                         raise
                     continue  # skip a session we can't read; don't kill the series
+                if not info:
+                    continue  # transient empty (swallowed error) — skip, don't cache, so it retries next load
                 stats = derive_cardio_stats(info)
                 cache[key] = stats
                 dirty = True

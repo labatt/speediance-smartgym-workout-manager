@@ -57,6 +57,22 @@ class TestCardioTrend(unittest.TestCase):
             resp = self.client.get('/api/cardio/trend')
         self.assertEqual(resp.status_code, 401)
 
+    def test_empty_session_info_is_skipped_and_not_cached(self):
+        saved = {}
+        with mock.patch.object(app_module, 'load_cardio_cache', return_value={}), \
+             mock.patch.object(app_module, 'save_cardio_cache', side_effect=lambda c: saved.update(c)), \
+             mock.patch.object(app_module.client, 'credentials', {'token': 't', 'user_id': '1'}), \
+             mock.patch.object(app_module.client, 'get_training_records', return_value=RECORDS), \
+             mock.patch.object(app_module.client, 'get_training_session_info',
+                                side_effect=lambda tid: {} if tid == 1 else SESS[tid]):
+            resp = self.client.get('/api/cardio/trend')
+        self.assertEqual(resp.status_code, 200)
+        s = resp.get_json()["sessions"]
+        ids = [x["trainingId"] for x in s]
+        self.assertIn(3, ids)
+        self.assertNotIn(1, ids)
+        self.assertNotIn("1", saved)
+
 
 if __name__ == "__main__":
     unittest.main()
