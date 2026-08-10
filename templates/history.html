@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <script src="{{ url_for('static', filename='js/coach_markdown.js') }}"></script>
+<script src="{{ url_for('static', filename='workout-logic.js') }}"></script>
 <div class="mb-6">
     <div class="flex justify-between items-center mb-4">
         <h1 class="text-3xl font-bold text-white">Workout History</h1>
@@ -674,7 +675,8 @@
 
     function fmtPace(secPer500) {
         if (secPer500 == null) return null;
-        const m = Math.floor(secPer500 / 60), s = Math.round(secPer500 % 60);
+        const total = Math.round(secPer500);
+        const m = Math.floor(total / 60), s = total % 60;
         return `${m}:${String(s).padStart(2, '0')} /500m`;
     }
 
