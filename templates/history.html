@@ -672,6 +672,46 @@
         });
     }
 
+    function fmtPace(secPer500) {
+        if (secPer500 == null) return null;
+        const m = Math.floor(secPer500 / 60), s = Math.round(secPer500 % 60);
+        return `${m}:${String(s).padStart(2, '0')} /500m`;
+    }
+
+    function cardioTile(label, value, hint) {
+        const wrap = document.createElement('div');
+        wrap.className = 'bg-gray-900 rounded p-3 text-center';
+        const l = document.createElement('p'); l.className = 'text-xs text-gray-400'; l.textContent = label;
+        const v = document.createElement('p'); v.className = 'text-lg font-bold text-blue-400'; v.textContent = value;
+        wrap.appendChild(l); wrap.appendChild(v);
+        if (hint) { const h = document.createElement('p'); h.className = 'text-[10px] text-gray-500 mt-0.5'; h.textContent = hint; wrap.appendChild(h); }
+        return wrap;
+    }
+
+    function renderCardioPanel(session) {
+        const c = WorkoutLogic.deriveCardioStats(session);
+        const container = document.getElementById('detailExercises');
+        container.innerHTML = '';
+
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-2 sm:grid-cols-3 gap-3';
+
+        const tiles = [];
+        if (c.distanceM != null)  tiles.push(['Distance', `${Math.round(c.distanceM)} m`]);
+        if (c.pace500 != null)    tiles.push(['Avg pace', fmtPace(c.pace500), 'lower = faster']);
+        if (c.speedMs != null)    tiles.push(['Avg speed', `${c.speedMs} m/s`, `${(c.speedMs * 3.6).toFixed(1)} km/h`]);
+        if (c.avgWatts != null)   tiles.push(['Avg power', `${c.avgWatts} W`, 'derived']);
+        if (c.calorie != null)    tiles.push(['Calories', `${Math.round(c.calorie)} kcal`]);
+        if (c.calPerMin != null)  tiles.push(['Cal / min', `${c.calPerMin}`]);
+        if (c.energyKJ != null)   tiles.push(['Total energy', `${c.energyKJ} kJ`]);
+        if (c.completion != null) tiles.push(['Completion', `${Math.round(c.completion)}%`]);
+        if (c.rpe != null)        tiles.push(['RPE', `${c.rpe}/10`]);
+
+        tiles.forEach(([label, value, hint]) => grid.appendChild(cardioTile(label, value, hint)));
+        container.appendChild(grid);
+        // Task 6 appends the trend chart section here.
+    }
+
     function renderDetail(data, rec) {
         const session = data.session || {};
         const exercises = Array.isArray(data.detail) ? data.detail : [];
@@ -688,6 +728,13 @@
         const container = document.getElementById('detailExercises');
 
         if (exercises.length === 0) {
+            const isCardio = session.existBoatingSkiDataGraph === true
+                || (session.totalDistance || 0) > 0
+                || (session.totalEnergy || 0) > 0;
+            if (isCardio) {
+                renderCardioPanel(session);   // fills #detailExercises with stats (+ trend in Task 6)
+                return;
+            }
             container.innerHTML = `
                 <div class="text-center py-6 text-gray-500">
                     <p>No exercise breakdown available for this session type.</p>
