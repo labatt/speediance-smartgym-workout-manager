@@ -16,6 +16,7 @@ class TestDeriveCardioStats(unittest.TestCase):
         self.assertAlmostEqual(r["calPerMin"], 18.2, delta=0.2)
         self.assertAlmostEqual(r["energyKJ"], 29.6, delta=0.1)
         self.assertAlmostEqual(r["avgWatts"], 56, delta=1)
+        self.assertIsInstance(r["avgWatts"], int)
         self.assertEqual(r["completion"], 29.0)
         self.assertEqual(r["rpe"], 6)
 
