@@ -40,7 +40,7 @@ def derive_cardio_stats(s):
     speed = round(dist / dur, 2) if has_dur and has_dist else None
     cal_min = round(cal / (dur / 60.0), 1) if has_dur and cal is not None else None
     energy_kj = round(energy / 1000.0, 1) if energy is not None else None
-    watts = round(energy / dur, 0) if has_dur and energy is not None and energy > 0 else None
+    watts = int(round(energy / dur)) if has_dur and energy is not None and energy > 0 else None
 
     return {
         "durationSec": int(dur) if dur is not None else None,
