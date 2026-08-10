@@ -52,7 +52,7 @@ the same limitations. Use at your own risk.
   breakdown, exportable, with timestamps in your local timezone.
 - **Cardio and rowing session stats** — cardio/rowing workouts in the history detail
   modal show a stats panel (distance, avg pace /500m, speed, power, calories burned,
-  energy, completion %, RPE, duration) and a cross-session trend chart with a metric
+  cal/min, energy, completion %, RPE, duration) and a cross-session trend chart with a metric
   switcher and the current session highlighted. Cached per-session, extensible via
   `CARDIO_COURSE_TYPES` in `cardio_stats.py` for new course types (bike, ski). Note:
   within-session per-second graphs are not available due to API endpoint limits.
