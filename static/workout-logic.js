@@ -180,12 +180,49 @@ function buildExportJSON(workoutData, planName) {
     };
 }
 
+/**
+ * Map a session_info object to cardio display/trend metrics.
+ * Twin of cardio_stats.py::derive_cardio_stats — keep in sync (same oracle 2023440).
+ * Missing/zero inputs yield null (never NaN/Infinity).
+ * @param {Object} s - session_info
+ * @returns {Object}
+ */
+function deriveCardioStats(s) {
+    s = s || {};
+    const num = v => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    };
+    const r1 = (n, d) => n === null ? null : Math.round(n * 10 ** d) / 10 ** d;
+
+    const dur = num(s.trainingTime);
+    const dist = num(s.totalDistance);
+    const cal = num(s.calorie);
+    const energy = num(s.totalEnergy);
+    const hasDur = dur !== null && dur > 0;
+    const hasDist = dist !== null && dist > 0;
+
+    return {
+        durationSec: dur === null ? null : Math.trunc(dur),
+        distanceM: dist === null ? null : r1(dist, 2),
+        pace500: (hasDur && hasDist) ? r1(dur / (dist / 500), 1) : null,
+        speedMs: (hasDur && hasDist) ? r1(dist / dur, 2) : null,
+        calorie: cal,
+        calPerMin: (hasDur && cal !== null) ? r1(cal / (dur / 60), 1) : null,
+        energyKJ: energy === null ? null : r1(energy / 1000, 1),
+        avgWatts: (hasDur && energy !== null && energy > 0) ? Math.round(energy / dur) : null,
+        completion: num(s.completionRate),
+        rpe: num(s.rpe),
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Export for Node.js (tests) and browser (WorkoutLogic namespace)
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
+    module.exports = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats };
 } else if (typeof window !== 'undefined') {
     // Use a namespace to avoid colliding with identically-named functions in create.html
-    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded };
+    window.WorkoutLogic = { PRESET_RULES, getRules, validateAndClamp, lbsToKg, kgToLbs, parseImportedSets, buildExportJSON, resolveAlreadyExpanded, deriveCardioStats };
 }
