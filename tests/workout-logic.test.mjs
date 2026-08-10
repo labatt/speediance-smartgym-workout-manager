@@ -20,6 +20,8 @@ const {
     parseImportedSets,
     buildExportJSON,
     resolveAlreadyExpanded,
+    deriveCardioStats,
+    chartGeometry,
 } = require(path.join(__dirname, '..', 'static', 'workout-logic.js'));
 
 // ---------------------------------------------------------------------------
@@ -288,4 +290,80 @@ test('resolveAlreadyExpanded: no flag, id NOT in expandedIds -> not expanded (fr
 test('resolveAlreadyExpanded: coerces string groupId against numeric id set', () => {
     const ids = new Set([437972850049025]);
     assert.equal(resolveAlreadyExpanded(false, '437972850049025', ids), true);
+});
+
+// ---------------------------------------------------------------------------
+// deriveCardioStats — mirrors cardio_stats.py (oracle trainingId 2023440)
+// ---------------------------------------------------------------------------
+const CARDIO_ORACLE = { trainingTime: 530, calorie: 161, totalEnergy: 29580.29,
+                        totalDistance: 892.71, completionRate: 29.0, rpe: 6 };
+
+test('deriveCardioStats: oracle session matches Python twin', () => {
+    const r = deriveCardioStats(CARDIO_ORACLE);
+    assert.equal(r.durationSec, 530);
+    assert.ok(Math.abs(r.distanceM - 892.71) < 0.01);
+    assert.ok(Math.abs(r.pace500 - 296.9) < 0.2, `pace500=${r.pace500}`);
+    assert.ok(Math.abs(r.speedMs - 1.68) < 0.02, `speedMs=${r.speedMs}`);
+    assert.ok(Math.abs(r.calPerMin - 18.2) < 0.2, `calPerMin=${r.calPerMin}`);
+    assert.ok(Math.abs(r.energyKJ - 29.6) < 0.1, `energyKJ=${r.energyKJ}`);
+    assert.ok(Math.abs(r.avgWatts - 56) < 1, `avgWatts=${r.avgWatts}`);
+    assert.equal(r.completion, 29);
+    assert.equal(r.rpe, 6);
+});
+
+test('deriveCardioStats: zero distance nulls pace and speed', () => {
+    const r = deriveCardioStats({ trainingTime: 300, totalDistance: 0, calorie: 50 });
+    assert.equal(r.pace500, null);
+    assert.equal(r.speedMs, null);
+    assert.ok(Math.abs(r.calPerMin - 10.0) < 0.1);
+});
+
+test('deriveCardioStats: missing fields are null, never NaN', () => {
+    const r = deriveCardioStats({});
+    for (const k of ['pace500', 'speedMs', 'calPerMin', 'avgWatts', 'distanceM', 'rpe']) {
+        assert.equal(r[k], null, `${k} should be null`);
+    }
+});
+
+test('deriveCardioStats: tie case rounds half-up (8.25 -> 8.3)', () => {
+    const r = deriveCardioStats({ totalEnergy: 8250 });
+    assert.equal(r.energyKJ, 8.3);
+});
+
+// ---------------------------------------------------------------------------
+// chartGeometry — pure SVG line-chart mapping
+// ---------------------------------------------------------------------------
+test('chartGeometry: empty values -> empty', () => {
+    const g = chartGeometry([], 100, 50, 8);
+    assert.deepEqual(g.points, []);
+    assert.equal(g.path, '');
+});
+
+test('chartGeometry: single value -> one centered point', () => {
+    const g = chartGeometry([5], 100, 50, 8);
+    assert.equal(g.points.length, 1);
+    assert.equal(g.points[0].x, 50);
+    assert.equal(g.points[0].y, 25);
+});
+
+test('chartGeometry: flat series -> mid-line (no divide-by-zero)', () => {
+    const g = chartGeometry([3, 3, 3], 100, 50, 8);
+    g.points.forEach(p => assert.equal(p.y, 25));
+    assert.ok(g.points.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});
+
+test('chartGeometry: two values map min to bottom, max to top', () => {
+    const g = chartGeometry([0, 10], 100, 100, 10);
+    assert.equal(g.points[0].x, 10);   // first at left pad
+    assert.equal(g.points[0].y, 90);   // min -> bottom
+    assert.equal(g.points[1].x, 90);   // last at right pad
+    assert.equal(g.points[1].y, 10);   // max -> top
+});
+
+test('chartGeometry: increasing values give strictly decreasing y', () => {
+    const g = chartGeometry([1, 2, 3, 4], 120, 80, 8);
+    for (let i = 1; i < g.points.length; i++) {
+        assert.ok(g.points[i].y < g.points[i - 1].y);
+    }
+    assert.ok(g.path.startsWith('M '));
 });
