@@ -112,3 +112,51 @@ class TestWpParsers(unittest.TestCase):
         self.assertFalse(reconcile.is_backfill_target(rows[696826]))  # Workout + miles (rowing)
         self.assertFalse(reconcile.is_backfill_target(rows[696955]))  # @ Gym, has NSI
         self.assertFalse(reconcile.is_backfill_target(rows[465860]))  # Walking
+
+
+def _rec(tid, date, cal, cap=5000.0, ctype=0, typ=5, t=1800, title="X"):
+    return {"trainingId": tid, "type": typ, "courseType": ctype,
+            "totalCapacity": cap, "calorie": cal, "trainingTime": t,
+            "startTime": f"{date} 12:00:00", "title": title}
+
+class TestMatching(unittest.TestCase):
+    def test_strength_filter_excludes_rowing(self):
+        recs = [_rec(1, "2026-08-29", 341),                       # strength
+                _rec(2, "2026-08-28", 552, cap=0.0),              # rowing (cap 0)
+                _rec(3, "2026-08-15", 529, ctype=2, cap=0.0)]     # cardio course
+        out = reconcile.sp_strength_sessions(recs)
+        self.assertEqual([s["training_id"] for s in out], [1])
+        self.assertEqual(out[0]["date"], "2026-08-29")
+
+    def test_confident_single_match(self):
+        wp = [{"session_id": 696827, "date": "2026-08-29", "focus": "Strength Training",
+               "calorie": 341, "nsi": None, "has_miles": False}]
+        sp = reconcile.sp_strength_sessions([_rec(1103072, "2026-08-29", 341)])
+        res = reconcile.match_candidates(wp, sp)
+        self.assertEqual(len(res["confident"]), 1)
+        self.assertEqual(res["confident"][0]["sp"]["training_id"], 1103072)
+        self.assertEqual(res["ambiguous"], [])
+
+    def test_no_match_is_ambiguous(self):
+        wp = [{"session_id": 1, "date": "2026-08-29", "focus": "Strength Training",
+               "calorie": 999, "nsi": None, "has_miles": False}]
+        sp = reconcile.sp_strength_sessions([_rec(1103072, "2026-08-29", 341)])
+        res = reconcile.match_candidates(wp, sp)
+        self.assertEqual(res["confident"], [])
+        self.assertEqual(res["ambiguous"][0]["reason"], "no match")
+
+    def test_multiple_matches_is_ambiguous(self):
+        wp = [{"session_id": 1, "date": "2026-08-29", "focus": "Strength Training",
+               "calorie": 341, "nsi": None, "has_miles": False}]
+        sp = reconcile.sp_strength_sessions(
+            [_rec(10, "2026-08-29", 341), _rec(11, "2026-08-29", 340)])  # both within tol
+        res = reconcile.match_candidates(wp, sp)
+        self.assertEqual(res["confident"], [])
+        self.assertEqual(res["ambiguous"][0]["reason"], "multiple matches")
+
+    def test_one_day_tolerance(self):
+        wp = [{"session_id": 1, "date": "2026-08-30", "focus": "Strength Training",
+               "calorie": 341, "nsi": None, "has_miles": False}]
+        sp = reconcile.sp_strength_sessions([_rec(1103072, "2026-08-29", 341)])
+        res = reconcile.match_candidates(wp, sp)
+        self.assertEqual(len(res["confident"]), 1)

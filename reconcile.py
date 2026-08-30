@@ -3,8 +3,13 @@ match empty WP workouts to Speediance strength sessions, and transform Speedianc
 session detail into WP add_exercises payloads. No I/O, no Flask, no requests —
 everything here is unit-tested against live-captured fixtures."""
 
+import datetime
 import re
 import progression
+
+CARDIO_COURSE_TYPE = 2
+CAL_TOLERANCE = 2
+DAY_TOLERANCE = 1
 
 
 def sp_detail_to_wp_exercises(detail):
@@ -81,3 +86,49 @@ def is_backfill_target(row):
             and row["nsi"] is None
             and row["calorie"] is not None
             and not row["has_miles"])
+
+
+def sp_strength_sessions(records):
+    """Speediance records -> strength-only session dicts (courseType != 2, capacity > 0)."""
+    out = []
+    for r in records:
+        if r.get("courseType") == CARDIO_COURSE_TYPE:
+            continue
+        if (r.get("totalCapacity") or 0) <= 0:
+            continue
+        out.append({
+            "training_id": r.get("trainingId"),
+            "type": r.get("type"),
+            "date": (r.get("startTime") or "")[:10],
+            "calorie": r.get("calorie"),
+            "trainingTime": r.get("trainingTime"),
+            "title": r.get("title"),
+        })
+    return out
+
+
+def _days_apart(a, b):
+    """Calculate days between two ISO date strings."""
+    da = datetime.date.fromisoformat(a)
+    db = datetime.date.fromisoformat(b)
+    return abs((da - db).days)
+
+
+def match_candidates(wp_targets, sp_sessions):
+    """Match empty WP strength workouts to Speediance strength sessions."""
+    confident, ambiguous = [], []
+    for wp in wp_targets:
+        cands = [
+            sp for sp in sp_sessions
+            if sp.get("calorie") is not None
+            and abs((wp["calorie"] or 0) - sp["calorie"]) <= CAL_TOLERANCE
+            and _days_apart(wp["date"], sp["date"]) <= DAY_TOLERANCE
+        ]
+        if len(cands) == 1:
+            confident.append({"wp": wp, "sp": cands[0]})
+        else:
+            ambiguous.append({
+                "wp": wp, "candidates": cands,
+                "reason": "multiple matches" if cands else "no match",
+            })
+    return {"confident": confident, "ambiguous": ambiguous}
