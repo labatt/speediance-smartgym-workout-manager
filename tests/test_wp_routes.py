@@ -22,3 +22,20 @@ class TestWpOAuthRoutes(unittest.TestCase):
         comp.assert_called_once()
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/wp/reconcile", resp.headers["Location"])
+
+class TestReconcilePage(unittest.TestCase):
+    def setUp(self):
+        app_module.app.config["TESTING"] = True
+        self.client = app_module.app.test_client()
+
+    def test_page_shows_connect_when_disconnected(self):
+        with mock.patch.object(app_module.wellness, "is_connected", return_value=False):
+            resp = self.client.get("/wp/reconcile")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"/wp/connect", resp.data)
+
+    def test_page_shows_backfill_when_connected(self):
+        with mock.patch.object(app_module.wellness, "is_connected", return_value=True):
+            resp = self.client.get("/wp/reconcile")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"/wp/backfill", resp.data)

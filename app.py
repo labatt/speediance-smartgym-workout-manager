@@ -1787,6 +1787,18 @@ def wp_apply():
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
 
+@app.route('/wp/reconcile')
+def wp_reconcile():
+    """Status page: connection state, backfill controls, and report of last run."""
+    report = {}
+    try:
+        with open(WP_REPORT_FILE) as f:
+            report = json.load(f)
+    except (OSError, ValueError):
+        report = {}
+    return render_template("wp_reconcile.html",
+                           connected=wellness.is_connected(), report=report)
+
 @app.route('/api/cardio/trend')
 def api_cardio_trend():
     """Time-sorted series of the athlete's cardio sessions for the trend chart.
