@@ -52,6 +52,16 @@ class TestOAuth(unittest.TestCase):
             self.c.complete_authorization("code", "bogus-state",
                                           "https://x/wp/callback")
 
+    def test_complete_rejects_expired_state(self):
+        state = "expired-state"
+        with open(self.c.pending_file, "w") as f:
+            json.dump({state: {"verifier": "v", "ts": 0}}, f)
+        with mock.patch("wellness_client.requests.post") as post:
+            with self.assertRaises(wc.WellnessAuthError):
+                self.c.complete_authorization("code", state,
+                                              "https://x/wp/callback")
+            post.assert_not_called()
+
     def test_refresh_rotation_persists_new_refresh_token(self):
         self.c._save_tokens({"client_id": "c", "access_token": "old",
                              "refresh_token": "RT1", "expires_at": 0})  # expired

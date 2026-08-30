@@ -28,6 +28,15 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
+def _write_secure_json(path, obj):
+    """Write JSON to path with 0600 perms from creation — no window where the
+    file exists world/group readable. Used for both the tokens file and the
+    pending-authorization file (which holds PKCE verifiers)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(obj, f)
+
+
 class WellnessClient:
     def __init__(self, base_dir=None, tokens_file=None, pending_file=None):
         self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
@@ -46,12 +55,7 @@ class WellnessClient:
 
     def _save_tokens(self, tokens):
         self.tokens = tokens
-        with open(self.tokens_file, "w") as f:
-            json.dump(tokens, f)
-        try:
-            os.chmod(self.tokens_file, 0o600)
-        except OSError:
-            pass
+        _write_secure_json(self.tokens_file, tokens)
 
     def is_connected(self):
         return bool(self.tokens.get("refresh_token"))
@@ -101,8 +105,11 @@ class WellnessClient:
         now = time.time()
         pending = {k: v for k, v in pending.items() if now - v.get("ts", 0) < PENDING_TTL}
         pending[state] = {"verifier": verifier, "ts": now}
-        with open(self.pending_file, "w") as f:
-            json.dump(pending, f)
+        # Known race: concurrent begin/complete calls (e.g. multiple worker
+        # processes) can read-modify-write this file non-atomically and lose
+        # an entry. Left unlocked deliberately — it fails safe, just forcing
+        # the user to restart authorization, not a security issue.
+        _write_secure_json(self.pending_file, pending)
         from urllib.parse import urlencode
         q = urlencode({
             "response_type": "code", "client_id": client_id,
@@ -114,9 +121,9 @@ class WellnessClient:
     def complete_authorization(self, code, state, redirect_uri):
         pending = self._load_json(self.pending_file, {})
         entry = pending.pop(state, None)
-        with open(self.pending_file, "w") as f:
-            json.dump(pending, f)
-        if not entry:
+        # Known race: see the comment in begin_authorization — unlocked, fails safe.
+        _write_secure_json(self.pending_file, pending)
+        if not entry or time.time() - entry.get("ts", 0) >= PENDING_TTL:
             raise WellnessAuthError("unknown or expired OAuth state")
         r = requests.post(self._meta()["token_endpoint"], data={
             "grant_type": "authorization_code", "code": code,
