@@ -3,6 +3,7 @@ match empty WP workouts to Speediance strength sessions, and transform Speedianc
 session detail into WP add_exercises payloads. No I/O, no Flask, no requests —
 everything here is unit-tested against live-captured fixtures."""
 
+import re
 import progression
 
 
@@ -42,3 +43,41 @@ def sp_detail_to_wp_exercises(detail):
             continue
         out.append({"name": ex["name"], "slot_type": "working", "sets": sets})
     return out
+
+
+_ROW_RE = re.compile(r"\[ID (\d+)\]\s*(\d{4}-\d{2}-\d{2}):\s*(.+)")
+_CAL_RE = re.compile(r"(\d+)\s*cal")
+_NSI_RE = re.compile(r"NSI\s*([\d.]+)")
+_MILES_RE = re.compile(r"[\d.]+\s*mi\b")
+
+def parse_wp_workout_list(text):
+    """Parse Wellness Project list_workouts text into structured rows."""
+    rows = []
+    for line in text.splitlines():
+        m = _ROW_RE.search(line)
+        if not m:
+            continue
+        sid, date, rest = int(m.group(1)), m.group(2), m.group(3)
+        focus = rest.split("·")[0].split("@")[0].strip()
+        cal = _CAL_RE.search(rest)
+        nsi = _NSI_RE.search(rest)
+        rows.append({
+            "session_id": sid,
+            "date": date,
+            "focus": focus,
+            "calorie": int(cal.group(1)) if cal else None,
+            "nsi": float(nsi.group(1)) if nsi else None,
+            "has_miles": bool(_MILES_RE.search(rest)),
+        })
+    return rows
+
+def wp_workout_is_empty(text):
+    """True when a get_workout payload reports no logged exercises."""
+    return "No exercises logged" in text
+
+def is_backfill_target(row):
+    """A Health-Connect Speediance strength import lacking detail."""
+    return (row["focus"] == "Strength Training"
+            and row["nsi"] is None
+            and row["calorie"] is not None
+            and not row["has_miles"])

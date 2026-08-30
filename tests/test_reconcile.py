@@ -73,3 +73,42 @@ class TestTransform(unittest.TestCase):
             ],
         }]
         self.assertEqual(reconcile.sp_detail_to_wp_exercises(detail), [])
+
+
+WP_LIST = """Workouts (2026-06-01 → 2026-08-30):
+[ID 696827] 2026-08-29: Strength Training · 33 min · 341 cal
+[ID 696826] 2026-08-28: Workout · 37 min · 552 cal · 1.81 mi
+[ID 696955] 2026-08-25: Upper @ Gym · NSI 24.5 (Below Average)
+[ID 465860] 2026-08-20: Walking · 11 min · 31 cal · 0.38 mi
+Avg session NSI in window: 32.1 across 3 sessions."""
+
+WP_EMPTY = ("2026-08-29: Strength Training · 33 min · 341 cal · Health Connect [ID 696827]\n"
+            "  Notes: Imported from Health Connect...\n"
+            "No exercises logged for this session. A wearable import arrives as a session total...")
+
+WP_DETAILED = ("2026-08-25: Upper @ Gym · Session NSI 24.5 [ID 696955]\n"
+               "  Chest Press: [Cable]\n    Set 1: 15 reps @ 45 lb")
+
+class TestWpParsers(unittest.TestCase):
+    def test_parse_list(self):
+        rows = reconcile.parse_wp_workout_list(WP_LIST)
+        by_id = {r["session_id"]: r for r in rows}
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(by_id[696827]["date"], "2026-08-29")
+        self.assertEqual(by_id[696827]["focus"], "Strength Training")
+        self.assertEqual(by_id[696827]["calorie"], 341)
+        self.assertIsNone(by_id[696827]["nsi"])
+        self.assertFalse(by_id[696827]["has_miles"])
+        self.assertTrue(by_id[696826]["has_miles"])
+        self.assertEqual(by_id[696955]["nsi"], 24.5)
+
+    def test_is_empty(self):
+        self.assertTrue(reconcile.wp_workout_is_empty(WP_EMPTY))
+        self.assertFalse(reconcile.wp_workout_is_empty(WP_DETAILED))
+
+    def test_is_backfill_target(self):
+        rows = {r["session_id"]: r for r in reconcile.parse_wp_workout_list(WP_LIST)}
+        self.assertTrue(reconcile.is_backfill_target(rows[696827]))   # Strength Training, no NSI
+        self.assertFalse(reconcile.is_backfill_target(rows[696826]))  # Workout + miles (rowing)
+        self.assertFalse(reconcile.is_backfill_target(rows[696955]))  # @ Gym, has NSI
+        self.assertFalse(reconcile.is_backfill_target(rows[465860]))  # Walking
