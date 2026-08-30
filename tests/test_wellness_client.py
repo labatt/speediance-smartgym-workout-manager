@@ -1,4 +1,4 @@
-import base64, hashlib, json, os, tempfile, unittest
+import base64, hashlib, json, os, tempfile, time, unittest
 from unittest import mock
 import wellness_client as wc
 
@@ -80,3 +80,52 @@ class TestOAuth(unittest.TestCase):
             with self.assertRaises(wc.WellnessAuthError):
                 self.c._valid_access_token()
         self.assertFalse(self.c.is_connected())
+
+
+class TestTransport(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.c = wc.WellnessClient(
+            base_dir=self.d,
+            tokens_file=os.path.join(self.d, "wellness_tokens.json"),
+            pending_file=os.path.join(self.d, "wellness_pending.json"))
+        self.c._auth_meta = dict(AUTH_META)
+        self.c._save_tokens({"client_id": "c", "access_token": "AT",
+                             "refresh_token": "RT", "expires_at": time.time() + 9999})
+
+    def _rpc_result(self, text):
+        return {"jsonrpc": "2.0", "id": 1,
+                "result": {"content": [{"type": "text", "text": text}]}}
+
+    def test_call_tool_parses_raw_json(self):
+        with mock.patch("wellness_client.requests.post",
+                        return_value=_resp(self._rpc_result("HELLO"))) as p:
+            out = self.c._call_tool("list_workouts", {"start_date": "x"})
+        self.assertEqual(out, "HELLO")
+        # Authorization header carried the bearer token
+        _, kwargs = p.call_args
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer AT")
+
+    def test_call_tool_parses_sse_event(self):
+        sse = "event: message\ndata: " + json.dumps(self._rpc_result("VIA-SSE")) + "\n\n"
+        r = _resp(text=sse)
+        r.headers = {"content-type": "text/event-stream"}
+        r.json.side_effect = ValueError("not json")
+        with mock.patch("wellness_client.requests.post", return_value=r):
+            out = self.c._call_tool("get_workout", {"session_id": 1})
+        self.assertEqual(out, "VIA-SSE")
+
+    def test_call_tool_401_raises_auth(self):
+        with mock.patch("wellness_client.requests.post", return_value=_resp({}, status=401)):
+            with self.assertRaises(wc.WellnessAuthError):
+                self.c._call_tool("list_workouts", {})
+
+    def test_update_workout_shapes_arguments(self):
+        with mock.patch.object(self.c, "_call_tool", return_value="ok") as ct:
+            self.c.update_workout(696827, [{"name": "Row", "sets": [{"reps": 8, "weight_lb": 50}]}],
+                                  notes="Backfilled from Speediance trainingId 1103072")
+        name, args = ct.call_args[0]
+        self.assertEqual(name, "update_workout")
+        self.assertEqual(args["session_id"], 696827)
+        self.assertEqual(args["notes"], "Backfilled from Speediance trainingId 1103072")
+        self.assertEqual(args["add_exercises"][0]["name"], "Row")
