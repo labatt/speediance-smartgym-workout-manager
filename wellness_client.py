@@ -15,6 +15,7 @@ AS_METADATA_URL = f"{BASE}/.well-known/oauth-authorization-server"
 SCOPE = "mcp"
 CLIENT_NAME = "Speediance Backfill"
 PENDING_TTL = 600  # seconds
+MCP_PROTOCOL_VERSION = "2025-06-18"
 
 
 class WellnessAPIError(Exception):
@@ -26,6 +27,20 @@ class WellnessAuthError(WellnessAPIError):
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _parse_rpc_body(resp):
+    """Return the JSON-RPC object from either a raw-JSON or SSE MCP response."""
+    try:
+        return resp.json()
+    except ValueError:
+        pass
+    # SSE: find the last `data:` line and JSON-decode it
+    for line in resp.text.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            return json.loads(line[len("data:"):].strip())
+    raise WellnessAPIError("unparseable MCP response")
 
 
 def _write_secure_json(path, obj):
@@ -157,3 +172,37 @@ class WellnessClient:
             raise WellnessAuthError("refresh failed — reconnect required")
         self._store_token_response(r.json())
         return self.tokens["access_token"]
+
+    # ---- MCP transport ----
+    def _call_tool(self, name, arguments):
+        token = self._valid_access_token()
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                   "params": {"name": name, "arguments": arguments}}
+        resp = requests.post(MCP_URL, json=payload, timeout=60, headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        })
+        if resp.status_code == 401:
+            raise WellnessAuthError("Wellness Project rejected the token (401)")
+        if resp.status_code != 200:
+            raise WellnessAPIError(f"MCP call {name} -> {resp.status_code}")
+        body = _parse_rpc_body(resp)
+        if "error" in body:
+            raise WellnessAPIError(f"MCP error: {body['error']}")
+        parts = body.get("result", {}).get("content", [])
+        return "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+
+    def list_workouts(self, start_date, end_date):
+        return self._call_tool("list_workouts",
+                               {"start_date": start_date, "end_date": end_date})
+
+    def get_workout(self, session_id):
+        return self._call_tool("get_workout", {"session_id": session_id})
+
+    def update_workout(self, session_id, add_exercises, notes=None):
+        args = {"session_id": session_id, "add_exercises": add_exercises}
+        if notes is not None:
+            args["notes"] = notes
+        return self._call_tool("update_workout", args)
