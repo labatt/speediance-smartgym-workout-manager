@@ -15,7 +15,15 @@
       "summary": "A dependency-free page at /roadmap, backed by data/roadmap.json, that renders one table per status plus in-flight section tables. The living record of work on this project.",
       "affects": "data/roadmap.json, templates/roadmap.html, app.py (/roadmap and /roadmap.json routes)",
       "status": "done",
-      "notes": "Exists so work is tracked in one honest place before anything depends on it — storage is a single JSON file the assistant edits directly (no DB, no admin UI, no auth, by design). Kept dependency-free on purpose: no CDN, no build step, so it still opens in five years. Verified the /roadmap route returns 200 and /roadmap.json parses. Observed conflict I did NOT silently resolve: the pasted rules 3-4 (done newest-first, everything else oldest-first as a queue) contradict the follow-up 'order everything newest at the top' — I implemented rules 2-4 as written and flagged it for a ruling rather than quietly picking one."
+      "notes": "Exists so work is tracked in one honest place before anything depends on it — storage is a single JSON file the assistant edits directly (no DB, no admin UI, no auth, by design). Kept dependency-free on purpose: no CDN, no build step, so it still opens in five years. Verified the /roadmap route returns 200 and /roadmap.json parses. Observed conflict I did NOT silently resolve: the pasted rules 3-4 (done newest-first, everything else oldest-first as a queue) contradict the follow-up 'order everything newest at the top' — I implemented rules 2-4 as written and flagged it for a ruling rather than quietly picking one. Ruling (2026-08-30): user chose to keep rules 2-4 as the default; header-click sort still overrides per-table (rule 5). Resolved with no code change."
+    },
+    {
+      "id": 2,
+      "title": "Wellness Project exercise backfill",
+      "summary": "Flask app finds empty Wellness Project (Health Connect) strength workouts and backfills them from the matching Speediance session's exercises, via an OAuth MCP client. Scheduled daily scan plus a manual button.",
+      "affects": "wellness_client.py, reconcile.py, app.py (/wp/* routes), templates/wp_reconcile.html, tests/",
+      "status": "working",
+      "notes": "Design spec + 9-task TDD plan written and committed (docs/superpowers/specs/2026-08-30-wellness-project-backfill-design.md, docs/superpowers/plans/2026-08-30-wellness-project-backfill.md). Execution: subagent-driven development. Key design finding: Wellness Project exposes no REST API and no API key — its MCP endpoint IS the API, gated by OAuth (authorization_code + PKCE + refresh_token; no machine grant), so the app must connect once in a browser then refresh silently. The date+calories match key was exact across the live 90-day window. Started 2026-08-30 — subagent-driven execution, task 1 (the pure Speediance-detail -> WP-exercises transform) dispatched first."
     }
   ]
 }
