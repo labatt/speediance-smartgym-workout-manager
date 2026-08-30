@@ -7,6 +7,7 @@ import progression
 import coach
 import workout_gen
 from cardio_stats import is_cardio_record, derive_cardio_stats
+import reconcile
 import datetime
 import json
 import os
@@ -1689,6 +1690,102 @@ def wp_callback():
     # /wp/reconcile is registered in a later task; use a literal path rather
     # than url_for() so this route doesn't depend on load order.
     return redirect("/wp/reconcile")
+
+WP_WINDOW_DAYS = 90
+WP_REPORT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "wellness_reconcile_report.json")
+
+def _wp_window():
+    """Last WP_WINDOW_DAYS days, as (start, end) ISO date strings."""
+    today = datetime.date.today()
+    return (today - datetime.timedelta(days=WP_WINDOW_DAYS)).isoformat(), today.isoformat()
+
+def _apply_match(wp_session_id, sp_training_id, sp_type):
+    """Fetch the Speediance session detail, transform it into WP exercises, and
+    write it onto the (already-confirmed-empty) WP workout with a provenance note."""
+    training_type = "course" if sp_type == 2 else "custom"
+    detail = client.get_training_detail(sp_training_id, training_type)
+    exercises = reconcile.sp_detail_to_wp_exercises(detail)
+    if not exercises:
+        raise WellnessAPIError("Speediance session had no loggable exercises")
+    # We set the provenance note directly rather than trying to append to the
+    # Health Connect note -- traceability is the goal, and note-text parsing
+    # would be fragile.
+    note = f"Backfilled from Speediance trainingId {sp_training_id}"
+    wellness.update_workout(wp_session_id, exercises, notes=note)
+    return {"wp_session_id": wp_session_id, "sp_training_id": sp_training_id,
+            "exercise_count": len(exercises)}
+
+def _run_backfill(mode):
+    if not wellness.is_connected():
+        return {"connected": False, "status": "connect_required"}
+    start, end = _wp_window()
+    wp_text = wellness.list_workouts(start, end)
+    rows = reconcile.parse_wp_workout_list(wp_text)
+    targets = [r for r in rows if reconcile.is_backfill_target(r)]
+    # confirm each is genuinely empty
+    empties = []
+    for r in targets:
+        try:
+            if reconcile.wp_workout_is_empty(wellness.get_workout(r["session_id"])):
+                empties.append(r)
+        except WellnessAPIError:
+            continue
+    sp = reconcile.sp_strength_sessions(client.get_training_records(start, end))
+    matched = reconcile.match_candidates(empties, sp)
+
+    applied, errors, flagged = [], [], []
+    # match_candidates matches each WP target independently, so one sp session
+    # could be the sole confident match for two different (both-empty) WP
+    # workouts. Guard against writing the same sp session into two workouts.
+    claimed = set()
+    for m in matched["confident"]:
+        sp_training_id = m["sp"]["training_id"]
+        if sp_training_id in claimed:
+            flagged.append({"wp": m["wp"], "candidates": [m["sp"]],
+                            "reason": "sp session already applied to another WP workout"})
+            continue
+        try:
+            applied.append(_apply_match(m["wp"]["session_id"],
+                                        sp_training_id, m["sp"]["type"]))
+            claimed.add(sp_training_id)
+        except (WellnessAPIError, Exception) as e:
+            errors.append({"wp_session_id": m["wp"]["session_id"], "error": str(e)})
+    flagged.extend({"wp": m["wp"], "candidates": m["candidates"], "reason": m["reason"]}
+                   for m in matched["ambiguous"])
+    report = {"connected": True, "applied": applied, "flagged": flagged, "errors": errors}
+    try:
+        with open(WP_REPORT_FILE, "w") as f:
+            json.dump(report, f)
+    except OSError:
+        pass
+    return report
+
+@app.route('/wp/backfill', methods=['POST'])
+def wp_backfill():
+    mode = request.args.get('mode', 'manual')
+    try:
+        return jsonify(_run_backfill(mode))
+    except WellnessAuthError:
+        return jsonify({"connected": False, "status": "connect_required"})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/wp/apply', methods=['POST'])
+def wp_apply():
+    data = request.get_json(force=True)
+    try:
+        applied = _apply_match(int(data["wp_session_id"]),
+                               int(data["sp_training_id"]), int(data.get("sp_type", 5)))
+        return jsonify({"applied": applied})
+    except WellnessAuthError:
+        return jsonify({"error": "connect_required"}), 401
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/cardio/trend')
 def api_cardio_trend():
