@@ -30,17 +30,30 @@ def _b64url(raw: bytes) -> str:
 
 
 def _parse_rpc_body(resp):
-    """Return the JSON-RPC object from either a raw-JSON or SSE MCP response."""
+    """Return the JSON-RPC object from a raw-JSON or SSE MCP response.
+    For SSE, prefer the last event carrying a result/error — MCP streamable-HTTP
+    may emit notification events before the tools/call result on the same stream."""
     try:
         return resp.json()
     except ValueError:
         pass
-    # SSE: find the last `data:` line and JSON-decode it
+    chosen = None      # last event with result/error
+    last_any = None    # last parseable data event (fallback)
     for line in resp.text.splitlines():
         line = line.strip()
-        if line.startswith("data:"):
-            return json.loads(line[len("data:"):].strip())
-    raise WellnessAPIError("unparseable MCP response")
+        if not line.startswith("data:"):
+            continue
+        try:
+            obj = json.loads(line[len("data:"):].strip())
+        except ValueError:
+            continue
+        last_any = obj
+        if isinstance(obj, dict) and ("result" in obj or "error" in obj):
+            chosen = obj
+    result = chosen if chosen is not None else last_any
+    if result is None:
+        raise WellnessAPIError("unparseable MCP response")
+    return result
 
 
 def _write_secure_json(path, obj):

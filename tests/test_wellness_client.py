@@ -115,6 +115,18 @@ class TestTransport(unittest.TestCase):
             out = self.c._call_tool("get_workout", {"session_id": 1})
         self.assertEqual(out, "VIA-SSE")
 
+    def test_call_tool_ignores_leading_notification_in_sse(self):
+        notification = {"jsonrpc": "2.0", "method": "notifications/message",
+                         "params": {"level": "info", "data": "working..."}}
+        sse = ("event: message\ndata: " + json.dumps(notification) + "\n\n"
+               + "event: message\ndata: " + json.dumps(self._rpc_result("REAL")) + "\n\n")
+        r = _resp(text=sse)
+        r.headers = {"content-type": "text/event-stream"}
+        r.json.side_effect = ValueError("not json")
+        with mock.patch("wellness_client.requests.post", return_value=r):
+            out = self.c._call_tool("get_workout", {"session_id": 1})
+        self.assertEqual(out, "REAL")
+
     def test_call_tool_401_raises_auth(self):
         with mock.patch("wellness_client.requests.post", return_value=_resp({}, status=401)):
             with self.assertRaises(wc.WellnessAuthError):
