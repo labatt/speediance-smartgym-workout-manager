@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Wellness Project Backfill</title>
+<script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-gray-100 p-8">
+  <h1 class="text-2xl font-bold mb-4">Wellness Project Backfill</h1>
+  {% if connected %}
+    <p class="text-green-400 mb-4">Connected.</p>
+    <button id="run" class="bg-blue-600 px-4 py-2 rounded">Backfill now</button>
+    <pre id="out" class="mt-4 bg-gray-800 p-4 rounded text-sm overflow-auto"></pre>
+    <script>
+      document.getElementById('run').onclick = async () => {
+        const out = document.getElementById('out');
+        out.textContent = 'Running…';
+        const r = await fetch('/wp/backfill?mode=manual', {method: 'POST'});
+        out.textContent = JSON.stringify(await r.json(), null, 2);
+      };
+    </script>
+  {% else %}
+    <p class="mb-4">Not connected to Wellness Project.</p>
+    <a href="/wp/connect" class="bg-blue-600 px-4 py-2 rounded">Connect Wellness Project</a>
+  {% endif %}
+  {% if report and report.get('applied') %}
+    <h2 class="text-lg mt-6 mb-2">Last run — applied {{ report['applied']|length }}</h2>
+    <pre class="bg-gray-800 p-4 rounded text-sm">{{ report['applied']|tojson(indent=2) }}</pre>
+  {% endif %}
+</body></html>
