@@ -1729,6 +1729,8 @@ def _run_backfill(mode):
         try:
             if reconcile.wp_workout_is_empty(wellness.get_workout(r["session_id"])):
                 empties.append(r)
+        except WellnessAuthError:
+            raise
         except WellnessAPIError:
             continue
     sp = reconcile.sp_strength_sessions(client.get_training_records(start, end))
@@ -1749,7 +1751,9 @@ def _run_backfill(mode):
             applied.append(_apply_match(m["wp"]["session_id"],
                                         sp_training_id, m["sp"]["type"]))
             claimed.add(sp_training_id)
-        except (WellnessAPIError, Exception) as e:
+        except WellnessAuthError:
+            raise
+        except Exception as e:
             errors.append({"wp_session_id": m["wp"]["session_id"], "error": str(e)})
     flagged.extend({"wp": m["wp"], "candidates": m["candidates"], "reason": m["reason"]}
                    for m in matched["ambiguous"])

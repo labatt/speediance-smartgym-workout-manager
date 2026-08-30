@@ -2,6 +2,7 @@ import json, os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app as app_module
+from wellness_client import WellnessAuthError
 
 WP_LIST = ("Workouts:\n"
            "[ID 696827] 2026-08-29: Strength Training · 33 min · 341 cal\n"
@@ -78,6 +79,22 @@ class TestBackfill(unittest.TestCase):
         upd.assert_called_once()
         self.assertEqual(len(body["flagged"]), 1)
         self.assertIn("already applied", body["flagged"][0]["reason"])
+
+    def test_auth_error_midpass_surfaces_connect_required(self):
+        """A token expiring mid-pass (during the empty-check loop) must surface as
+        connect_required rather than being swallowed by the broad WellnessAPIError
+        handler -- WellnessAuthError is a subclass of WellnessAPIError, so a plain
+        `except WellnessAPIError: continue` would hide the auth failure and return
+        connected: True with a truncated/empty result."""
+        w = app_module.wellness
+        with mock.patch.object(w, "is_connected", return_value=True), \
+             mock.patch.object(w, "list_workouts", return_value=WP_LIST), \
+             mock.patch.object(w, "get_workout", side_effect=WellnessAuthError("token expired")), \
+             mock.patch.object(app_module.client, "get_training_records", return_value=SP_RECORDS), \
+             mock.patch.object(app_module.client, "get_training_detail", return_value=SP_DETAIL):
+            resp = self.client.post("/wp/backfill?mode=manual")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["status"], "connect_required")
 
 
 if __name__ == "__main__":
