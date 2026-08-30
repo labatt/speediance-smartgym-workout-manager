@@ -150,6 +150,22 @@ def index():
     unit = client.credentials.get('unit', 0)
     return render_template('index.html', workouts=workouts, unit=unit)
 
+# --- Roadmap: a build-status record backed by a single JSON file ---
+ROADMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'roadmap.json')
+
+@app.route('/roadmap')
+def roadmap():
+    return render_template('roadmap.html')
+
+@app.route('/roadmap.json')
+def roadmap_json():
+    try:
+        with open(ROADMAP_FILE, 'r') as f:
+            payload = f.read()
+    except OSError:
+        payload = '{"project": "Roadmap", "items": []}'
+    return Response(payload, mimetype='application/json')
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
     if request.method == 'POST':
