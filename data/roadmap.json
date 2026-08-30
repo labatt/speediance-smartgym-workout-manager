@@ -1,0 +1,21 @@
+{
+  "project": "Speediance Workout Manager — build status",
+  "updated": "2026-08-30",
+  "statusLegend": {
+    "working": "Being worked on right now",
+    "queued": "Accepted, not started yet",
+    "blocked": "Waiting on something external",
+    "future": "Idea for later, not committed",
+    "done": "Finished and verified"
+  },
+  "items": [
+    {
+      "id": 1,
+      "title": "Build the /roadmap build-status page",
+      "summary": "A dependency-free page at /roadmap, backed by data/roadmap.json, that renders one table per status plus in-flight section tables. The living record of work on this project.",
+      "affects": "data/roadmap.json, templates/roadmap.html, app.py (/roadmap and /roadmap.json routes)",
+      "status": "done",
+      "notes": "Exists so work is tracked in one honest place before anything depends on it — storage is a single JSON file the assistant edits directly (no DB, no admin UI, no auth, by design). Kept dependency-free on purpose: no CDN, no build step, so it still opens in five years. Verified the /roadmap route returns 200 and /roadmap.json parses. Observed conflict I did NOT silently resolve: the pasted rules 3-4 (done newest-first, everything else oldest-first as a queue) contradict the follow-up 'order everything newest at the top' — I implemented rules 2-4 as written and flagged it for a ruling rather than quietly picking one."
+    }
+  ]
+}

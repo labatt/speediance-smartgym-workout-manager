@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap</title>
+<!--
+  Dependency-free on purpose: no framework, no CDN, no build step.
+  It fetches /roadmap.json and renders one table per status, then any
+  in-flight `section` tables. It should still open in five years.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1a1a; background: #f7f7f8;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .meta { color: #666; margin: 0 0 1rem; font-size: .9rem; }
+  .legend { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: 0 0 1.5rem; padding: .5rem .75rem;
+            background: #fff; border: 1px solid #e3e3e6; border-radius: 8px; font-size: .82rem; }
+  .legend span { white-space: nowrap; }
+  section.block { margin: 0 0 1.75rem; }
+  h2 { font-size: 1.05rem; margin: 0 0 .5rem; display: flex; align-items: baseline; gap: .5rem; }
+  h2 .count { color: #888; font-weight: 400; font-size: .85rem; }
+  table { width: 100%; border-collapse: collapse; background: #fff;
+          border: 1px solid #e3e3e6; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; vertical-align: top; padding: .5rem .6rem; border-bottom: 1px solid #eee; }
+  th { background: #fafafa; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em;
+       color: #555; cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { background: #f0f0f2; }
+  th .arrow { color: #aaa; font-size: .7rem; }
+  tr:last-child td { border-bottom: none; }
+  td.id { color: #999; font-variant-numeric: tabular-nums; }
+  td.title { font-weight: 600; }
+  td.summary, td.notes, td.affects { color: #333; }
+  td.affects { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; color: #666; }
+  td.notes { color: #555; }
+  .pill { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .74rem;
+          font-weight: 600; white-space: nowrap; }
+  .pill.working { background: #fde68a; color: #713f12; }
+  .pill.queued  { background: #dbeafe; color: #1e3a8a; }
+  .pill.blocked { background: #fecaca; color: #7f1d1d; }
+  .pill.future  { background: #ede9fe; color: #4c1d95; }
+  .pill.done    { background: #d1fae5; color: #065f46; }
+  .empty { color: #999; font-style: italic; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e5e5e7; background: #17171a; }
+    .meta { color: #999; }
+    .legend, table { background: #1f1f23; border-color: #333; }
+    th { background: #26262b; color: #bbb; }
+    th:hover { background: #303036; }
+    th, td { border-bottom-color: #2a2a2f; }
+    td.summary, td.notes, td.affects { color: #ccc; }
+    td.affects, td.notes { color: #9a9aa2; }
+  }
+</style>
+</head>
+<body>
+  <h1 id="project">Roadmap</h1>
+  <p class="meta" id="meta"></p>
+  <div class="legend" id="legend"></div>
+  <div id="tables"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STATUS_ORDER = ["working", "queued", "blocked", "future", "done"];
+  var COLS = [
+    { key: "id", label: "#" },
+    { key: "title", label: "Title" },
+    { key: "status", label: "Status" },
+    { key: "summary", label: "Summary" },
+    { key: "affects", label: "Affects" },
+    { key: "notes", label: "Notes" }
+  ];
+
+  var DATA = null;
+  // Per-table sort override: key -> {col, dir}. A header click sets this and
+  // overrides the default ordering (rule 5).
+  var overrides = {};
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // Default order (rules 2-4): the `done` log reads newest-first; every other
+  // status reads oldest-first so a queue reads as a queue; a section orders by
+  // status then id so "how far along" is legible.
+  function defaultSorted(items, key) {
+    var a = items.slice();
+    if (key === "status:done") {
+      a.sort(function (x, y) { return y.id - x.id; });
+    } else if (key.indexOf("status:") === 0) {
+      a.sort(function (x, y) { return x.id - y.id; });
+    } else {
+      a.sort(function (x, y) {
+        return (STATUS_ORDER.indexOf(x.status) - STATUS_ORDER.indexOf(y.status)) || (x.id - y.id);
+      });
+    }
+    return a;
+  }
+
+  function sorted(items, key) {
+    var ov = overrides[key];
+    if (!ov) return defaultSorted(items, key);
+    var dir = ov.dir === "desc" ? -1 : 1;
+    return items.slice().sort(function (x, y) {
+      var a = x[ov.col], b = y[ov.col];
+      if (ov.col === "id") return (a - b) * dir;
+      a = (a == null ? "" : String(a)).toLowerCase();
+      b = (b == null ? "" : String(b)).toLowerCase();
+      return (a < b ? -1 : a > b ? 1 : 0) * dir;
+    });
+  }
+
+  function onHeaderClick(key, col) {
+    var ov = overrides[key];
+    if (ov && ov.col === col) {
+      ov.dir = ov.dir === "asc" ? "desc" : "asc";
+    } else {
+      overrides[key] = { col: col, dir: "asc" };
+    }
+    render();
+  }
+
+  function tableFor(items, key, heading) {
+    var block = el("section", "block");
+    var h = el("h2", null, heading);
+    h.appendChild(el("span", "count", "(" + items.length + ")"));
+    block.appendChild(h);
+
+    var table = el("table");
+    var thead = el("thead");
+    var htr = el("tr");
+    COLS.forEach(function (c) {
+      var th = el("th", null, c.label);
+      var ov = overrides[key];
+      if (ov && ov.col === c.key) {
+        th.appendChild(el("span", "arrow", ov.dir === "asc" ? " ▲" : " ▼"));
+      }
+      th.addEventListener("click", function () { onHeaderClick(key, c.key); });
+      htr.appendChild(th);
+    });
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
+    var tbody = el("tbody");
+    sorted(items, key).forEach(function (it) {
+      var tr = el("tr");
+      COLS.forEach(function (c) {
+        var td = el("td", c.key);
+        if (c.key === "status") {
+          td.appendChild(el("span", "pill " + it.status, it.status));
+        } else {
+          td.textContent = it[c.key] == null ? "" : String(it[c.key]);
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    block.appendChild(table);
+    return block;
+  }
+
+  function render() {
+    var root = document.getElementById("tables");
+    root.textContent = "";
+    if (!DATA) return;
+
+    var items = DATA.items || [];
+    // Rule 6: items with a `section` leave the status tables and show in their
+    // section table instead (rendered AFTER the status tables).
+    var inSection = items.filter(function (it) { return it.section; });
+    var free = items.filter(function (it) { return !it.section; });
+
+    // Status tables first, in the fixed order (rule 2). Skip empty ones.
+    STATUS_ORDER.forEach(function (st) {
+      var group = free.filter(function (it) { return it.status === st; });
+      if (!group.length) return;
+      root.appendChild(tableFor(group, "status:" + st, DATA.statusLegend && DATA.statusLegend[st] ? st : st));
+    });
+
+    // Then section tables (mixed statuses, one per section).
+    var order = [];
+    var byName = {};
+    inSection.forEach(function (it) {
+      if (!byName[it.section]) { byName[it.section] = []; order.push(it.section); }
+      byName[it.section].push(it);
+    });
+    order.forEach(function (name) {
+      root.appendChild(tableFor(byName[name], "section:" + name, "▸ " + name));
+    });
+
+    if (!items.length) {
+      root.appendChild(el("p", "empty", "No items yet."));
+    }
+  }
+
+  function renderChrome() {
+    document.getElementById("project").textContent = DATA.project || "Roadmap";
+    document.title = (DATA.project || "Roadmap");
+    document.getElementById("meta").textContent = DATA.updated ? ("Updated " + DATA.updated) : "";
+    var legend = document.getElementById("legend");
+    legend.textContent = "";
+    var map = DATA.statusLegend || {};
+    STATUS_ORDER.forEach(function (st) {
+      if (!(st in map)) return;
+      var s = el("span");
+      s.appendChild(el("span", "pill " + st, st));
+      s.appendChild(document.createTextNode(" " + map[st]));
+      legend.appendChild(s);
+    });
+  }
+
+  fetch("/roadmap.json", { cache: "no-store" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (json) {
+      DATA = json;
+      renderChrome();
+      render();
+    })
+    .catch(function (err) {
+      document.getElementById("tables").appendChild(
+        el("p", "empty", "Could not load roadmap.json: " + err.message));
+    });
+})();
+</script>
+</body>
+</html>
