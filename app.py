@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, Response
 from api_client import SpeedianceClient, SpeedianceAuthError
+from wellness_client import WellnessClient, WellnessAuthError, WellnessAPIError
 from debug_routes import init_debug
 import schedule_planner
 import progression
@@ -34,6 +35,7 @@ else:
 
 app.secret_key = "speediance_secret_key" # For Flash Messages
 client = SpeedianceClient()
+wellness = WellnessClient()
 app.register_blueprint(init_debug(client))
 
 
@@ -1661,6 +1663,32 @@ def api_history_detail(training_id):
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
+
+def _wp_redirect_uri():
+    """Build the OAuth redirect_uri from the incoming request's own root so it
+    matches whatever host/scheme the app is actually being served on."""
+    root = request.url_root  # e.g. https://speediance.labattsimon.com/
+    return root.rstrip("/") + "/wp/callback"
+
+@app.route('/wp/connect')
+def wp_connect():
+    """Kick off the Wellness Project OAuth flow — redirect to WP's authorize URL."""
+    url = wellness.begin_authorization(_wp_redirect_uri())
+    return redirect(url)
+
+@app.route('/wp/callback')
+def wp_callback():
+    """OAuth redirect target: exchange the code for tokens, then send the user
+    on to the reconcile status page (added in a later task)."""
+    code = request.args.get('code')
+    state = request.args.get('state')
+    try:
+        wellness.complete_authorization(code, state, _wp_redirect_uri())
+    except WellnessAuthError as e:
+        flash(f"Wellness Project connection failed: {e}", "error")
+    # /wp/reconcile is registered in a later task; use a literal path rather
+    # than url_for() so this route doesn't depend on load order.
+    return redirect("/wp/reconcile")
 
 @app.route('/api/cardio/trend')
 def api_cardio_trend():
