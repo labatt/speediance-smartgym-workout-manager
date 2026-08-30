@@ -230,6 +230,18 @@ were shown as failed rep targets, in red:
 ("Create Plan" in the nav was renamed **Build Workout** — it builds a *workout*, not a training
 plan, and the old name sent people looking for scheduling in the wrong place.)
 
+### Wellness Project backfill
+
+- **Automatic workout detail sync** — fills empty Wellness Project strength workouts from
+  matching Speediance sessions by date and calorie estimate. One-time setup: open
+  `/wp/reconcile` and click **Connect Wellness Project**; from then on the app maintains
+  an OAuth token and runs refreshes automatically. Confident matches are applied
+  immediately; ambiguous candidates are shown on the reconcile page for manual review.
+- **Daily cron** — a scheduled scan runs every morning and applies any new confident matches
+  from overnight Speediance sessions, idempotent (does nothing if an exercise set already
+  has detail). Real-gym workouts created at Speediance (marked `@ Gym`) are never modified.
+  See [docs/wp-backfill-cron.md](docs/wp-backfill-cron.md) for setup and the cron command.
+
 ---
 
 ## Setup
