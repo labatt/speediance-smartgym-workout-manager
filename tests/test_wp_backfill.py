@@ -96,6 +96,60 @@ class TestBackfill(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["status"], "connect_required")
 
+    def test_unfillable_empty_detail_is_skipped_not_errored(self):
+        """A confident match whose Speediance detail transforms to no exercises
+        is reported under 'skipped', not 'errors', and nothing is written."""
+        w = app_module.wellness
+        with mock.patch.object(w, "is_connected", return_value=True), \
+             mock.patch.object(w, "list_workouts", return_value=WP_LIST), \
+             mock.patch.object(w, "get_workout", return_value="... No exercises logged ..."), \
+             mock.patch.object(w, "update_workout") as upd, \
+             mock.patch.object(app_module.client, "get_training_records", return_value=SP_RECORDS), \
+             mock.patch.object(app_module.client, "get_training_detail", return_value=[]):
+            resp = self.client.post("/wp/backfill?mode=manual")
+        body = resp.get_json()
+        self.assertEqual(body["applied"], [])
+        self.assertEqual(body["errors"], [])
+        self.assertEqual(len(body["skipped"]), 1)
+        self.assertEqual(body["skipped"][0]["wp_session_id"], 696827)
+        self.assertIn("no loggable exercises", body["skipped"][0]["reason"])
+        upd.assert_not_called()
+
+    def test_deleted_template_detail_fetch_is_skipped(self):
+        """A Speediance detail fetch that fails (e.g. 'Template has been deleted')
+        is a skip, not an error."""
+        w = app_module.wellness
+        with mock.patch.object(w, "is_connected", return_value=True), \
+             mock.patch.object(w, "list_workouts", return_value=WP_LIST), \
+             mock.patch.object(w, "get_workout", return_value="... No exercises logged ..."), \
+             mock.patch.object(w, "update_workout") as upd, \
+             mock.patch.object(app_module.client, "get_training_records", return_value=SP_RECORDS), \
+             mock.patch.object(app_module.client, "get_training_detail",
+                               side_effect=Exception("Template has been deleted")):
+            resp = self.client.post("/wp/backfill?mode=manual")
+        body = resp.get_json()
+        self.assertEqual(body["applied"], [])
+        self.assertEqual(body["errors"], [])
+        self.assertEqual(len(body["skipped"]), 1)
+        self.assertIn("Template has been deleted", body["skipped"][0]["reason"])
+        upd.assert_not_called()
+
+    def test_wp_write_failure_is_a_real_error(self):
+        """If the WP write itself fails, that IS an error (not a skip)."""
+        w = app_module.wellness
+        with mock.patch.object(w, "is_connected", return_value=True), \
+             mock.patch.object(w, "list_workouts", return_value=WP_LIST), \
+             mock.patch.object(w, "get_workout", return_value="... No exercises logged ..."), \
+             mock.patch.object(w, "update_workout", side_effect=Exception("WP 500")), \
+             mock.patch.object(app_module.client, "get_training_records", return_value=SP_RECORDS), \
+             mock.patch.object(app_module.client, "get_training_detail", return_value=SP_DETAIL):
+            resp = self.client.post("/wp/backfill?mode=manual")
+        body = resp.get_json()
+        self.assertEqual(body["applied"], [])
+        self.assertEqual(body["skipped"], [])
+        self.assertEqual(len(body["errors"]), 1)
+        self.assertEqual(body["errors"][0]["wp_session_id"], 696827)
+
 
 if __name__ == "__main__":
     unittest.main()
