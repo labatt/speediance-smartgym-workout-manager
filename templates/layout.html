@@ -9,43 +9,72 @@
     {% block head %}{% endblock %}
 </head>
 <body class="min-h-screen flex flex-col">
+    {% set nav_links = [
+        ('/', 'Dashboard'), ('/library', 'Library'), ('/create', 'Build Workout'),
+        ('/schedule', 'Schedule'), ('/history', 'History'), ('/assessment', 'Assessment'),
+        ('/browse', 'Browse')
+    ] %}
+    {# Session state (dot + email + login/logout). Speediance permits one live session
+       per account, so signing in on the phone app silently kills this one — without this
+       indicator the app just appears to break. Rendered in the desktop bar and, compactly,
+       inside the mobile menu. #}
     <nav class="bg-gray-900 border-b border-gray-800 p-4">
         <div class="container mx-auto flex justify-between items-center">
-            <a href="/" class="text-xl font-bold text-white">UNOFFICIAL <span class="text-green-500">WORKOUT MANAGER</span></a>
-            <div class="space-x-4">
-                <a href="/" class="hover:text-white">Dashboard</a>
-                <a href="/library" class="hover:text-white">Library</a>
-                <a href="/create" class="hover:text-white">Build Workout</a>
-                <a href="/schedule" class="hover:text-white">Schedule</a>
-                <a href="/history" class="hover:text-white">History</a>
-                <a href="/assessment" class="hover:text-white">Assessment</a>
-                <a href="/browse" class="hover:text-white">Browse</a>
-                <a href="/settings" class="text-gray-500 hover:text-white">Settings</a>
+            <a href="/" class="text-lg sm:text-xl font-bold text-white">UNOFFICIAL <span class="text-green-500">WORKOUT MANAGER</span></a>
 
-                {# Session state, always visible. Speediance permits one live session per
-                   account, so signing in on the phone app silently kills this one — without
-                   this the app just appears to break. #}
+            <!-- Desktop nav (md and up) -->
+            <div class="hidden md:flex items-center space-x-4">
+                {% for href, label in nav_links %}
+                <a href="{{ href }}" class="hover:text-white">{{ label }}</a>
+                {% endfor %}
+                <a href="/settings" class="text-gray-500 hover:text-white">Settings</a>
                 <span class="inline-flex items-center gap-2 pl-4 ml-2 border-l border-gray-700">
                     {% if auth_state.logged_in %}
                         <span class="w-2 h-2 rounded-full bg-green-500" title="Connected"></span>
-                        <span class="text-xs text-gray-400" title="{{ auth_state.email }}">
-                            {{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}
-                        </span>
+                        <span class="text-xs text-gray-400" title="{{ auth_state.email }}">{{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}</span>
                         <a href="/logout" class="text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition">Log out</a>
                     {% else %}
                         <span class="w-2 h-2 rounded-full bg-red-500" title="Signed out"></span>
                         <span class="text-xs text-red-400">Signed out</span>
                         {% if auth_state.can_quick_login %}
-                            <form method="POST" action="/auth/relogin" class="inline">
-                                <button type="submit"
-                                        class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition"
-                                        title="Sign back in as {{ auth_state.email }}">Log in</button>
-                            </form>
+                            <form method="POST" action="/auth/relogin" class="inline"><button type="submit" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition" title="Sign back in as {{ auth_state.email }}">Log in</button></form>
                         {% else %}
                             <a href="/settings" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition">Log in</a>
                         {% endif %}
                     {% endif %}
                 </span>
+            </div>
+
+            <!-- Mobile: connection dot (always visible) + hamburger -->
+            <div class="flex items-center gap-3 md:hidden">
+                <span class="w-2.5 h-2.5 rounded-full {{ 'bg-green-500' if auth_state.logged_in else 'bg-red-500' }}" title="{{ 'Connected' if auth_state.logged_in else 'Signed out' }}"></span>
+                <button id="navToggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mobileMenu" class="text-gray-300 hover:text-white p-1 -mr-1">
+                    <svg id="navIconOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                    <svg id="navIconClose" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile dropdown menu -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 pt-3 border-t border-gray-800">
+            {% for href, label in nav_links %}
+            <a href="{{ href }}" class="block py-2 px-2 rounded hover:bg-gray-800 hover:text-white">{{ label }}</a>
+            {% endfor %}
+            <a href="/settings" class="block py-2 px-2 rounded text-gray-400 hover:bg-gray-800 hover:text-white">Settings</a>
+            <div class="mt-2 pt-3 border-t border-gray-800 flex items-center gap-2 px-2">
+                {% if auth_state.logged_in %}
+                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    <span class="text-xs text-gray-400 flex-grow truncate" title="{{ auth_state.email }}">{{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}</span>
+                    <a href="/logout" class="text-xs px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition">Log out</a>
+                {% else %}
+                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span class="text-xs text-red-400 flex-grow">Signed out</span>
+                    {% if auth_state.can_quick_login %}
+                        <form method="POST" action="/auth/relogin" class="inline"><button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition" title="Sign back in as {{ auth_state.email }}">Log in</button></form>
+                    {% else %}
+                        <a href="/settings" class="text-xs px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition">Log in</a>
+                    {% endif %}
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -113,6 +142,22 @@
             modal.classList.add('hidden');
             modal.classList.remove('flex');
         }
+
+        // Mobile hamburger menu toggle
+        (function () {
+            var btn = document.getElementById('navToggle');
+            var menu = document.getElementById('mobileMenu');
+            var iconOpen = document.getElementById('navIconOpen');
+            var iconClose = document.getElementById('navIconClose');
+            if (!btn || !menu) return;
+            btn.addEventListener('click', function () {
+                var nowHidden = menu.classList.toggle('hidden');
+                var open = !nowHidden;
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                iconOpen.classList.toggle('hidden', open);
+                iconClose.classList.toggle('hidden', !open);
+            });
+        })();
     </script>
 </body>
 </html>

@@ -48,6 +48,14 @@
       "affects": "root crontab, /var/log/wp-backfill.log, docs/wp-backfill-cron.md",
       "status": "done",
       "notes": "User asked to run it hourly. Installed in root's crontab at :15 every hour, hitting the loopback port (http://127.0.0.1:5001) directly — that path is behind nginx basic-auth on the public side but open on loopback, so NO password sits in the crontab. flock -n /tmp/wp-backfill.lock makes an overlapping run a no-op; each run appends an ISO timestamp + the JSON result to /var/log/wp-backfill.log. Verified live 2026-08-31: a run logged applied 0 / skipped 4 / errors 0 (today already filled; the 4 un-fillable oldies skipped as designed). The pre-existing 3am cleanup cron was left untouched. Note: the cron is machine state, not in the repo — docs/wp-backfill-cron.md documents the exact line to re-add on a rebuild."
+    },
+    {
+      "id": 6,
+      "title": "Mobile hamburger nav",
+      "summary": "The top nav's eight links plus the session indicator overflow on a phone; collapse them into a hamburger menu below the md breakpoint.",
+      "affects": "templates/layout.html",
+      "status": "done",
+      "notes": "Desktop (md+) bar is unchanged. Below md the links hide behind a hamburger button that toggles a dropdown; a connection dot stays visible in the bar so signed-in/out status is always glanceable without opening the menu. Nav links are looped from one nav_links list (DRY) rendered in both the desktop bar and the mobile dropdown. Vanilla JS toggle, aria-expanded/aria-controls set for accessibility, hamburger<->X icon swap. Done + verified live 2026-08-31: /settings renders 200 with the desktop bar (hidden md:flex), the md:hidden hamburger, and the mobileMenu dropdown; each nav link appears in both the desktop bar and the dropdown."
     }
   ]
 }
