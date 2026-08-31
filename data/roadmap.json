@@ -56,6 +56,14 @@
       "affects": "templates/layout.html",
       "status": "done",
       "notes": "Desktop (md+) bar is unchanged. Below md the links hide behind a hamburger button that toggles a dropdown; a connection dot stays visible in the bar so signed-in/out status is always glanceable without opening the menu. Nav links are looped from one nav_links list (DRY) rendered in both the desktop bar and the mobile dropdown. Vanilla JS toggle, aria-expanded/aria-controls set for accessibility, hamburger<->X icon swap. Done + verified live 2026-08-31: /settings renders 200 with the desktop bar (hidden md:flex), the md:hidden hamburger, and the mobileMenu dropdown; each nav link appears in both the desktop bar and the dropdown."
+    },
+    {
+      "id": 7,
+      "title": "Fix Workout History mobile overflow",
+      "summary": "On phones the History page's header controls ran off the right edge and the records table was clipped. Stack/wrap the header; make the table scroll horizontally.",
+      "affects": "templates/history.html",
+      "status": "done",
+      "notes": "User report: 'the buttons go off screen to the right, and the table is cut off.' Two causes. (1) The header was one non-wrapping 'flex justify-between' row (title + two date inputs + Load/Export/Deep-Export) — now flex-col below the sm breakpoint with the control group flex-wrap, so it stacks and wraps instead of overflowing. (2) The 6-column records table sat in an overflow-hidden wrapper that CLIPPED it; changed to overflow-x-auto and gave the table min-w-[560px] so it scrolls horizontally rather than being cut off or crushed. Verified /history renders 200 with all four responsive classes present. The detail modal was not in scope (user flagged the header buttons + the records table specifically)."
     }
   ]
 }
