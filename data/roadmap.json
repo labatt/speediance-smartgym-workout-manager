@@ -40,6 +40,14 @@
       "affects": "app.py (_apply_match, _run_backfill report buckets), templates/settings.html (result panel), tests/test_wp_backfill.py",
       "status": "done",
       "notes": "Found while diagnosing the user's report: 'sync came up with errors instead of pushing today's workout.' Two independent causes. (1) Today's push didn't happen because the run fired before today's Speediance session / its Health-Connect import both existed; a re-run fills it — WP 756813 <-> Speediance 1107027, both 396 cal, exact same-day match. (2) Four old June/July empties genuinely cannot be filled (trainingId with a DELETED template, plus three sessions with no logged sets) and were mislabeled 'errors'. Fix: a per-session 'no usable Speediance data' outcome goes to a new 'skipped' bucket; only a failed WP write counts as an 'error'. The Settings results panel shows Applied / Skipped / Flagged / Errors so recurring un-fillable sessions read as informational, not failures. Done + verified live 2026-08-31: re-run produced applied 1 (today's WP 756813 <- Speediance 1107027, 7 exercises + provenance note), skipped 4 (the deleted-template + no-logged-sets sessions, now labeled SKIP with reasons), errors 0. 3 new tests (empty-detail -> skipped, deleted-template fetch -> skipped, WP-write-failure -> error); suite 211 green."
+    },
+    {
+      "id": 5,
+      "title": "Install hourly backfill cron",
+      "summary": "Run the backfill automatically every hour so a day's workout fills without anyone clicking.",
+      "affects": "root crontab, /var/log/wp-backfill.log, docs/wp-backfill-cron.md",
+      "status": "done",
+      "notes": "User asked to run it hourly. Installed in root's crontab at :15 every hour, hitting the loopback port (http://127.0.0.1:5001) directly — that path is behind nginx basic-auth on the public side but open on loopback, so NO password sits in the crontab. flock -n /tmp/wp-backfill.lock makes an overlapping run a no-op; each run appends an ISO timestamp + the JSON result to /var/log/wp-backfill.log. Verified live 2026-08-31: a run logged applied 0 / skipped 4 / errors 0 (today already filled; the 4 un-fillable oldies skipped as designed). The pre-existing 3am cleanup cron was left untouched. Note: the cron is machine state, not in the repo — docs/wp-backfill-cron.md documents the exact line to re-add on a rebuild."
     }
   ]
 }
