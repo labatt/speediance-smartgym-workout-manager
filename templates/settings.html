@@ -86,13 +86,71 @@
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             Wellness Project
         </h2>
+        {% if wp_connected %}
+        <div class="max-w-2xl space-y-3">
+            <p class="text-sm text-gray-400">
+                <span class="text-emerald-400 font-bold">Connected.</span>
+                Backfill fills your empty Wellness Project strength workouts with the matching
+                Speediance session's exercises. Only empty workouts are touched, and re-running is safe.
+            </p>
+            <div class="flex items-center gap-3">
+                <button id="wpBackfillBtn" class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded inline-flex items-center gap-2">
+                    <svg id="wpSpinner" class="hidden animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path>
+                    </svg>
+                    <span id="wpBackfillLabel">Backfill now</span>
+                </button>
+                <a href="/wp/connect" class="text-xs text-gray-500 hover:text-gray-300 hover:underline">Reconnect</a>
+            </div>
+            <pre id="wpResult" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs text-gray-300 whitespace-pre-wrap"></pre>
+        </div>
+        <script>
+        (function () {
+            var btn = document.getElementById('wpBackfillBtn');
+            var spinner = document.getElementById('wpSpinner');
+            var label = document.getElementById('wpBackfillLabel');
+            var out = document.getElementById('wpResult');
+            btn.addEventListener('click', async function () {
+                btn.disabled = true;
+                spinner.classList.remove('hidden');
+                label.textContent = 'Backfilling…';
+                out.classList.remove('hidden');
+                out.textContent = 'Scanning your workouts and filling the empty ones — this can take a minute.';
+                try {
+                    var r = await fetch('/wp/backfill?mode=manual', { method: 'POST' });
+                    var j = await r.json();
+                    if (j.status === 'connect_required') {
+                        out.textContent = 'Session expired — click Reconnect, then try again.';
+                    } else {
+                        var lines = ['Applied ' + j.applied.length + ', flagged ' + j.flagged.length + ', errors ' + j.errors.length + '.'];
+                        (j.applied || []).forEach(function (a) {
+                            lines.push('  ✓ workout ' + a.wp_session_id + ' ← Speediance ' + a.sp_training_id + ' (' + a.exercise_count + ' exercises)');
+                        });
+                        (j.errors || []).forEach(function (e) {
+                            lines.push('  ✗ workout ' + e.wp_session_id + ': ' + e.error);
+                        });
+                        out.textContent = lines.join('\n');
+                    }
+                } catch (e) {
+                    out.textContent = 'Error: ' + e.message;
+                } finally {
+                    spinner.classList.add('hidden');
+                    label.textContent = 'Backfill now';
+                    btn.disabled = false;
+                }
+            });
+        })();
+        </script>
+        {% else %}
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 max-w-2xl">
             <p class="text-sm text-gray-400">
                 Connect your Wellness Project account to backfill its empty strength workouts with the
                 matching Speediance session's exercises. Connect once; it stays authorized after that.
             </p>
-            <a href="/wp/reconcile" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded whitespace-nowrap text-center">Connect &amp; backfill &#8594;</a>
+            <a href="/wp/connect" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded whitespace-nowrap text-center">Connect Wellness Project &#8594;</a>
         </div>
+        {% endif %}
     </section>
 
     <!-- ============================ PREFERENCES ============================ -->
