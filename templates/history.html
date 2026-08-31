@@ -3,9 +3,9 @@
 <script src="{{ url_for('static', filename='js/coach_markdown.js') }}"></script>
 <script src="{{ url_for('static', filename='workout-logic.js') }}"></script>
 <div class="mb-6">
-    <div class="flex justify-between items-center mb-4">
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
         <h1 class="text-3xl font-bold text-white">Workout History</h1>
-        <div class="flex gap-2 items-center">
+        <div class="flex flex-wrap gap-2 items-center">
             <input type="date" id="startDate" class="bg-gray-800 border border-gray-600 text-white p-2 rounded text-sm">
             <span class="text-gray-400">to</span>
             <input type="date" id="endDate" class="bg-gray-800 border border-gray-600 text-white p-2 rounded text-sm">
@@ -41,8 +41,8 @@
 
     <!-- Records Table -->
     <div id="recordsTable" class="hidden">
-        <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            <table class="w-full text-sm">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+            <table class="w-full text-sm min-w-[560px]">
                 <thead>
                     <tr class="bg-gray-900 text-gray-400 uppercase text-xs tracking-wider">
                         <th class="p-3 text-left">Date</th>
