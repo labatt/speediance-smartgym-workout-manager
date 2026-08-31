@@ -123,9 +123,13 @@
                     if (j.status === 'connect_required') {
                         out.textContent = 'Session expired — click Reconnect, then try again.';
                     } else {
-                        var lines = ['Applied ' + j.applied.length + ', flagged ' + j.flagged.length + ', errors ' + j.errors.length + '.'];
+                        var skipped = j.skipped || [];
+                        var lines = ['Applied ' + j.applied.length + ', skipped ' + skipped.length + ', flagged ' + j.flagged.length + ', errors ' + j.errors.length + '.'];
                         (j.applied || []).forEach(function (a) {
                             lines.push('  ✓ workout ' + a.wp_session_id + ' ← Speediance ' + a.sp_training_id + ' (' + a.exercise_count + ' exercises)');
+                        });
+                        skipped.forEach(function (x) {
+                            lines.push('  – workout ' + x.wp_session_id + ' skipped: ' + x.reason);
                         });
                         (j.errors || []).forEach(function (e) {
                             lines.push('  ✗ workout ' + e.wp_session_id + ': ' + e.error);

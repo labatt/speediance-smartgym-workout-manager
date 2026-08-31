@@ -1701,14 +1701,29 @@ def _wp_window():
     today = datetime.date.today()
     return (today - datetime.timedelta(days=WP_WINDOW_DAYS)).isoformat(), today.isoformat()
 
+class _BackfillSkip(Exception):
+    """The Speediance side has no usable data for this session (deleted template,
+    or no logged sets) -- there is nothing to backfill. Not a failure: reported
+    under 'skipped', not 'errors'."""
+
+
 def _apply_match(wp_session_id, sp_training_id, sp_type):
     """Fetch the Speediance session detail, transform it into WP exercises, and
-    write it onto the (already-confirmed-empty) WP workout with a provenance note."""
+    write it onto the (already-confirmed-empty) WP workout with a provenance note.
+
+    Raises _BackfillSkip when the Speediance session yields no usable exercises
+    (deleted template or no logged sets) -- that is a skip, not an error. A
+    failure of the WP write itself propagates as a real error."""
     training_type = "course" if sp_type == 2 else "custom"
-    detail = client.get_training_detail(sp_training_id, training_type)
+    try:
+        detail = client.get_training_detail(sp_training_id, training_type)
+    except Exception as e:
+        # e.g. the Speediance API answers "Template has been deleted" -- the
+        # source session is gone, so there is simply nothing to backfill.
+        raise _BackfillSkip(f"couldn't fetch Speediance detail: {e}")
     exercises = reconcile.sp_detail_to_wp_exercises(detail)
     if not exercises:
-        raise WellnessAPIError("Speediance session had no loggable exercises")
+        raise _BackfillSkip("Speediance session had no loggable exercises")
     # We set the provenance note directly rather than trying to append to the
     # Health Connect note -- traceability is the goal, and note-text parsing
     # would be fragile.
@@ -1737,7 +1752,7 @@ def _run_backfill(mode):
     sp = reconcile.sp_strength_sessions(client.get_training_records(start, end))
     matched = reconcile.match_candidates(empties, sp)
 
-    applied, errors, flagged = [], [], []
+    applied, errors, flagged, skipped = [], [], [], []
     # match_candidates matches each WP target independently, so one sp session
     # could be the sole confident match for two different (both-empty) WP
     # workouts. Guard against writing the same sp session into two workouts.
@@ -1754,11 +1769,15 @@ def _run_backfill(mode):
             claimed.add(sp_training_id)
         except WellnessAuthError:
             raise
+        except _BackfillSkip as e:
+            skipped.append({"wp_session_id": m["wp"]["session_id"],
+                            "sp_training_id": sp_training_id, "reason": str(e)})
         except Exception as e:
             errors.append({"wp_session_id": m["wp"]["session_id"], "error": str(e)})
     flagged.extend({"wp": m["wp"], "candidates": m["candidates"], "reason": m["reason"]}
                    for m in matched["ambiguous"])
-    report = {"connected": True, "applied": applied, "flagged": flagged, "errors": errors}
+    report = {"connected": True, "applied": applied, "skipped": skipped,
+              "flagged": flagged, "errors": errors}
     try:
         with open(WP_REPORT_FILE, "w") as f:
             json.dump(report, f)
