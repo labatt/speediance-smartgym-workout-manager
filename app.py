@@ -201,7 +201,8 @@ def settings():
             accessories = client.get_accessories()
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
-    return render_template('settings.html', creds=creds, accessories=accessories)
+    return render_template('settings.html', creds=creds, accessories=accessories,
+                           wp_connected=wellness.is_connected())
 
 @app.route('/settings/custom_instruction', methods=['POST'])
 def update_custom_instruction():
@@ -1687,9 +1688,9 @@ def wp_callback():
         wellness.complete_authorization(code, state, _wp_redirect_uri())
     except WellnessAuthError as e:
         flash(f"Wellness Project connection failed: {e}", "error")
-    # /wp/reconcile is registered in a later task; use a literal path rather
-    # than url_for() so this route doesn't depend on load order.
-    return redirect("/wp/reconcile")
+    # Land back on Settings, where the Wellness Project card shows the
+    # connected state and the Backfill control.
+    return redirect("/settings")
 
 WP_WINDOW_DAYS = 90
 WP_REPORT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1793,15 +1794,9 @@ def wp_apply():
 
 @app.route('/wp/reconcile')
 def wp_reconcile():
-    """Status page: connection state, backfill controls, and report of last run."""
-    report = {}
-    try:
-        with open(WP_REPORT_FILE) as f:
-            report = json.load(f)
-    except (OSError, ValueError):
-        report = {}
-    return render_template("wp_reconcile.html",
-                           connected=wellness.is_connected(), report=report)
+    """Backfill lives in the Settings page now; keep this path working for old
+    links and the OAuth redirect by sending it there."""
+    return redirect("/settings")
 
 @app.route('/api/cardio/trend')
 def api_cardio_trend():
