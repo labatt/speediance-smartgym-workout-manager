@@ -1,6 +1,6 @@
 {
   "project": "Speediance Workout Manager — build status",
-  "updated": "2026-08-31",
+  "updated": "2026-09-27",
   "statusLegend": {
     "working": "Being worked on right now",
     "queued": "Accepted, not started yet",
@@ -64,6 +64,30 @@
       "affects": "templates/history.html",
       "status": "done",
       "notes": "User report: 'the buttons go off screen to the right, and the table is cut off.' Two causes. (1) The header was one non-wrapping 'flex justify-between' row (title + two date inputs + Load/Export/Deep-Export) — now flex-col below the sm breakpoint with the control group flex-wrap, so it stacks and wraps instead of overflowing. (2) The 6-column records table sat in an overflow-hidden wrapper that CLIPPED it; changed to overflow-x-auto and gave the table min-w-[560px] so it scrolls horizontally rather than being cut off or crushed. Verified /history renders 200 with all four responsive classes present. The detail modal was not in scope (user flagged the header buttons + the records table specifically)."
+    },
+    {
+      "id": 8,
+      "title": "Backfill uses the wrong detail route for Free Lift / Goal-Focused sessions",
+      "summary": "The backfill fetches every non-course session from cttTrainingInfoDetail, which is always empty for Free Lift (type 1/7) and Goal-Focused (type 9) sessions. It should use freeTraining and aiCourseTrainingInfoDetail respectively.",
+      "affects": "app.py (_apply_match), reconcile.py (Free Lift actionList/setList parsing), history detail route",
+      "status": "queued",
+      "notes": "Found 2026-09-27 while researching other Speediance projects for the MCP server. The three sessions the hourly backfill keeps 'skipping' as 'no loggable exercises' (2874609, 2644826, 2646057) are all Free Lift. Verified live: GET /api/app/trainingInfo/freeTraining/2874609 returns code 0 with actionList = Seated Barbell Row, 3 sets (setList[].summary + rawRepList). The route map comes from pookey/speediance-cli docs/api-notes.md (MIT): type 1/6/7 -> freeTraining, 2 -> courseTrainingInfoDetail, 3/5 -> cttTrainingInfoDetail, 4/9 -> aiCourseTrainingInfoDetail. Caveat before fixing: Free Lift per-set weights carry a 2.2 scale that pookey verified on kg accounts only; this account is lb, so the fix must reconcile against the session's own totalCapacity rather than blindly dividing."
+    },
+    {
+      "id": 9,
+      "title": "Investigate: does saving a template with presetId <= 0 shrink loads by 2.2?",
+      "summary": "pookey/speediance-cli reports that a non-positive templatePresetId on POST /api/app/v2/customTrainingTemplate makes the server divide every weight and capacity by 2.2. This app sends -1 ('Custom') for movements without an RM preset.",
+      "affects": "api_client.py (save_workout), templates/create.html (import)",
+      "status": "future",
+      "notes": "UNCONFIRMED for this app — logged so it is not lost. Earlier live checks showed 35 saved = 35 lb, so the app may not be affected (the field names may differ between clients, or the effect may be kg-account-only). Needs one controlled test: save a throwaway template with presetId -1 vs 1, read it back, compare weights. Do not change save logic until that test runs."
+    },
+    {
+      "id": 10,
+      "title": "Standalone open-source Speediance MCP server (separate repo)",
+      "summary": "A free, MIT-licensed, self-hostable MCP server replacing GM Manager (going paid): GM Manager's 19 tools plus additions, local stdio mode for Claude Desktop/Code and optional remote OAuth mode for claude.ai. Lives at /srv/speediance-mcp, its own git repo.",
+      "affects": "/srv/speediance-mcp (new repo) — not this repo",
+      "status": "working",
+      "notes": "Design in progress (brainstorming). Decisions so far: Python + official mcp SDK; two phases (core + local stdio first, remote OAuth second); single account per deployment; OAuth login verifies the deployment's own Speediance account; SQLite memory; MIT with hbui3's notice kept; synthetic test fixtures only. Research 2026-09-27: harvested endpoints from stozo04/speediance-cli and pookey/speediance-cli (both MIT); found userinfo/info (profile), freeTraining, aiCourse routes, getHeartRateGraph, and several write faults. Rowing done as a course or custom template has no per-interval data in any known route."
     }
   ]
 }
