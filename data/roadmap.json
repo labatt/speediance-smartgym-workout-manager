@@ -144,6 +144,22 @@
       "affects": "/srv/speediance-mcp (branch phase1): cli.py, tests, README",
       "status": "done",
       "notes": "Requested 2026-09-27. Trade-off explained to the user: with both the web app and the MCP server remembering the password, each re-login signs the other out (one session per account). Accepted; a shared-session option was offered and not chosen. Done 2026-09-27 on branch phase1 (c157a86): a plain login stores the password with no prompt (tested with input() patched to fail); --no-remember stores only the token; README and spec §15.14 updated; 204 tests pass. Not yet exercised with a real login, since that would sign out the web app's session."
+    },
+    {
+      "id": 18,
+      "title": "Speediance session displacement: a new login kills the previous token (code 90 'offline'), whatever the device headers",
+      "summary": "Live test 2026-09-27 (2 logins, user-approved): an Android-identity login killed the web app's token; an iPhone-identity login (different Mobiledevices) then killed the Android token. A displaced token answers code 90 'offline', not 91. Hypothesis that sessions are per device type: REFUTED for Mobiledevices. How GM Manager coexists with the phone is still unknown; a different App_type slot or a partner API are untested.",
+      "affects": "research; web app api_client (code 90 handling); /srv/speediance-mcp client",
+      "status": "future",
+      "notes": "The web app auto-relogins only on 91, so after a phone login it shows 'offline'/signed out until the user clicks Log in, and that manual login is what signs the phone out. My test left the web app on a dead token; restored via /auth/relogin (verified: /api/history works again). Phone signed out as warned."
+    },
+    {
+      "id": 19,
+      "title": "MCP: treat code 90 'offline' (session taken by another login) as a session loss, not a generic rejection",
+      "summary": "speediance-mcp only treats 91/401 as auth expiry, so when the phone signs in, every tool fails with 'Speediance rejected the request (code 90): offline' and the remembered-password re-login never fires.",
+      "affects": "/srv/speediance-mcp (branch phase1): speediance/client.py AUTH_CODES + tests",
+      "status": "queued",
+      "notes": "Found 2026-09-27 in the displacement test. Policy question for the user: on 90, silently re-login (kicks the phone each time Claude is used after the phone) or report 'signed in elsewhere' and wait for an explicit login."
     }
   ]
 }
