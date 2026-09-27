@@ -3,6 +3,34 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app as app_module
 from wellness_client import WellnessAuthError
+import datetime, tempfile
+
+# The backfill route writes its report to app.WP_REPORT_FILE -- the REAL file the Settings
+# page shows. Point it at a temp file for the whole module so a test run never overwrites
+# the live report with fake data (roadmap #14).
+_REAL_REPORT_FILE = app_module.WP_REPORT_FILE
+_TMP_DIR = tempfile.TemporaryDirectory()
+
+
+def setUpModule():
+    app_module.WP_REPORT_FILE = os.path.join(_TMP_DIR.name, "report.json")
+
+
+def tearDownModule():
+    app_module.WP_REPORT_FILE = _REAL_REPORT_FILE
+    _TMP_DIR.cleanup()
+
+
+class TestWindowAndReport(unittest.TestCase):
+    def test_window_is_90_days_inclusive(self):
+        # Wellness Project rejects list_workouts ranges over 90 days, counting both ends
+        # (2026-06-29 -> 2026-09-27 is "91 days"), roadmap #13.
+        start, end = app_module._wp_window()
+        span = (datetime.date.fromisoformat(end) - datetime.date.fromisoformat(start)).days + 1
+        self.assertEqual(span, 90)
+
+    def test_report_goes_to_the_patched_file(self):
+        self.assertNotEqual(app_module.WP_REPORT_FILE, _REAL_REPORT_FILE)
 
 WP_LIST = ("Workouts:\n"
            "[ID 696827] 2026-08-29: Strength Training · 33 min · 341 cal\n"

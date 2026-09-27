@@ -1713,9 +1713,12 @@ WP_REPORT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "wellness_reconcile_report.json")
 
 def _wp_window():
-    """Last WP_WINDOW_DAYS days, as (start, end) ISO date strings."""
+    """Last WP_WINDOW_DAYS days, counting today, as (start, end) ISO date strings.
+
+    Inclusive on both ends: Wellness Project counts 2026-06-29 -> 2026-09-27 as 91 days and
+    rejects ranges over 90, which silently broke every hourly backfill from 2026-08-31."""
     today = datetime.date.today()
-    return (today - datetime.timedelta(days=WP_WINDOW_DAYS)).isoformat(), today.isoformat()
+    return (today - datetime.timedelta(days=WP_WINDOW_DAYS - 1)).isoformat(), today.isoformat()
 
 class _BackfillSkip(Exception):
     """The Speediance side has no usable data for this session (deleted template,
