@@ -166,8 +166,8 @@
       "title": "Log in as App_type HARDWARE so the web app and MCP server never sign out the phone",
       "summary": "Use the HARDWARE session slot (found in #18) for logins in the web app and speediance-mcp, keeping every other request as SOFTWARE/41000; treat code 90 as a session loss and silently re-login.",
       "affects": "api_client.py (login, relogin on 90); /srv/speediance-mcp client.py (branch phase1)",
-      "status": "working",
-      "notes": "Requested 2026-09-27. The user couldn't check whether the Gym Monster stayed signed in after the HARDWARE test login and said to assume it's OK — watch for the machine being signed out. Supersedes #19 (code 90 handling). Web app deployed 2026-09-27 (merged feat/hardware-session): after /auth/relogin with the HARDWARE login, verified live history list, session detail, exercise detail, and a throwaway template create → read back (Barbell Bent Over Row 5 @ 10) → delete. MCP on phase1 (fd8eaa2), tests pass. Still waiting for the user to confirm the Android app stayed signed in after the web app's HARDWARE re-login."
+      "status": "done",
+      "notes": "Requested 2026-09-27. The user couldn't check whether the Gym Monster stayed signed in after the HARDWARE test login and said to assume it's OK — watch for the machine being signed out. Supersedes #19 (code 90 handling). Web app deployed 2026-09-27 (merged feat/hardware-session): after /auth/relogin with the HARDWARE login, verified live history list, session detail, exercise detail, and a throwaway template create → read back (Barbell Bent Over Row 5 @ 10) → delete. MCP on phase1 (fd8eaa2), tests pass. Still waiting for the user to confirm the Android app stayed signed in after the web app's HARDWARE re-login. VERIFIED 2026-09-27: the user confirmed the Android app was still signed in after the web app's HARDWARE re-login. Gym Monster status unverified (user not at the machine) — watch for it."
     }
   ]
 }
