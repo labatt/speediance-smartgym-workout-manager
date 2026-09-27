@@ -79,7 +79,7 @@
       "summary": "pookey/speediance-cli reports that a non-positive templatePresetId on POST /api/app/v2/customTrainingTemplate makes the server divide every weight and capacity by 2.2. This app sends -1 ('Custom') for movements without an RM preset.",
       "affects": "api_client.py (save_workout), templates/create.html (import)",
       "status": "future",
-      "notes": "UNCONFIRMED for this app — logged so it is not lost. Earlier live checks showed 35 saved = 35 lb, so the app may not be affected (the field names may differ between clients, or the effect may be kg-account-only). Needs one controlled test: save a throwaway template with presetId -1 vs 1, read it back, compare weights. Do not change save logic until that test runs."
+      "notes": "UNCONFIRMED for this app — logged so it is not lost. Earlier live checks showed 35 saved = 35 lb, so the app may not be affected (the field names may differ between clients, or the effect may be kg-account-only). Needs one controlled test: save a throwaway template with presetId -1 vs 1, read it back, compare weights. Do not change save logic until that test runs. Hypothesis (2026-09-27): the server treats these fields as POUNDS internally, so the ÷2.2 only bites kg-unit accounts; this account is lb, which would explain the earlier 35 -> 35 lb observation. Same logic applies to the template-level totalCapacity (the app sends the raw set-capacity sum). Still needs the one controlled test before being closed."
     },
     {
       "id": 10,
