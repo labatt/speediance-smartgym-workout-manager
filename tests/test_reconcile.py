@@ -110,6 +110,19 @@ class TestWpParsers(unittest.TestCase):
         self.assertTrue(by_id[696826]["has_miles"])
         self.assertEqual(by_id[696955]["nsi"], 24.5)
 
+    def test_parse_list_kcal_format(self):
+        # Wellness Project switched rows from "341 cal" to "341 kcal" (~2026-08-31),
+        # which silently made every calorie None (roadmap #15). Both must parse.
+        text = ("Workouts (2026-06-30 → 2026-09-27):\n"
+                "[ID 700010] 2026-07-20: Strength Training · 8 min · 107 kcal\n"
+                "[ID 700011] 2026-07-20: Strength Training · NSI 10.6 (Below Average) · 59 min · 570 kcal\n")
+        by_id = {r["session_id"]: r for r in reconcile.parse_wp_workout_list(text)}
+        self.assertEqual(by_id[700010]["calorie"], 107)
+        self.assertIsNone(by_id[700010]["nsi"])
+        self.assertTrue(reconcile.is_backfill_target(by_id[700010]))
+        self.assertEqual(by_id[700011]["calorie"], 570)
+        self.assertFalse(reconcile.is_backfill_target(by_id[700011]))  # has NSI -> already detailed
+
     def test_is_empty(self):
         self.assertTrue(reconcile.wp_workout_is_empty(WP_EMPTY))
         self.assertFalse(reconcile.wp_workout_is_empty(WP_DETAILED))
