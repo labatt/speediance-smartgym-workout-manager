@@ -852,14 +852,22 @@ class SpeedianceClient:
 
     def get_training_detail(self, training_id, training_type):
         """Fetches detailed info for a completed training session.
-        training_type determines the endpoint:
-          - Official Courses → /api/app/trainingInfo/courseTrainingInfoDetail/{id}
-          - Custom Templates → /api/app/trainingInfo/cttTrainingInfoDetail/{id}
+        training_type determines the endpoint (see session_detail.detail_kind):
+          - 'course'      → courseTrainingInfoDetail (official courses)
+          - 'custom'      → cttTrainingInfoDetail (custom templates; the default)
+          - 'ai'          → aiCourseTrainingInfoDetail (Goal-Focused)
+          - 'free'        → freeTraining (Free Lift / Quick; NOT list-shaped — see
+                            session_detail.free_training_to_detail)
+          - 'free_detail' → freeTrainingDetail (list-shaped; quick sessions whose
+                            freeTraining object has no actionList)
         """
-        if training_type == 'course':
-            url = f"{self.base_url}/api/app/trainingInfo/courseTrainingInfoDetail/{training_id}"
-        else:
-            url = f"{self.base_url}/api/app/trainingInfo/cttTrainingInfoDetail/{training_id}"
+        route = {
+            'course': 'courseTrainingInfoDetail',
+            'ai': 'aiCourseTrainingInfoDetail',
+            'free': 'freeTraining',
+            'free_detail': 'freeTrainingDetail',
+        }.get(training_type, 'cttTrainingInfoDetail')
+        url = f"{self.base_url}/api/app/trainingInfo/{route}/{training_id}"
         try:
             resp = self._request('GET', url, headers=self._get_headers())
             if resp.status_code == 401:

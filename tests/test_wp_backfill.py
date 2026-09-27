@@ -150,6 +150,58 @@ class TestBackfill(unittest.TestCase):
         self.assertEqual(len(body["errors"]), 1)
         self.assertEqual(body["errors"][0]["wp_session_id"], 696827)
 
+SP_FREE_RECORDS = [{"trainingId": 2000001, "type": 1, "courseType": 0, "totalCapacity": 1000.0,
+                    "calorie": 341, "trainingTime": 900, "startTime": "2026-08-29 09:00:00",
+                    "title": "Free Lift"}]
+SP_FREE_PAYLOAD = {"id": 2000001, "type": 1, "totalCapacity": 1000.0, "actionList": [
+    {"actionLibraryName": "Seated Barbell Row", "groupId": 424, "completionMethod": 1,
+     "setList": [{"summary": {"finishedCount": 10, "weight": 100, "time": 40,
+                              "totalCapacity": 1000.0}, "rawRepList": []}]}]}
+SP_QUICK_PAYLOAD = {"id": 2000001, "type": 7, "totalCapacity": 1000.0}  # no actionList
+
+
+class TestBackfillRoutes(unittest.TestCase):
+    """Roadmap #8: Free Lift / Quick sessions live on freeTraining, not cttTrainingInfoDetail."""
+
+    def setUp(self):
+        app_module.app.config["TESTING"] = True
+        self.client = app_module.app.test_client()
+
+    def _run(self, detail_side_effect, records=SP_FREE_RECORDS):
+        w = app_module.wellness
+        with mock.patch.object(w, "is_connected", return_value=True), \
+             mock.patch.object(w, "list_workouts", return_value=WP_LIST), \
+             mock.patch.object(w, "get_workout", return_value="... No exercises logged ..."), \
+             mock.patch.object(w, "update_workout", return_value="ok") as upd, \
+             mock.patch.object(app_module.client, "get_training_records", return_value=records), \
+             mock.patch.object(app_module.client, "get_training_detail",
+                               side_effect=detail_side_effect) as det:
+            body = self.client.post("/wp/backfill?mode=manual").get_json()
+        return body, upd, det
+
+    def test_free_lift_is_read_from_free_training(self):
+        body, upd, det = self._run(lambda tid, kind: SP_FREE_PAYLOAD if kind == "free" else [])
+        self.assertEqual(det.call_args_list[0].args, (2000001, "free"))
+        self.assertEqual(len(body["applied"]), 1, body)
+        sets = upd.call_args.args[1][0]["sets"]
+        self.assertEqual(sets, [{"reps": 10, "weight_lb": 100.0}])
+
+    def test_quick_session_falls_back_to_free_training_detail(self):
+        detail = [{"actionLibraryName": "Standing Barbell Calf Raise", "completionMethod": 1,
+                   "finishedReps": [{"finishedCount": 12, "targetCount": 12, "time": 30,
+                                     "trainingInfoDetail": {"weights": [40]}}]}]
+        body, upd, det = self._run(
+            lambda tid, kind: {"free": SP_QUICK_PAYLOAD, "free_detail": detail}.get(kind, []))
+        self.assertEqual([c.args[1] for c in det.call_args_list], ["free", "free_detail"])
+        self.assertEqual(len(body["applied"]), 1, body)
+        self.assertEqual(upd.call_args.args[1][0]["name"], "Standing Barbell Calf Raise")
+
+    def test_goal_focused_uses_ai_route(self):
+        records = [dict(SP_FREE_RECORDS[0], type=9, title="Goal-Focused Workout")]
+        body, upd, det = self._run(lambda tid, kind: SP_DETAIL if kind == "ai" else [], records)
+        self.assertEqual(det.call_args_list[0].args, (2000001, "ai"))
+        self.assertEqual(len(body["applied"]), 1, body)
+
 
 if __name__ == "__main__":
     unittest.main()

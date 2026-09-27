@@ -49,6 +49,21 @@ class TestHistoryDetailResilience(unittest.TestCase):
             resp = self.client.get('/api/history/detail/1048701?type=custom')
         self.assertEqual(resp.status_code, 401)
 
+    def test_free_lift_detail_is_converted_to_list_shape(self):
+        payload = {"id": 7, "type": 1, "totalCapacity": 1000.0, "actionList": [
+            {"actionLibraryName": "Seated Barbell Row", "groupId": 424, "completionMethod": 1,
+             "setList": [{"summary": {"finishedCount": 10, "weight": 100, "time": 40,
+                                      "totalCapacity": 1000.0}}]}]}
+        with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'user_id': '1'}), \
+             mock.patch.object(app_module.client, 'get_training_detail', return_value=payload) as det, \
+             mock.patch.object(app_module.client, 'get_training_session_info', return_value={}):
+            resp = self.client.get('/api/history/detail/7?type=free')
+        self.assertEqual(resp.status_code, 200)
+        det.assert_called_once_with(7, 'free')
+        detail = resp.get_json()['detail']
+        self.assertEqual(detail[0]['actionLibraryName'], 'Seated Barbell Row')
+        self.assertEqual(detail[0]['finishedReps'][0]['trainingInfoDetail']['weights'], [100])
+
 
 if __name__ == '__main__':
     unittest.main()
