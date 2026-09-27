@@ -53,7 +53,7 @@ def sp_detail_to_wp_exercises(detail):
 
 
 _ROW_RE = re.compile(r"\[ID (\d+)\]\s*(\d{4}-\d{2}-\d{2}):\s*(.+)")
-_CAL_RE = re.compile(r"(\d+)\s*cal")
+_CAL_RE = re.compile(r"(\d+)\s*k?cal\b")
 _NSI_RE = re.compile(r"NSI\s*([\d.]+)")
 _MILES_RE = re.compile(r"[\d.]+\s*mi\b")
 
