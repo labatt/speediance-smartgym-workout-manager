@@ -136,6 +136,14 @@
       "affects": "app.py _apply_match / reconcile.sp_detail_to_wp_exercises (payload to WP add_exercises)",
       "status": "queued",
       "notes": "Found 2026-09-27 reading back WP 1013643 and 465896 after the #15 backfill. Needs research: whether WP add_exercises accepts an exercise id or equipment hint (list_exercises tool) so we can pin the right movement. Also check earlier backfills for the same mis-mapping. Not guessing a fix."
+    },
+    {
+      "id": 17,
+      "title": "MCP login: remember the password by default, --no-remember to opt out",
+      "summary": "speediance-mcp login currently asks 'Remember the password? [y/N]'. Make remembering the default (so expired sessions auto-relogin), drop the prompt, and keep --no-remember for token-only storage.",
+      "affects": "/srv/speediance-mcp (branch phase1): cli.py, tests, README",
+      "status": "done",
+      "notes": "Requested 2026-09-27. Trade-off explained to the user: with both the web app and the MCP server remembering the password, each re-login signs the other out (one session per account). Accepted; a shared-session option was offered and not chosen. Done 2026-09-27 on branch phase1 (c157a86): a plain login stores the password with no prompt (tested with input() patched to fail); --no-remember stores only the token; README and spec §15.14 updated; 204 tests pass. Not yet exercised with a real login, since that would sign out the web app's session."
     }
   ]
 }
