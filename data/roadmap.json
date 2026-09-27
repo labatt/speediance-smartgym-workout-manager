@@ -70,8 +70,8 @@
       "title": "Backfill uses the wrong detail route for Free Lift / Goal-Focused sessions",
       "summary": "The backfill fetches every non-course session from cttTrainingInfoDetail, which is always empty for Free Lift (type 1/7) and Goal-Focused (type 9) sessions. It should use freeTraining and aiCourseTrainingInfoDetail respectively.",
       "affects": "app.py (_apply_match), reconcile.py (Free Lift actionList/setList parsing), history detail route",
-      "status": "queued",
-      "notes": "Found 2026-09-27 while researching other Speediance projects for the MCP server. The three sessions the hourly backfill keeps 'skipping' as 'no loggable exercises' (2874609, 2644826, 2646057) are all Free Lift. Verified live: GET /api/app/trainingInfo/freeTraining/2874609 returns code 0 with actionList = Seated Barbell Row, 3 sets (setList[].summary + rawRepList). The route map comes from pookey/speediance-cli docs/api-notes.md (MIT): type 1/6/7 -> freeTraining, 2 -> courseTrainingInfoDetail, 3/5 -> cttTrainingInfoDetail, 4/9 -> aiCourseTrainingInfoDetail. Caveat before fixing: Free Lift per-set weights carry a 2.2 scale that pookey verified on kg accounts only; this account is lb, so the fix must reconcile against the session's own totalCapacity rather than blindly dividing."
+      "status": "done",
+      "notes": "Found 2026-09-27 while researching other Speediance projects for the MCP server. The three sessions the hourly backfill keeps 'skipping' as 'no loggable exercises' (2874609, 2644826, 2646057) are all Free Lift. Verified live: GET /api/app/trainingInfo/freeTraining/2874609 returns code 0 with actionList = Seated Barbell Row, 3 sets (setList[].summary + rawRepList). The route map comes from pookey/speediance-cli docs/api-notes.md (MIT): type 1/6/7 -> freeTraining, 2 -> courseTrainingInfoDetail, 3/5 -> cttTrainingInfoDetail, 4/9 -> aiCourseTrainingInfoDetail. Caveat before fixing: Free Lift per-set weights carry a 2.2 scale that pookey verified on kg accounts only; this account is lb, so the fix must reconcile against the session's own totalCapacity rather than blindly dividing. Verified live 2026-09-27: deployed, then a backfill run wrote Free Lift 2874609 onto WP 465896 (Seated Barbell Row 3×50 @ 20/25/30 lb). The History page now expands Free Lift, Quick and Goal-Focused sessions (live /api/history/detail checked for 2874609, 3056211, 264945). The other two old 'skipped' Free Lifts are outside the 90-day window; 2646057 also has no exercise picked, so it would be dropped anyway."
     },
     {
       "id": 9,
@@ -104,6 +104,38 @@
       "affects": "/srv/speediance-mcp (branch phase1) — not this repo",
       "status": "done",
       "notes": "Found 2026-09-27 in the MCP live check (#10): session 3056211 freeTraining dict has no actionList; freeTrainingDetail returns one list-shaped exercise. Fix: fall back to freeTrainingDetail when actionList is empty, shared by session detail and coaching. FIXED on branch phase1 (a3d6269) and verified live 2026-09-27: session 3056211 now parses Standing Barbell Calf Raise, 3 sets 40/45/50 lb, with no cardio/note; strength profile uses the same fallback."
+    },
+    {
+      "id": 13,
+      "title": "Hourly WP backfill failing since 2026-08-31: window is 91 days, WP max is 90",
+      "summary": "_wp_window() returns today-90 → today, which list_workouts counts as 91 days; Wellness Project rejects ranges over 90 days, so every scheduled backfill since 2026-08-31 ~15:15 has failed (~600 runs in /var/log/wp-backfill.log).",
+      "affects": "app.py (_wp_window / WP_WINDOW_DAYS)",
+      "status": "done",
+      "notes": "Found 2026-09-27 while verifying #8. The last successful run was 2026-08-31 14:15. Our window didn't change, so WP probably started enforcing the 90-day max then. Fix: an inclusive 90-day window (start = today - 89). Verified live 2026-09-27: the backfill connects again (10:39 run: no error)."
+    },
+    {
+      "id": 14,
+      "title": "Backfill tests overwrite the live wellness_reconcile_report.json",
+      "summary": "tests/test_wp_backfill.py runs the real /wp/backfill route, which writes WP_REPORT_FILE in the app dir, so running the suite replaces the real last-run report (shown in Settings) with fake test data.",
+      "affects": "tests/test_wp_backfill.py, app.py (WP_REPORT_FILE)",
+      "status": "done",
+      "notes": "Found 2026-09-27: after a test run the report showed the synthetic sp_training_id 2000001. Fix: tests patch WP_REPORT_FILE to a temp path. The next real run (hourly at :15) overwrites the bad report. Verified live 2026-09-27: a full test run left the real report file untouched (mtime unchanged); the next real run replaced the fake report."
+    },
+    {
+      "id": 15,
+      "title": "WP backfill finds no targets: Wellness Project now prints 'kcal' instead of 'cal'",
+      "summary": "reconcile._CAL_RE (\\d+\\s*cal) doesn't match WP's new '107 kcal' rows, so every workout's calorie parses as None and is_backfill_target rejects all of them. The backfill has had nothing to match against.",
+      "affects": "reconcile.py (_CAL_RE)",
+      "status": "done",
+      "notes": "Found 2026-09-27 while verifying #8/#13: after fixing the window, the backfill connected but matched nothing. The list row for WP 465896 (2026-07-20, 8 min, empty Health Connect import) reads '· 8 min · 107 kcal'. Fix: accept 'cal' and 'kcal'. Verified live 2026-09-27: the dry run found 6 targets / 5 empty; a live run applied 4 (three custom sessions missed during the outage — 08-31, 09-06, 09-07 — plus the Free Lift) and correctly skipped 1 whose template was deleted."
+    },
+    {
+      "id": 16,
+      "title": "Backfilled exercises get fuzzy-matched to the wrong WP exercise/equipment",
+      "summary": "The backfill sends exercise NAMES to WP update_workout; WP resolves them fuzzily. 'Barbell Romanian Deadlift' became 'Dumbbell Romanian Deadlift [Dumbbell (per hand)]' (so its NSI/1RM read 50 lb as per hand) and 'Seated Barbell Row' became 'Seated Cable Row [Cable]'.",
+      "affects": "app.py _apply_match / reconcile.sp_detail_to_wp_exercises (payload to WP add_exercises)",
+      "status": "queued",
+      "notes": "Found 2026-09-27 reading back WP 1013643 and 465896 after the #15 backfill. Needs research: whether WP add_exercises accepts an exercise id or equipment hint (list_exercises tool) so we can pin the right movement. Also check earlier backfills for the same mis-mapping. Not guessing a fix."
     }
   ]
 }
