@@ -23,6 +23,8 @@ def sp_detail_to_wp_exercises(detail):
     analyzed = progression.analyze_session(detail or [])
     out = []
     for ex in analyzed["exercises"]:
+        if not ex["name"]:
+            continue  # Free Lift set with no movement picked in the app: nothing to log
         kind = ex["kind"]
         sets = []
         for s in ex["sets"]:

@@ -74,6 +74,14 @@ class TestTransform(unittest.TestCase):
         }]
         self.assertEqual(reconcile.sp_detail_to_wp_exercises(detail), [])
 
+    def test_unnamed_exercise_omitted(self):
+        # A Free Lift set with no movement picked in the app has no name; writing a
+        # nameless exercise to WP is useless, so it is dropped (roadmap #8).
+        detail = [{"actionLibraryName": None, "completionMethod": 1,
+                   "finishedReps": [{"finishedCount": 2, "targetCount": 2, "time": 10,
+                                     "trainingInfoDetail": {"weights": [20]}}]}]
+        self.assertEqual(reconcile.sp_detail_to_wp_exercises(detail), [])
+
 
 WP_LIST = """Workouts (2026-06-01 → 2026-08-30):
 [ID 696827] 2026-08-29: Strength Training · 33 min · 341 cal

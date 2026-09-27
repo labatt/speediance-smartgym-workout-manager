@@ -8,6 +8,7 @@ import coach
 import workout_gen
 from cardio_stats import is_cardio_record, derive_cardio_stats
 import reconcile
+import session_detail
 import datetime
 import json
 import os
@@ -1642,14 +1643,29 @@ def api_history():
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
 
+def _session_detail(training_id, kind):
+    """A completed session's exercises in the list shape progression/reconcile/history.html
+    parse. `kind` is session_detail.detail_kind(history type): Free Lift/Quick sessions live on
+    freeTraining (converted here), and a quick single-exercise session whose freeTraining object
+    has no actionList keeps its sets on freeTrainingDetail (roadmap #8, verified live)."""
+    if kind != "free":
+        return client.get_training_detail(training_id, kind)
+    detail, _warning = session_detail.free_training_to_detail(
+        client.get_training_detail(training_id, "free"))
+    if not detail:
+        rows = client.get_training_detail(training_id, "free_detail")
+        detail = rows if isinstance(rows, list) else []
+    return detail
+
+
 @app.route('/api/history/detail/<int:training_id>')
 def api_history_detail(training_id):
     """Returns detailed info for a completed training session."""
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
-    training_type = request.args.get('type', 'custom')  # 'course' or 'custom'
+    training_type = request.args.get('type', 'custom')  # 'course' | 'custom' | 'ai' | 'free'
     try:
-        detail = client.get_training_detail(training_id, training_type)
+        detail = _session_detail(training_id, training_type)
         # Session info (name/duration/calories) is an optional summary fetched from a
         # course-specific endpoint that 403s for some Custom workouts. It must never take
         # down the exercise breakdown — the frontend already falls back to the record's own
@@ -1714,9 +1730,8 @@ def _apply_match(wp_session_id, sp_training_id, sp_type):
     Raises _BackfillSkip when the Speediance session yields no usable exercises
     (deleted template or no logged sets) -- that is a skip, not an error. A
     failure of the WP write itself propagates as a real error."""
-    training_type = "course" if sp_type == 2 else "custom"
     try:
-        detail = client.get_training_detail(sp_training_id, training_type)
+        detail = _session_detail(sp_training_id, session_detail.detail_kind(sp_type))
     except Exception as e:
         # e.g. the Speediance API answers "Template has been deleted" -- the
         # source session is gone, so there is simply nothing to backfill.
