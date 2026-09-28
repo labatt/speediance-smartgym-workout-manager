@@ -184,6 +184,14 @@
       "affects": "/srv/speediance-mcp (config, client, cli, README); web app api_client.py + config.example.json",
       "status": "working",
       "notes": "Requested 2026-09-27 after live tests: a BIKE login (Versioncode 1) kept the Gym Monster signed in (user checked), left a SOFTWARE session alive, survived the phone's sign-in, and a BIKE login while the phone was signed in kept the phone signed in (user checked). HARDWARE confirmed twice to sign out the Gym Monster. NANO accepts Versioncode 1 like BIKE; a NANO login is not tested. Plan: MCP default 'bike'; this server uses web app=BIKE and MCP=nano so they don't share a slot. Implemented 2026-09-27. MCP phase1 c86b859: `--client-type` (default bike), stored in credentials; README section 'Choose a client type'; spec §15.15. Web app merged and pushed: config.json `login_client_type` (default phone; README table); this server is set to bike and signed in with it (history verified). Waiting for the user to confirm the phone stayed signed in. This server's MCP should log in with --client-type nano."
+    },
+    {
+      "id": 23,
+      "title": "MCP phase 2: remote mode for claude.ai at https://mcp.example.com",
+      "summary": "Streamable HTTP /mcp with OAuth (SDK endpoints + our provider), a sign-in page that only accepts this account, rate limiting, hashed tokens; deployed behind nginx/TLS under pm2.",
+      "affects": "/srv/speediance-mcp (phase1 branch); nginx; pm2; DNS",
+      "status": "working",
+      "notes": "Requested 2026-09-28 ('I need to use it on claude.ai'). DNS created by the user's request: mcp.example.com A <your server IP> (Cloud DNS zone your-dns-zone). An SDK spike confirmed the full flow (register → authorize → our login → token → authed initialize). Plan: docs/plans/2026-09-28-phase2-remote-oauth.md (e275bac)."
     }
   ]
 }
