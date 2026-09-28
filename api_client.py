@@ -174,7 +174,10 @@ class SpeedianceClient:
                 code = body_preview.get("code")
                 message = body_preview.get("message") or f"Speediance API error (code {code})"
 
-                if code == 91 or resp.status_code == 401:
+                # 91 = token expired. 90 "offline" = another login of our client type took the
+                # session; re-login on that only when we sit on a slot no device of the user's needs.
+                displaced = code == 90 and self._login_client_type() in self.RELOGIN_ON_DISPLACEMENT
+                if code == 91 or displaced or resp.status_code == 401:
                     if retry_on_auth and self._relogin_from_environment():
                         retry_kwargs = dict(kwargs)
                         retry_kwargs["headers"] = self._refresh_auth_headers(kwargs.get("headers"))
@@ -238,6 +241,7 @@ class SpeedianceClient:
             "owned_devices": owned_devices or [],
             "saved_email": existing.get("saved_email", ""),
             "saved_password": existing.get("saved_password", ""),
+            "login_client_type": existing.get("login_client_type", "phone"),
         }
         self.region = region
         self.device_type = int(device_type)
@@ -300,8 +304,29 @@ class SpeedianceClient:
         except Exception as e:
             return False, str(e)
 
+    # Speediance keeps ONE live session per client type (the App_type header), not per account
+    # (verified live 2026-09-27, roadmap #18/#22). A login takes its type's slot and signs out
+    # whoever held it: SOFTWARE is the phone app, HARDWARE the Gym Monster. NANO and BIKE are other
+    # machines' slots -- free unless you own one -- so logging in as BIKE signs out neither the
+    # phone nor the Gym Monster. Non-phone types log in with Versioncode "1". Only the two login
+    # calls change identity; the token works on ordinary SOFTWARE/41000 requests.
+    # Configure with "login_client_type" in config.json (default "phone" = the old behaviour).
+    LOGIN_CLIENT_TYPES = {
+        "phone": ("SOFTWARE", "41000"),
+        "gym-monster": ("HARDWARE", "1"),
+        "nano": ("NANO", "1"),
+        "bike": ("BIKE", "1"),
+    }
+    # Re-logging in on code 90 (displaced) is only safe on a slot none of the user's devices use.
+    RELOGIN_ON_DISPLACEMENT = {"nano", "bike"}
+
+    def _login_client_type(self):
+        client_type = (self.credentials or {}).get("login_client_type") or "phone"
+        return client_type if client_type in self.LOGIN_CLIENT_TYPES else "phone"
+
     def login(self, email, password, remember=False):
         headers = self._build_headers(include_auth=False)
+        headers["App_type"], headers["Versioncode"] = self.LOGIN_CLIENT_TYPES[self._login_client_type()]
 
         # Step 1: Verify Identity
         verify_url = f"{self.base_url}/api/app/v2/login/verifyIdentity"

@@ -268,12 +268,29 @@ you host it anywhere reachable, put an authenticating reverse proxy in front of 
 
 ### Signing in
 
-Speediance allows **one live session per account**, so signing in on the phone app logs this
-app out, and vice versa. The nav bar always shows the current state — a green dot when
-connected, a red "Signed out" with a one-click Log in when not. Tick **Remember me** at login
-and the app re-authenticates itself automatically when the token is invalidated from elsewhere,
-instead of stranding you; your password is then stored in `config.json` on this machine
-(owner-only) to make that possible, and "Forget it" in Settings erases it.
+Speediance allows **one live session per client type**, not per account: every Speediance app and
+machine signs in as a type, and a new sign-in with a type signs out whatever was using it. By
+default this app signs in as the phone app, so signing in here logs your phone out, and vice
+versa. The nav bar always shows the current state — a green dot when connected, a red
+"Signed out" with a one-click Log in when not. Tick **Remember me** at login and the app
+re-authenticates itself automatically when its token expires; your password is then stored in
+`config.json` on this machine (owner-only) to make that possible, and "Forget it" in Settings
+erases it.
+
+To stop this app and your phone signing each other out, set `login_client_type` in
+`config.json` to a slot no device of yours uses:
+
+| `login_client_type` | Whose slot it is | Signing in with it signs out... |
+|---|---|---|
+| `phone` (default) | The Speediance phone app | your phone app |
+| `gym-monster` | The Gym Monster | your Gym Monster — don't use this |
+| `nano` | Gym Nano | a Gym Nano, if you own one |
+| `bike` | Speediance bike | a Speediance bike, if you own one |
+
+Most Gym Monster owners should use `bike` (or `nano` if they own a Speediance bike). With `nano`
+or `bike`, a remembered password also re-signs in quietly if something else takes the slot. If you
+run another Speediance tool on the same account, give it a different free slot. These types were
+found by testing, aren't documented by Speediance, and could change.
 
 ### Docker
 

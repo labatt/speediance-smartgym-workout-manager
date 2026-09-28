@@ -5,12 +5,13 @@ All HTTP calls are mocked.
 import json
 import sys
 import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 # Make sure the project root is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from api_client import SpeedianceClient, SpeedianceProtocolError
+from api_client import SpeedianceAPIError, SpeedianceClient, SpeedianceProtocolError
 
 
 def _make_client():
@@ -125,6 +126,76 @@ class TestRequestFlow(unittest.TestCase):
         self.assertEqual(second_headers['App_user_id'], 'fresh_user')
         self.assertEqual(second_headers['Token'], 'fresh_token')
         self.assertEqual(second_headers['App_type'], 'SOFTWARE')
+
+
+    def _login_with(self, client_type):
+        client = _make_client()
+        client.region = 'Global'
+        if client_type is not None:
+            client.credentials['login_client_type'] = client_type
+        client.save_config = MagicMock()
+        client.session.request = MagicMock(side_effect=[
+            _make_api_response({'code': 0, 'data': {'isExist': True, 'hasPwd': True}}),
+            _make_api_response({'code': 0, 'data': {'token': 't2', 'appUserId': 7, 'unit': 1}}),
+        ])
+        success, _message, _debug = client.login('athlete@example.com', 'pw')
+        self.assertTrue(success)
+        return {(c.kwargs['headers']['App_type'], c.kwargs['headers']['Versioncode'])
+                for c in client.session.request.call_args_list}
+
+    def test_login_client_type_picks_the_session_slot(self):
+        # Speediance keeps one session per client type (roadmap #22): the configured type decides
+        # which device's slot our login takes. Default stays the phone app's (old behaviour).
+        self.assertEqual(self._login_with(None), {('SOFTWARE', '41000')})
+        self.assertEqual(self._login_with('phone'), {('SOFTWARE', '41000')})
+        self.assertEqual(self._login_with('bike'), {('BIKE', '1')})
+        self.assertEqual(self._login_with('nano'), {('NANO', '1')})
+        self.assertEqual(self._login_with('gym-monster'), {('HARDWARE', '1')})
+
+    def test_ordinary_requests_stay_software_whatever_the_login_type(self):
+        client = _make_client()
+        client.credentials['login_client_type'] = 'bike'
+        headers = client._get_headers()
+        self.assertEqual((headers['App_type'], headers['Versioncode']), ('SOFTWARE', '41000'))
+
+    def _displaced(self, client_type):
+        client = _make_client()
+        if client_type:
+            client.credentials['login_client_type'] = client_type
+        stale = client._get_headers()
+
+        def relogin():
+            client.credentials['token'] = 'fresh_token'
+            return True
+
+        client._relogin_from_environment = MagicMock(side_effect=relogin)
+        client.session.request = MagicMock(side_effect=[
+            _make_api_response({'code': 90, 'message': 'offline'}, request_headers=stale),
+            _make_api_response({'code': 0, 'message': 'Success', 'data': [{'date': '2026-03-01'}]},
+                               request_headers=stale),
+        ])
+        return client
+
+    def test_code_90_relogs_in_only_on_a_free_slot(self):
+        client = self._displaced('bike')
+        self.assertEqual(client.get_calendar_month('2026-03'), [{'date': '2026-03-01'}])
+        client._relogin_from_environment.assert_called_once()
+
+        for client_type in (None, 'phone', 'gym-monster'):
+            client = self._displaced(client_type)
+            with self.assertRaises(SpeedianceAPIError):
+                client.get_calendar_month('2026-03')
+            client._relogin_from_environment.assert_not_called()
+
+    def test_save_config_keeps_the_login_client_type(self):
+        client = _make_client()
+        client.credentials['login_client_type'] = 'bike'
+        with tempfile.TemporaryDirectory() as tmp:
+            client.config_file = os.path.join(tmp, 'config.json')
+            client.base_dir = tmp
+            client.save_config('7', 't2')
+            with open(client.config_file) as f:
+                self.assertEqual(json.load(f)['login_client_type'], 'bike')
 
 
 class TestSaveWorkoutWeights(unittest.TestCase):

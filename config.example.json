@@ -5,5 +5,6 @@
     "unit": 0,
     "custom_instruction": "",
     "device_type": 1,
-    "allow_monster_moves": false
+    "allow_monster_moves": false,
+    "login_client_type": "phone"
 }
