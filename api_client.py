@@ -108,11 +108,10 @@ class SpeedianceClient:
     def _relogin_from_environment(self):
         """Silently sign back in after the token is invalidated.
 
-        Speediance allows one live session per client type: another login of the same type
-        invalidates this app's token (code 90), and tokens also expire (code 91). Logins use the
-        HARDWARE slot (see LOGIN_APP_TYPE), so re-logging in here never signs out the phone app —
-        so if the user has opted into remembering their credentials, recover transparently
-        instead of dumping them at a login page.
+        Speediance allows one live session per account: signing in on the phone app
+        invalidates this app's token, and vice versa. That is not an error condition, it is
+        the normal way the session ends — so if the user has opted into remembering their
+        credentials, recover from it transparently instead of dumping them at a login page.
 
         Saved credentials take precedence; the environment variables remain supported for
         headless setups that would rather not keep a password in config.json.
@@ -175,8 +174,7 @@ class SpeedianceClient:
                 code = body_preview.get("code")
                 message = body_preview.get("message") or f"Speediance API error (code {code})"
 
-                # 91 = token expired; 90 "offline" = another login took this session.
-                if code in (90, 91) or resp.status_code == 401:
+                if code == 91 or resp.status_code == 401:
                     if retry_on_auth and self._relogin_from_environment():
                         retry_kwargs = dict(kwargs)
                         retry_kwargs["headers"] = self._refresh_auth_headers(kwargs.get("headers"))
@@ -302,18 +300,8 @@ class SpeedianceClient:
         except Exception as e:
             return False, str(e)
 
-    # Logins go out as the HARDWARE client type, whose session slot is separate from the phone
-    # app's: a SOFTWARE login signs the phone out (and the phone signs us out, code 90), while a
-    # HARDWARE login coexists with it (verified live 2026-09-27, roadmap #18). HARDWARE requires
-    # Versioncode "1" (41000 answers 1004 "Invalid nonce string"). The token it issues works on
-    # ordinary SOFTWARE/41000 requests, so only these two login calls change identity.
-    LOGIN_APP_TYPE = "HARDWARE"
-    LOGIN_VERSION_CODE = "1"
-
     def login(self, email, password, remember=False):
         headers = self._build_headers(include_auth=False)
-        headers["App_type"] = self.LOGIN_APP_TYPE
-        headers["Versioncode"] = self.LOGIN_VERSION_CODE
 
         # Step 1: Verify Identity
         verify_url = f"{self.base_url}/api/app/v2/login/verifyIdentity"

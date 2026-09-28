@@ -127,50 +127,6 @@ class TestRequestFlow(unittest.TestCase):
         self.assertEqual(second_headers['App_type'], 'SOFTWARE')
 
 
-    def test_offline_code_90_also_triggers_relogin(self):
-        # Code 90 "offline" means another login took this session (e.g. the phone app).
-        # Since logins use the HARDWARE slot (which never displaces the phone), silently
-        # re-logging in on 90 is safe (roadmap #20).
-        client = _make_client()
-        stale_headers = client._get_headers()
-
-        def relogin():
-            client.credentials['token'] = 'fresh_token'
-            return True
-
-        client._relogin_from_environment = MagicMock(side_effect=relogin)
-        client.session.request = MagicMock(side_effect=[
-            _make_api_response({'code': 90, 'message': 'offline'}, request_headers=stale_headers),
-            _make_api_response({'code': 0, 'message': 'Success', 'data': [{'date': '2026-03-01'}]},
-                               request_headers={**stale_headers, 'Token': 'fresh_token'}),
-        ])
-
-        self.assertEqual(client.get_calendar_month('2026-03'), [{'date': '2026-03-01'}])
-        client._relogin_from_environment.assert_called_once()
-
-    def test_login_uses_the_hardware_session_slot(self):
-        # A login sent as App_type SOFTWARE displaces the phone app's session; one sent as
-        # HARDWARE (Versioncode "1") gets its own slot and coexists with it (verified live
-        # 2026-09-27, roadmap #18). Only the two login calls change identity.
-        client = _make_client()
-        client.region = 'Global'
-        client.save_config = MagicMock()
-        client.session.request = MagicMock(side_effect=[
-            _make_api_response({'code': 0, 'data': {'isExist': True, 'hasPwd': True}}),
-            _make_api_response({'code': 0, 'data': {'token': 't2', 'appUserId': 7, 'unit': 1}}),
-        ])
-
-        success, _message, _debug = client.login('athlete@example.com', 'pw')
-
-        self.assertTrue(success)
-        for call in client.session.request.call_args_list:
-            headers = call.kwargs['headers']
-            self.assertEqual(headers['App_type'], 'HARDWARE')
-            self.assertEqual(headers['Versioncode'], '1')
-        normal = client._get_headers()
-        self.assertEqual((normal['App_type'], normal['Versioncode']), ('SOFTWARE', '41000'))
-
-
 class TestSaveWorkoutWeights(unittest.TestCase):
 
     def _run_save(self, exercises, group_ids=None, unilateral_flags=None, details=None):
