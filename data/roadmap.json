@@ -167,7 +167,7 @@
       "summary": "Use the HARDWARE session slot (found in #18) for logins in the web app and speediance-mcp, keeping every other request as SOFTWARE/41000; treat code 90 as a session loss and silently re-login.",
       "affects": "api_client.py (login, relogin on 90); /srv/speediance-mcp client.py (branch phase1)",
       "status": "done",
-      "notes": "Requested 2026-09-27. The user couldn't check whether the Gym Monster stayed signed in after the HARDWARE test login and said to assume it's OK — watch for the machine being signed out. Supersedes #19 (code 90 handling). Web app deployed 2026-09-27 (merged feat/hardware-session): after /auth/relogin with the HARDWARE login, verified live history list, session detail, exercise detail, and a throwaway template create → read back (Barbell Bent Over Row 5 @ 10) → delete. MCP on phase1 (fd8eaa2), tests pass. Still waiting for the user to confirm the Android app stayed signed in after the web app's HARDWARE re-login. VERIFIED 2026-09-27: the user confirmed the Android app was still signed in after the web app's HARDWARE re-login. Gym Monster status unverified (user not at the machine) — watch for it."
+      "notes": "Requested 2026-09-27. The user couldn't check whether the Gym Monster stayed signed in after the HARDWARE test login and said to assume it's OK — watch for the machine being signed out. Supersedes #19 (code 90 handling). Web app deployed 2026-09-27 (merged feat/hardware-session): after /auth/relogin with the HARDWARE login, verified live history list, session detail, exercise detail, and a throwaway template create → read back (Barbell Bent Over Row 5 @ 10) → delete. MCP on phase1 (fd8eaa2), tests pass. Still waiting for the user to confirm the Android app stayed signed in after the web app's HARDWARE re-login. VERIFIED 2026-09-27: the user confirmed the Android app was still signed in after the web app's HARDWARE re-login. Gym Monster status unverified (user not at the machine) — watch for it. REVERTED 2026-09-27: the user was signed out of the Gym Monster. HARDWARE is the machine's own slot (confirmed again with a single controlled HARDWARE login). Web app merge d307178 and MCP fd8eaa2 were reverted; superseded by the configurable client type (BIKE)."
     },
     {
       "id": 21,
@@ -176,6 +176,14 @@
       "affects": "/srv/speediance-mcp (branch phase1)",
       "status": "done",
       "notes": "Requested 2026-09-27. Uses a throwaway template named 'zz MCP test - delete me', with guaranteed cleanup. PASSED 2026-09-27 on the live account (second run, after a fix): create_workout verified (Barbell RDL 8@50/60 rest 90; Bent-Over Single-Arm Reverse Fly with sides 1,2; Vita High Pull level 5 / 30 s); get_workout matched; a rename-only update and an exercise edit (55/65) both verified; schedule on 2026-10-15 showed as a reservation next to the existing Goal-Focused workout; unschedule removed it; delete removed it (template count 9 before and after, no leftovers). Bug found and fixed (speediance-mcp 'fix: an in-place edit re-issues the template id'): the first run flagged every update as a duplicate because Speediance re-issues the numeric id on each save while keeping the code."
+    },
+    {
+      "id": 22,
+      "title": "Configurable login client type (phone / gym-monster / nano / bike) for the MCP server and the web app",
+      "summary": "Speediance keeps one session per client type. SOFTWARE = phone app, HARDWARE = Gym Monster, and NANO and BIKE are other machines' slots, which are free if you don't own them. Let users choose which slot our logins use; document it in the MCP README.",
+      "affects": "/srv/speediance-mcp (config, client, cli, README); web app api_client.py + config.example.json",
+      "status": "working",
+      "notes": "Requested 2026-09-27 after live tests: a BIKE login (Versioncode 1) kept the Gym Monster signed in (user checked), left a SOFTWARE session alive, survived the phone's sign-in, and a BIKE login while the phone was signed in kept the phone signed in (user checked). HARDWARE confirmed twice to sign out the Gym Monster. NANO accepts Versioncode 1 like BIKE; a NANO login is not tested. Plan: MCP default 'bike'; this server uses web app=BIKE and MCP=nano so they don't share a slot. Implemented 2026-09-27. MCP phase1 c86b859: `--client-type` (default bike), stored in credentials; README section 'Choose a client type'; spec §15.15. Web app merged and pushed: config.json `login_client_type` (default phone; README table); this server is set to bike and signed in with it (history verified). Waiting for the user to confirm the phone stayed signed in. This server's MCP should log in with --client-type nano."
     }
   ]
 }
