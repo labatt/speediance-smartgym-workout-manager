@@ -352,6 +352,30 @@
       "affects": "research (scratchpad); feeds Health & Wellness decisions and MCP/web features",
       "status": "done",
       "notes": "Requested 2026-09-29 ('yes' to: two data-existence reads, then Blutter). Static decompile runs locally; live calls are GET only, nano token, no relogin, spaced. Endpoint names only; no Speediance code published. 2026-09-29: hasRealRecoveryData=false, hasRealSleepData=true (recovery screen likely shows sample data; sleep is worth cracking). App is Flutter 3.44.7 / Dart 3.12.2. Build deps installed (cmake, ninja-build, pkg-config, libicu-dev, libcapstone-dev); Blutter cloned (4a60ac6, 2026-08-18) to the scratchpad. Running it was blocked by the session's permission guard (it executes freshly downloaded code) — waiting on the user. DONE 2026-09-29. Blutter's output is structure-only (class/method skeletons, no instruction bodies), so params weren't recoverable statically; instead the candidate key names were harvested from the app's string pool and only existing ones were tried. ANSWER: the date parameter is `dateStr` (YYYY-MM-DD). Confirmed working: mobile/userHealth/recovery/detailByDate?dateStr (returns recoveryScoreResp/nightHrvResp/nightRestingHeartRateResp/sleepResp/muscleLoadResp, all empty for this account — no overnight HRV source), mobile/userHealth/sleep?dateStr ({sleep, targetSleepMin}), and mobile/userHealth/physicalCondition/detailByDate?dateStr — which returns REAL readiness data: physicalConditionValue, physicalConditionScore, fitness, fatigue, trainingStatus, plus physicalConditionParam.trainingStatusScore/trainingStatusScoreAvg. On 2026-09-28: score 90.4, fitness 5.99, fatigue 6.81, trainingStatus 1.14, trainingStatusScore 93.6 (avg 87.36). mobile/userHealth/sleep/rhythm is POST (code 12), not GET. Still unknown after bounded probing: calendar/scores, newIndex/healthDataIndicators, physicalCondition/listDailyDateRange — none accept dateStr, startDate/endDate, startDateStr/endDateStr, beginDateStr, monthStr or dateType. Implication for the Health & Wellness decision: recovery/readiness cards would be EMPTY (no wearable), but training status (fitness vs fatigue) is real and daily."
+    },
+    {
+      "id": 44,
+      "title": "Sidebar navigation (grouped, collapsible) replacing the horizontal bar",
+      "summary": "Grouped left sidebar — Train / Review / Setup — collapsing to a 48px icon rail, with a drawer on phones. The horizontal bar was at 9 links with more coming.",
+      "affects": "templates/layout.html",
+      "status": "done",
+      "notes": "Requested 2026-09-29 ('having it horizontally like that is just too much'). User chose the collapsible sidebar over grouped dropdowns or a permanent icon rail. Collapsed state persists in localStorage and is applied before first paint, so it never flashes open. Active item is derived from request.path. The rail's hover label is a title attribute, not a CSS tooltip: #sidebar scrolls, and overflow-y:auto clips absolutely-positioned children, so the tooltip never appeared."
+    },
+    {
+      "id": 45,
+      "title": "Body map redrawn: anatomical silhouette, front/back labels, hover tooltip",
+      "summary": "Replace the blocky figure with a bezier silhouette, label the views, remove the crotch-shaped adductor block, and add a hover tooltip giving muscle, volume and status.",
+      "affects": "templates/progress.html",
+      "status": "done",
+      "notes": "Requested 2026-09-29: 'looks like a two year old drawed it', front vs back indistinguishable, 'the left one looks like it has a genital in between the legs', and hover should name the muscle and its status. Fixed: bezier silhouette with regions following the body; FRONT/BACK headings; adductors moved to inner-thigh slivers on each leg; abs narrowed with segment detail; HTML tooltip with muscle, volume and a plain-word status (not trained / light / moderate / worked hard / most worked); hovering lights up BOTH sides, since left and right are one muscle. Colour ramp took three goes, recorded in code comments so they aren't repeated: blue->amber interpolates through grey (hardest-worked muscles rendered mud); adding teal+yellow fixed the mud but made a rainbow with no readable order; final is magma-style (indigo->purple->red->orange->pale yellow), monotone in brightness. Verified by rendering the page headless and looking at it, not by trusting the markup."
+    },
+    {
+      "id": 46,
+      "title": "E2E workout tests polluted the live account and are now opt-in",
+      "summary": "test_e2e_workouts.py creates real workouts on the live Speediance account and failed before cleanup, leaving 30 E2E_TEST_* templates behind. Delete them and stop a plain test run from writing to the account.",
+      "affects": "test_e2e_workouts.py; the live account",
+      "status": "done",
+      "notes": "Requested 2026-09-29 ('delete all the E2E_TEST workouts'). Deleted 30 templates matching the strict pattern E2E_TEST_(CUSTOM|PRESET)_<digits>; the 9 real workouts were listed first and left untouched. Root cause: the tests ran on every plain `pytest` invocation, created a workout each, and failed before their cleanup — they were also the long-standing '2 pre-existing failures'. They now require SPEEDIANCE_E2E=1, so the suite is 415 passed / 2 skipped and never writes to the live account by accident."
     }
   ]
 }
