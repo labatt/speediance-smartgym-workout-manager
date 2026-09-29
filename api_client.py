@@ -892,6 +892,10 @@ class SpeedianceClient:
             'free': 'freeTraining',
             'free_detail': 'freeTrainingDetail',
         }.get(training_type, 'cttTrainingInfoDetail')
+        if training_type == 'manual':
+            # A manual (off-machine) record lives on its own route and has no exercises,
+            # so returning [] here keeps every caller's list contract intact.
+            return []
         url = f"{self.base_url}/api/app/trainingInfo/{route}/{training_id}"
         try:
             resp = self._request('GET', url, headers=self._get_headers())
@@ -931,6 +935,24 @@ class SpeedianceClient:
         except Exception as e:
             if self._should_reraise(e): raise
             print(f"Error fetching profile: {e}")
+            return {}
+
+    def get_manual_training(self, record_id):
+        """One off-machine session logged through the app's manual entry.
+        GET /api/mobile/aiManualTrainingInfo/getById?id=<record id>
+
+        Carries title, sportType, duration, calories, heartRate and distance. There is no
+        exercise list: Speediance's manual record has no field for one.
+        """
+        url = f"{self.base_url}/api/mobile/aiManualTrainingInfo/getById"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers(), params={"id": record_id})
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching manual training {record_id}: {e}")
             return {}
 
     def get_muscle_fatigue(self):

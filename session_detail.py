@@ -6,6 +6,7 @@ verified live 2026-09-27):
   2       -> courseTrainingInfoDetail     (official courses)
   3, 5    -> cttTrainingInfoDetail        (custom templates)
   4, 9    -> aiCourseTrainingInfoDetail   (AI / Goal-Focused)
+  10      -> manual                       (logged off the machine; see below)
 The calendar feed numbers types differently, so only apply this to history-feed types.
 
 Every route except freeTraining returns the list shape the rest of the app parses
@@ -13,7 +14,14 @@ Every route except freeTraining returns the list shape the rest of the app parse
 with actionList[].setList[].summary; free_training_to_detail converts it. Pure: no I/O.
 """
 
-DETAIL_KINDS = {1: "free", 6: "free", 7: "free", 2: "course", 3: "custom", 5: "custom", 4: "ai", 9: "ai"}
+# Type 10 is a workout logged off the machine through the app's own manual entry
+# (`noDeviceSportLabel` set, `trainingSource` 4). Verified live 2026-09-29: the record
+# carries title, sport type, duration, calories, heart rate and distance — and NO
+# exercises, because Speediance's manual record has no field for them. It is still a real
+# session rather than a phone-health import, so it counts towards days trained and
+# streaks; it simply contributes no volume and can set no personal best.
+DETAIL_KINDS = {1: "free", 6: "free", 7: "free", 2: "course", 3: "custom", 5: "custom",
+                4: "ai", 9: "ai", 10: "manual"}
 
 # Free Lift set figures come back x2.2 on kg accounts (pookey) and unscaled on lb accounts
 # (verified live on this lb account), so reconcile against the session's own total instead
