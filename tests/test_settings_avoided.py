@@ -49,6 +49,18 @@ class TestSettingsAvoidedCard(unittest.TestCase):
         r = self.c.get("/settings")
         self.assertIn(b'href="/library"', r.data)
 
+    def test_persistent_library_link_shown_when_empty(self):
+        # I-10: the "mark more" link must be there whether the list is empty or not.
+        r = self.c.get("/settings")
+        html = r.get_data(as_text=True)
+        self.assertIn('id="avoided-mark-more-link"', html)
+
+    def test_persistent_library_link_shown_when_non_empty(self):
+        avoided_store.set_avoided(self.db_path, 1001, "Bench Press", "shoulder pain")
+        r = self.c.get("/settings")
+        html = r.get_data(as_text=True)
+        self.assertIn('id="avoided-mark-more-link"', html)
+
 
 if __name__ == "__main__":
     unittest.main()
