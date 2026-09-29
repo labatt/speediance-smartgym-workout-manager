@@ -376,6 +376,30 @@
       "affects": "test_e2e_workouts.py; the live account",
       "status": "done",
       "notes": "Requested 2026-09-29 ('delete all the E2E_TEST workouts'). Deleted 30 templates matching the strict pattern E2E_TEST_(CUSTOM|PRESET)_<digits>; the 9 real workouts were listed first and left untouched. Root cause: the tests ran on every plain `pytest` invocation, created a workout each, and failed before their cleanup — they were also the long-standing '2 pre-existing failures'. They now require SPEEDIANCE_E2E=1, so the suite is 415 passed / 2 skipped and never writes to the live account by accident."
+    },
+    {
+      "id": 47,
+      "title": "Evaluate GM Manager's features for inclusion (series): 4. Cardio",
+      "summary": "GM Manager's Cardio page: VO2max / Fitness (CRF) / Resting HR / Blood O2 cards, daily trend charts for heart rate, blood oxygen and steps, a click-through modal with Total/Average/Peak plus a per-day table, and a .fit upload (Garmin/Wahoo/Coros) with a cycling FTP for power-based TSS.",
+      "affects": "evaluation only — feeds proposals",
+      "status": "working",
+      "notes": "Screens supplied 2026-09-29. EVALUATION. What their own account shows: VO2max, Fitness (CRF) and Resting HR are ALL EMPTY — matching the #43 finding that those need overnight HRV/resting HR from a paired device. Blood O2 (91%), heart rate (74-94 bpm daily) and steps (up to 10,077) DO have data. So the four-card row is 3/4 dead weight for this account. FLAW NOT TO COPY: their modal shows a 'Total' for heart rate (587.5bpm) and blood oxygen (594%) — summing a rate and a percentage across days is meaningless. Average and Peak are sound; Total should exist only for steps (and distance/calories). WORTH COPYING: the per-metric modal with a per-day table behind each chart, and their honest note 'today so far — still being counted, and included in Total and Average, the same way the Speediance app counts it'. SOURCING (probed read-only 2026-09-29): app/userDataStat/heartRateStatIndex WORKS with no params and returns watchType, max/min HR and time in 5 HR zones (timeLevel1-5 + timeLevelList) — that is a better card than a bare resting HR. mobile/userHealth/newIndex/healthScore gives today's step count (walking.value). app/watchMsg/getHeartRateGraph already gives per-session HR (MCP get_heart_rate). Still unsourced: a DAILY series for HR, SpO2 or steps — heartRateStatByDateType returns 500 on every param shape tried, and newIndex/healthData and appIndex/healthData both 500 bare. RECOMMENDATION: don't build the four-card row as-is. Build HR zones + steps + per-session HR first (all sourceable today), and treat the daily HR/SpO2 series as blocked on cracking heartRateStatByDateType. Skip the .fit upload for now: it needs a .fit parser, and their own copy says it isn't fed into training load."
+    },
+    {
+      "id": 48,
+      "title": "Evaluate GM Manager's features for inclusion (series): 5. History",
+      "summary": "GM Manager's History: date range, four summary cards (Sessions, Volume, Calories, Time), a session table, and a detail modal with muscle chips and a per-set breakdown.",
+      "affects": "evaluation only — feeds proposals",
+      "status": "done",
+      "notes": "Screens supplied 2026-09-29. EVALUATION: our /history already matches their list one-for-one (same four summary cards, same columns) and the detail modal is richer — we add a felt-rating panel, a muscle-group rollup with per-group completion, a Coach's read, per-exercise power/resistance/ROM charts with force/ROM/balance scores, star ratings and a JSON export, none of which they have. ONE REAL GAP: they print every set as compact text — '1 27 lb x 10/10', '2 30 lb x 8/8' — and for unilateral work 'L 20 lb x 12/12 . R 20 lb x 12/12' with '3 sets per side . 1,680 lb vol'. We show the chart and the summary but never the plain per-set numbers, which are the thing you actually read back when repeating a session. Proposed as #49. BUG FOUND AND FIXED while comparing: phone-health imports carry no `type`, so our table rendered the literal 'Type undefined' (Sep 1 and Sep 2 rows). Now labelled 'Phone health'."
+    },
+    {
+      "id": 49,
+      "title": "History detail: show the plain per-set numbers under each exercise",
+      "summary": "Under each exercise in the session detail, list every set as compact text — weight x completed/target reps, per side for unilateral work, with 'sets per side' and the exercise's volume.",
+      "affects": "templates/history.html",
+      "status": "queued",
+      "notes": "From the #48 History evaluation: the one thing GM Manager's detail does that ours doesn't. Our per-set data is already fetched (setLog drives the charts), so this is presentation only. Respect the two-cable rule: a unilateral set shows each side separately, a bilateral barbell set shows the TOTAL, never one cable's number."
     }
   ]
 }
