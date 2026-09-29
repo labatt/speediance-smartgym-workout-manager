@@ -211,6 +211,7 @@ def api_dashboard():
         records = []
 
     out["streak"] = dashboard_calc.streak(records, today)
+    out["activity"] = dashboard_calc.activity_strip(records, today, days=14)
     out["week"] = dashboard_calc.week_comparison(records, today)
     out["recent"] = [{
         "trainingId": r.get("trainingId"),
@@ -220,6 +221,7 @@ def api_dashboard():
         "volume": round(_num_or(r.get("totalCapacity")), 1),
         "calories": int(_num_or(r.get("calorie"))),
         "isHealth": bool(r.get("belongUserHealth")),
+        "type": r.get("type"),
     } for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)[:8]]
 
     try:
@@ -283,7 +285,10 @@ def api_dashboard_records():
             rows = payload.get('data')
             if isinstance(rows, list) and rows:
                 stats[name] = rows
-        return jsonify({"records": dashboard_calc.personal_records(stats, today=today)})
+        found = dashboard_calc.personal_records(stats, today=today)
+        for row in found:
+            row["groupId"] = movements.get(row["exercise"])
+        return jsonify({"records": found})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401

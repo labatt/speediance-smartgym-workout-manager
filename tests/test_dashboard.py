@@ -166,3 +166,36 @@ class TestPersonalRecords(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestActivityStrip(unittest.TestCase):
+    def strip(self, rows, days=7):
+        from dashboard import activity_strip
+        return activity_strip(rows, TODAY, days=days)
+
+    def test_every_day_appears_including_rest_days(self):
+        got = self.strip([session("2026-09-28")])
+        self.assertEqual(len(got), 7)
+        self.assertEqual(got[-1]["date"], "2026-09-29")
+        self.assertEqual([d["kind"] for d in got].count("rest"), 6)
+
+    def test_a_gym_day_and_a_walk_are_different_kinds(self):
+        got = self.strip([session("2026-09-28"), session("2026-09-27", health=True)])
+        kinds = {d["date"]: d["kind"] for d in got}
+        self.assertEqual(kinds["2026-09-28"], "gym")
+        self.assertEqual(kinds["2026-09-27"], "health")
+
+    def test_share_is_relative_to_the_biggest_day_in_the_window(self):
+        got = self.strip([session("2026-09-28", volume=1000), session("2026-09-27", volume=500)])
+        shares = {d["date"]: d["share"] for d in got}
+        self.assertEqual(shares["2026-09-28"], 1.0)
+        self.assertEqual(shares["2026-09-27"], 0.5)
+
+    def test_a_walk_contributes_no_volume(self):
+        got = self.strip([session("2026-09-28", volume=9999, health=True)])
+        self.assertEqual([d for d in got if d["date"] == "2026-09-28"][0]["volume"], 0.0)
+
+    def test_today_is_flagged(self):
+        got = self.strip([])
+        self.assertTrue(got[-1]["isToday"])
+        self.assertFalse(any(d["isToday"] for d in got[:-1]))

@@ -19,7 +19,27 @@
                 <h2 class="text-sm font-semibold text-amber-300">New personal bests</h2>
                 <span id="prCount" class="text-[10px] text-gray-500"></span>
             </div>
+            <div class="hidden" id="prNote"></div>
+            <div class="mb-2">
+                <p class="text-[10px] text-gray-600">Compared against every session Speediance keeps
+                    stats for on that movement &mdash; not just this window.</p>
+            </div>
             <div id="prList" class="flex flex-wrap gap-3"></div>
+        </section>
+
+        <!-- 14-day activity. A rest day is part of the pattern, so every day is drawn;
+             bar height is that day's share of the window's biggest. -->
+        <section class="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+            <div class="flex items-baseline justify-between mb-3">
+                <h2 class="text-sm font-semibold text-gray-200">Last 14 days</h2>
+                <a href="/history" class="text-xs text-blue-400 hover:underline">History &rarr;</a>
+            </div>
+            <div id="activityStrip" class="flex items-end gap-1.5 h-20"></div>
+            <div class="flex items-center gap-4 mt-2 text-[10px] text-gray-500">
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-emerald-500"></span>trained</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-cyan-500"></span>phone health</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-gray-700"></span>rest</span>
+            </div>
         </section>
 
         <!-- Week at a glance. Each card carries its own accent so the row is scannable
@@ -31,12 +51,13 @@
                 'weight': 'M13 10V3L4 14h7v7l9-11h-7z',
                 'clock': 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'
             } %}
-            {% for key, label, hint, icon, accent in [
-                ('streak',   'Streak',   'days in a row', 'flame',    'from-orange-500/15 border-orange-600/30'),
-                ('sessions', 'Sessions', 'this week',     'calendar', 'from-sky-500/15 border-sky-600/30'),
-                ('volume',   'Volume',   'this week',     'weight',   'from-emerald-500/15 border-emerald-600/30'),
-                ('time',     'Time',     'this week',     'clock',    'from-violet-500/15 border-violet-600/30')] %}
-            <div class="rounded-xl border bg-gradient-to-br to-transparent {{ accent }} p-4">
+            {% for key, label, hint, icon, accent, href in [
+                ('streak',   'Streak',   'days in a row', 'flame',    'from-orange-500/15 border-orange-600/30', '/history'),
+                ('sessions', 'Sessions', 'this week',     'calendar', 'from-sky-500/15 border-sky-600/30', '/history'),
+                ('volume',   'Volume',   'this week',     'weight',   'from-emerald-500/15 border-emerald-600/30', '/progress'),
+                ('time',     'Time',     'this week',     'clock',    'from-violet-500/15 border-violet-600/30', '/history')] %}
+            <a href="{{ href }}" class="block rounded-xl border bg-gradient-to-br to-transparent {{ accent }} p-4
+                      transition hover:brightness-125 hover:-translate-y-0.5">
                 <div class="flex items-start justify-between">
                     <p class="text-xs text-gray-400">{{ label }}</p>
                     <svg class="h-4 w-4 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -47,20 +68,26 @@
                 <p class="text-[10px] text-gray-500 mt-0.5">{{ hint }}
                     <span id="delta-{{ key }}" class="ml-1"></span>
                 </p>
-            </div>
+            </a>
             {% endfor %}
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <!-- Today's plan -->
             <section class="bg-gray-900 rounded p-4">
-                <h2 class="text-sm font-semibold text-gray-200 mb-3">Today's plan</h2>
+                <div class="flex items-baseline justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-200">Today's plan</h2>
+                    <a href="/schedule" class="text-xs text-blue-400 hover:underline">Schedule &rarr;</a>
+                </div>
                 <div id="planList"></div>
             </section>
 
             <!-- Recovery -->
             <section class="bg-gray-900 rounded p-4">
-                <h2 class="text-sm font-semibold text-gray-200 mb-3">Recovery</h2>
+                <div class="flex items-baseline justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-200">Recovery</h2>
+                    <a href="/progress" class="text-xs text-blue-400 hover:underline">Muscle balance &rarr;</a>
+                </div>
                 <div id="recoveryBlock"></div>
             </section>
         </div>
@@ -70,7 +97,7 @@
             <section class="bg-gray-900 rounded p-4">
                 <div class="flex items-baseline justify-between mb-3">
                     <h2 class="text-sm font-semibold text-gray-200">Recent sessions</h2>
-                    <a href="/history" class="text-xs text-blue-400 hover:underline">All history</a>
+                    <a href="/history" class="text-xs text-blue-400 hover:underline">All history &rarr;</a>
                 </div>
                 <ul id="recentList" class="space-y-1"></ul>
             </section>
@@ -79,7 +106,7 @@
             <section class="bg-gray-900 rounded p-4">
                 <div class="flex items-baseline justify-between mb-3">
                     <h2 class="text-sm font-semibold text-gray-200">Sleep</h2>
-                    <a href="/cardio" class="text-xs text-blue-400 hover:underline">Cardio</a>
+                    <a href="/cardio" class="text-xs text-blue-400 hover:underline">Cardio &rarr;</a>
                 </div>
                 <div id="sleepBlock"></div>
             </section>
@@ -112,6 +139,26 @@ function renderDelta(id, value) {
     const up = value >= 0;
     el.textContent = `${up ? '+' : ''}${value}% vs last wk`;
     el.className = 'ml-1 ' + (up ? 'text-green-400' : 'text-amber-400');
+}
+
+const STRIP_TONE = { gym: 'bg-emerald-500', health: 'bg-cyan-500', rest: 'bg-gray-700' };
+
+function renderActivity(days) {
+    const host = document.getElementById('activityStrip');
+    host.innerHTML = days.map(d => {
+        // A trained day always shows something, even at low volume, or it would read as rest.
+        const pct = d.kind === 'gym' ? Math.max(18, Math.round(d.share * 100))
+                  : d.kind === 'health' ? 12 : 6;
+        const label = d.kind === 'gym' ? `${fmtInt(d.volume)} ${DASH_UNIT}`
+                    : d.kind === 'health' ? 'phone health' : 'rest day';
+        return `
+        <a href="/history" class="group flex-1 flex flex-col items-center justify-end h-full"
+           title="${esc(d.date)} — ${esc(label)}">
+            <span class="w-full rounded-t ${STRIP_TONE[d.kind]} ${d.isToday ? 'ring-1 ring-white/40' : ''}
+                         transition group-hover:brightness-125" style="height:${pct}%"></span>
+            <span class="text-[9px] mt-1 ${d.isToday ? 'text-white font-bold' : 'text-gray-600'}">${esc(d.weekday)}</span>
+        </a>`;
+    }).join('');
 }
 
 function renderPlan(plan) {
@@ -174,7 +221,8 @@ function renderRecent(rows, unit) {
     const host = document.getElementById('recentList');
     if (!rows.length) { host.innerHTML = '<p class="text-sm text-gray-400">No sessions yet.</p>'; return; }
     host.innerHTML = rows.map(r => `
-        <li class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-800 last:border-0">
+        <li><a href="/history" class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-800
+                                      last:border-0 hover:bg-white/5 rounded px-1 -mx-1 transition">
             <span class="min-w-0">
                 <span class="text-sm ${r.isHealth ? 'text-cyan-300' : 'text-gray-200'} block truncate">${esc(r.title)}</span>
                 <span class="text-[10px] text-gray-500">${esc(r.date)}${r.isHealth ? ' · phone health' : ''}</span>
@@ -182,7 +230,7 @@ function renderRecent(rows, unit) {
             <span class="text-xs text-gray-400 whitespace-nowrap">
                 ${fmtSecs(r.seconds)}${r.volume ? ` · ${fmtInt(r.volume)} ${unit}` : ''}
             </span>
-        </li>`).join('');
+        </a></li>`).join('');
 }
 
 function renderSleep(s) {
@@ -230,7 +278,8 @@ const whenLabel = d => d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
 // same movement are two different achievements and each carries its own numbers.
 function renderRecords(records) {
     const cards = [];
-    records.forEach(r => (r.kinds || []).forEach(k => cards.push({ exercise: r.exercise, ...k })));
+    records.forEach(r => (r.kinds || []).forEach(k =>
+        cards.push({ exercise: r.exercise, groupId: r.groupId, ...k })));
     if (!cards.length) return;
     cards.sort((a, b) => a.daysAgo - b.daysAgo);
 
@@ -245,9 +294,10 @@ function renderRecords(records) {
         const beat = c.previous != null
             ? `<p class="text-[10px] text-gray-400 mt-0.5">+${fmtInt(c.gain)}${c.gainPercent ? ` · ${c.gainPercent}%` : ''} vs ${fmtInt(c.previous)}</p>`
             : '<p class="text-[10px] text-gray-500 mt-0.5">first on record</p>';
+        const href = c.groupId ? `/exercise/${encodeURIComponent(c.groupId)}` : '/progress';
         return `
-        <div class="relative w-[150px] rounded-xl border bg-gradient-to-br ${style.ring}
-                    p-3 flex flex-col gap-1.5 overflow-hidden"
+        <a href="${href}" class="relative w-[150px] rounded-xl border bg-gradient-to-br ${style.ring}
+                    p-3 flex flex-col gap-1.5 overflow-hidden transition hover:brightness-125 hover:-translate-y-0.5"
              title="${esc(c.exercise)} — ${esc(c.kind)} ${esc(value)}${c.previous != null ? `, previous best ${fmtInt(c.previous)}` : ''} on ${esc(c.date)}">
             <div class="flex items-start justify-between">
                 ${style.icon}
@@ -259,7 +309,7 @@ function renderRecords(records) {
                 ${beat}
                 <p class="text-[10px] text-gray-500 mt-1">${esc(whenLabel(c.daysAgo))}</p>
             </div>
-        </div>`;
+        </a>`;
     }).join('');
 }
 
@@ -292,6 +342,7 @@ function renderRecords(records) {
     renderDelta('delta-volume', w.volumeDelta);
     renderDelta('delta-time', w.secondsDelta);
 
+    renderActivity(data.activity || []);
     renderPlan(data.plan || []);
     renderRecovery(data.recovery);
     renderRecent(data.recent || [], data.unit);

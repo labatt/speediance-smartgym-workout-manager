@@ -152,6 +152,51 @@ def muscle_recovery(fatigue_rows, last_trained, now):
     }
 
 
+def activity_strip(records, today, days=14):
+    """One entry per day for the last `days`, newest last.
+
+    A rest day is not an absence of data — it is part of the pattern — so every day in
+    the window appears, with `trained` saying which kind of day it was. Phone-health
+    activity is marked separately: it is movement, but not a training day.
+    """
+    by_day = {}
+    for record in records or []:
+        day = _date_of(record)
+        if day is None or day > today or (today - day).days >= days:
+            continue
+        entry = by_day.setdefault(day, {"volume": 0.0, "seconds": 0, "gym": False, "health": False})
+        if is_gym_session(record):
+            entry["gym"] = True
+            entry["volume"] += _num(record.get("totalCapacity")) or 0
+            entry["seconds"] += int(_num(record.get("trainingTime")) or 0)
+        else:
+            entry["health"] = True
+            entry["seconds"] += int(_num(record.get("trainingTime")) or 0)
+
+    peak = max((e["volume"] for e in by_day.values()), default=0)
+    out = []
+    for back in range(days - 1, -1, -1):
+        day = today - datetime.timedelta(days=back)
+        entry = by_day.get(day)
+        kind = "rest"
+        if entry and entry["gym"]:
+            kind = "gym"
+        elif entry and entry["health"]:
+            kind = "health"
+        out.append({
+            "date": day.isoformat(),
+            "weekday": day.strftime("%a")[0],
+            "kind": kind,
+            "volume": round(entry["volume"], 1) if entry else 0.0,
+            "seconds": entry["seconds"] if entry else 0,
+            # Height as a share of the window's biggest day, so the strip is readable
+            # regardless of whether someone lifts hundreds or thousands of pounds.
+            "share": round(entry["volume"] / peak, 3) if entry and peak else 0.0,
+            "isToday": day == today,
+        })
+    return out
+
+
 def personal_records(exercise_stats, within_days=14, today=None):
     """Recent bests, with the number that made each one a record and what it beat.
 
