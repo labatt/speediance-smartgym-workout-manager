@@ -440,6 +440,30 @@
       "affects": "evaluation only",
       "status": "done",
       "notes": "Screens supplied 2026-09-29. NOT worth copying. This is the feature our whole MCP server replaces: Claude already plans, adapts and explains training against the real data, with a curated fact store behind it, at no extra subscription — and it is not limited to canned prompts like their 'Why this weight?' / 'My shoulder hurts' chips. Their Memory tab is the one idea worth noting, and we already shipped /memory. Recording the price point because it is the reason this project exists."
+    },
+    {
+      "id": 55,
+      "title": "Evaluate GM Manager's features for inclusion (series): 9. My Workouts, Routines, Shared, Calendar",
+      "summary": "Their My Workouts grid (slot counter, per-card actions, multi-select, import/export), a Routines tab for splits, a Shared Workouts community, and a drag-and-drop month Calendar.",
+      "affects": "evaluation -> proposals #56, #57",
+      "status": "done",
+      "notes": "Screens supplied 2026-09-29. WHERE WE ALREADY MATCH OR BEAT THEM: our Dashboard is the My Workouts grid and already shows the 9/50 slot counter — and colours it yellow at 40 and red at 50, which theirs does not, so we warn before the cap bites. Cards already carry volume, duration, exercise count, Edit, Delete, multi-select and drag-to-schedule. Our /schedule is a REPEATING schedule builder (fixed weekday pattern or rotating cycle) that writes ~12 weeks ahead and tops itself up, working around Speediance storing only one workout per day. GM Manager has no equivalent — their calendar is manual placement only. WHAT THEY HAVE THAT WE DON'T: (1) a month CALENDAR view with drag-and-drop and a legend separating Scheduled / Program / Completed / From your health app — a natural complement to our repeating schedule, since nothing currently shows what the pattern actually produced (proposed #56); (2) ROUTINES — grouping workouts into a named split (proposed #57); (3) search and filters over the workout list, and per-card Share and calorie estimate; (4) Import / Export all for workouts. NOT APPLICABLE: Shared Workouts is their own cloud community (60+ items, ratings, downloads, comments, authors). It runs on GM Manager's servers, not Speediance's, so it cannot be replicated by a self-hosted app — and shouldn't be: this project is single-account and self-hosted by design."
+    },
+    {
+      "id": 56,
+      "title": "Calendar month view: see what the repeating schedule actually produced",
+      "summary": "A month grid of scheduled and completed sessions, colour-separated (scheduled / program / completed / phone-health), with drag-and-drop to move a workout to another day.",
+      "affects": "web app (new view or a tab on /schedule)",
+      "status": "queued",
+      "notes": "From #55. We generate 12 weeks of reservations from a pattern but never show the result, so a clash or a gap is invisible until the day arrives. Data already exists: app/v5/trainingCalendar/monthNew returns each day's trainingPlanList with isFinish, isReservation, type and title, which is exactly the four-way legend. The MCP's get_calendar already parses it."
+    },
+    {
+      "id": 57,
+      "title": "Routines: group workouts into a named split",
+      "summary": "Name a set of workouts as a split (e.g. a 4-day Push/Pull/Legs), then apply it to the schedule in one step.",
+      "affects": "MCP DB (source of truth) + web app",
+      "status": "future",
+      "notes": "From #55. Speediance has no routine concept, so this would be ours, stored in the MCP DB like avoided exercises and equipment. Worth doing only if it earns its keep against the repeating schedule, which already covers 'the split I follow every week' — the gap it would close is naming and reusing a split, and sharing it with Claude as a unit."
     }
   ]
 }
