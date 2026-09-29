@@ -20,3 +20,4 @@ journal.json
 coach_config.json
 assessment.json
 workout_gen_last.json
+cardio_trend_cache.json
