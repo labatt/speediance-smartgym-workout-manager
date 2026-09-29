@@ -933,6 +933,24 @@ class SpeedianceClient:
             print(f"Error fetching profile: {e}")
             return {}
 
+    def get_muscle_fatigue(self):
+        """Per-body-part fatigue and muscle-load status.
+        GET /api/app/userDataStat/trainingPartFatigueInfo — takes no parameters.
+
+        Says how hard each part was worked, but NOT when; pair it with the session
+        history to work out how long a part has been recovering.
+        """
+        url = f"{self.base_url}/api/app/userDataStat/trainingPartFatigueInfo"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers())
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or []
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching muscle fatigue: {e}")
+            return []
+
     def get_heart_rate_zones(self):
         """Time spent in each heart-rate zone across recorded sessions.
         GET /api/app/userDataStat/heartRateStatIndex — takes no parameters.

@@ -1,0 +1,221 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Today</h1>
+            <p id="todayDate" class="text-xs text-gray-500 mt-1"></p>
+        </div>
+        <a href="/workouts" class="text-xs px-3 py-1.5 rounded border border-gray-700 bg-gray-800 text-gray-300 hover:text-white self-start">My workouts</a>
+    </div>
+
+    <div id="dashLoading" class="text-sm text-gray-400">Loading…</div>
+    <div id="dashError" class="hidden bg-yellow-900/40 border border-yellow-700 text-yellow-200 text-sm rounded p-3 mb-4"></div>
+
+    <div id="dash" class="hidden space-y-5">
+        <!-- Records -->
+        <section id="prCard" class="hidden rounded border border-amber-800/60 bg-amber-950/25 p-4">
+            <h2 class="text-sm font-semibold text-amber-300 mb-2">New personal bests</h2>
+            <ul id="prList" class="space-y-1"></ul>
+        </section>
+
+        <!-- Week at a glance -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {% for key, label, hint in [
+                ('streak', 'Streak', 'days in a row'),
+                ('sessions', 'Sessions', 'this week'),
+                ('volume', 'Volume', 'this week'),
+                ('time', 'Time', 'this week')] %}
+            <div class="bg-gray-900 rounded p-4">
+                <p class="text-xs text-gray-400">{{ label }}</p>
+                <p id="stat-{{ key }}" class="text-2xl font-bold text-white mt-1">–</p>
+                <p class="text-[10px] text-gray-500 mt-0.5">{{ hint }}
+                    <span id="delta-{{ key }}" class="ml-1"></span>
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Today's plan -->
+            <section class="bg-gray-900 rounded p-4">
+                <h2 class="text-sm font-semibold text-gray-200 mb-3">Today's plan</h2>
+                <div id="planList"></div>
+            </section>
+
+            <!-- Recovery -->
+            <section class="bg-gray-900 rounded p-4">
+                <h2 class="text-sm font-semibold text-gray-200 mb-3">Recovery</h2>
+                <div id="recoveryBlock"></div>
+            </section>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Recent sessions -->
+            <section class="bg-gray-900 rounded p-4">
+                <div class="flex items-baseline justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-200">Recent sessions</h2>
+                    <a href="/history" class="text-xs text-blue-400 hover:underline">All history</a>
+                </div>
+                <ul id="recentList" class="space-y-1"></ul>
+            </section>
+
+            <!-- Sleep -->
+            <section class="bg-gray-900 rounded p-4">
+                <div class="flex items-baseline justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-gray-200">Sleep</h2>
+                    <a href="/cardio" class="text-xs text-blue-400 hover:underline">Cardio</a>
+                </div>
+                <div id="sleepBlock"></div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<script>
+const fmtInt = n => Math.round(n || 0).toLocaleString();
+
+function fmtSecs(sec) {
+    sec = Math.round(sec || 0);
+    const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// A delta only renders when there was a baseline to compare against; "no data last week"
+// is not "no change", so it stays blank rather than showing 0%.
+function renderDelta(id, value) {
+    const el = document.getElementById(id);
+    if (value == null) { el.textContent = ''; return; }
+    const up = value >= 0;
+    el.textContent = `${up ? '+' : ''}${value}% vs last wk`;
+    el.className = 'ml-1 ' + (up ? 'text-green-400' : 'text-amber-400');
+}
+
+function renderPlan(plan) {
+    const host = document.getElementById('planList');
+    if (!plan.length) {
+        host.innerHTML = '<p class="text-sm text-gray-400">Nothing scheduled. '
+            + '<a href="/schedule" class="text-blue-400 hover:underline">Plan your week</a>.</p>';
+        return;
+    }
+    host.innerHTML = '<ul class="space-y-2">' + plan.map(p => `
+        <li class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${p.done ? 'bg-green-500' : 'bg-gray-600'}"></span>
+            <span class="text-sm ${p.done ? 'text-gray-400 line-through' : 'text-gray-200'}">${p.title}</span>
+            ${p.done ? '<span class="text-[10px] text-green-400">done</span>'
+                     : p.reserved ? '<span class="text-[10px] text-blue-400">scheduled</span>' : ''}
+        </li>`).join('') + '</ul>';
+}
+
+function renderRecovery(r) {
+    const host = document.getElementById('recoveryBlock');
+    if (!r || !r.available) {
+        host.innerHTML = '<p class="text-sm text-gray-400">No muscle-fatigue reading yet.</p>';
+        return;
+    }
+    const pct = r.readyPercent ?? 0;
+    const tone = pct >= 80 ? 'text-green-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400';
+    const bars = (r.recovering || []).map(m => `
+        <li class="flex items-center justify-between gap-3 text-xs">
+            <span class="text-gray-300">${m.bodyPart}</span>
+            <span class="text-gray-400">${m.hoursLeft}h left</span>
+        </li>`).join('');
+    host.innerHTML = `
+        <div class="flex items-center gap-4">
+            <div>
+                <p class="text-3xl font-bold ${tone}">${pct}%</p>
+                <p class="text-[10px] text-gray-500">ready</p>
+            </div>
+            <div class="flex-grow">
+                <p class="text-sm text-gray-200 mb-1">${r.verdict}</p>
+                ${bars ? `<ul class="space-y-0.5">${bars}</ul>`
+                       : '<p class="text-xs text-gray-400">Nothing is still recovering.</p>'}
+            </div>
+        </div>
+        <p class="text-[10px] text-gray-600 mt-3">Hours come from when each part was last trained;
+            how long it stays out is set by Speediance's fatigue reading.</p>`;
+}
+
+function renderRecent(rows, unit) {
+    const host = document.getElementById('recentList');
+    if (!rows.length) { host.innerHTML = '<p class="text-sm text-gray-400">No sessions yet.</p>'; return; }
+    host.innerHTML = rows.map(r => `
+        <li class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-800 last:border-0">
+            <span class="min-w-0">
+                <span class="text-sm ${r.isHealth ? 'text-cyan-300' : 'text-gray-200'} block truncate">${r.title}</span>
+                <span class="text-[10px] text-gray-500">${r.date}${r.isHealth ? ' · phone health' : ''}</span>
+            </span>
+            <span class="text-xs text-gray-400 whitespace-nowrap">
+                ${fmtSecs(r.seconds)}${r.volume ? ` · ${fmtInt(r.volume)} ${unit}` : ''}
+            </span>
+        </li>`).join('');
+}
+
+function renderSleep(s) {
+    const host = document.getElementById('sleepBlock');
+    if (!s || !s.available) {
+        host.innerHTML = '<p class="text-sm text-gray-400">No sleep recorded in the last week. '
+            + 'Speediance logs this from a paired device.</p>';
+        return;
+    }
+    const scores = (s.scores || []).map(x =>
+        `<div class="bg-gray-800 rounded p-2 text-center">
+            <p class="text-[10px] text-gray-400">${x.label}</p>
+            <p class="text-sm font-bold text-blue-400">${x.value}</p>
+         </div>`).join('');
+    host.innerHTML = `
+        <p class="text-sm text-gray-200">
+            <span class="text-2xl font-bold ${s.metTarget ? 'text-green-400' : 'text-amber-400'}">${s.slept || '–'}</span>
+            ${s.target ? `<span class="text-xs text-gray-400">of a ${s.target} target</span>` : ''}
+        </p>
+        <p class="text-[10px] text-gray-500 mt-0.5">${s.date || ''}</p>
+        ${scores ? `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">${scores}</div>` : ''}`;
+}
+
+function renderRecords(records) {
+    if (!records.length) return;
+    document.getElementById('prCard').classList.remove('hidden');
+    document.getElementById('prList').innerHTML = records.slice(0, 6).map(r => `
+        <li class="text-sm text-amber-100">
+            <span class="font-semibold">${r.exercise}</span>
+            <span class="text-amber-300/80 text-xs">${r.kinds.join(' · ')}</span>
+            <span class="text-[10px] text-amber-400/60">${r.daysAgo === 0 ? 'today' : r.daysAgo + 'd ago'}</span>
+        </li>`).join('');
+}
+
+(async function load() {
+    let data;
+    try {
+        const resp = await fetch('/api/dashboard');
+        if (resp.status === 401) { window.location = '/settings'; return; }
+        data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    } catch (e) {
+        document.getElementById('dashLoading').classList.add('hidden');
+        const err = document.getElementById('dashError');
+        err.textContent = `Could not load the dashboard: ${e.message}`;
+        err.classList.remove('hidden');
+        return;
+    }
+    document.getElementById('dashLoading').classList.add('hidden');
+    document.getElementById('dash').classList.remove('hidden');
+    document.getElementById('todayDate').textContent = new Date(data.today + 'T00:00:00')
+        .toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+    const w = data.week || {};
+    document.getElementById('stat-streak').textContent = data.streak ?? 0;
+    document.getElementById('stat-sessions').textContent = w.sessions ?? 0;
+    document.getElementById('stat-volume').textContent = fmtInt(w.volume) + ' ' + data.unit;
+    document.getElementById('stat-time').textContent = fmtSecs(w.seconds);
+    renderDelta('delta-sessions', w.sessionsDelta);
+    renderDelta('delta-volume', w.volumeDelta);
+    renderDelta('delta-time', w.secondsDelta);
+
+    renderPlan(data.plan || []);
+    renderRecovery(data.recovery);
+    renderRecent(data.recent || [], data.unit);
+    renderSleep(data.sleep);
+    renderRecords(data.records || []);
+})();
+</script>
+{% endblock %}

@@ -16,6 +16,7 @@ from profile_view import profile_summary
 import equipment_store
 import facts_store
 import cardio_page
+import dashboard as dashboard_calc
 import connections_store
 import reconcile
 import session_detail
@@ -159,8 +160,8 @@ def media_proxy():
         print(f"[ERROR] Cache download failed for {remote_url}: {e}")
         return redirect(remote_url)
 
-@app.route('/')
-def index():
+@app.route('/workouts')
+def workouts_page():
     if not client.credentials.get("token"):
         return redirect(url_for('settings'))
 
@@ -178,6 +179,138 @@ def index():
 
     unit = client.credentials.get('unit', 0)
     return render_template('index.html', workouts=workouts, unit=unit)
+
+
+@app.route('/')
+def index():
+    """The dashboard: what to do today, what's still recovering, what happened lately."""
+    if not client.credentials.get("token"):
+        return redirect(url_for('settings'))
+    return render_template('dashboard.html')
+
+
+@app.route('/api/dashboard')
+def api_dashboard():
+    """Everything the dashboard shows, in one call.
+
+    Each block is computed independently and a failure in one must not empty the page —
+    a missing sleep reading is not a reason to hide the training summary.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    today = datetime.date.today()
+    now = datetime.datetime.now()
+    out = {"unit": _unit_label(), "today": today.isoformat()}
+
+    try:
+        records = client.get_training_records((today - datetime.timedelta(days=90)).isoformat(),
+                                              today.isoformat()) or []
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        records = []
+
+    out["streak"] = dashboard_calc.streak(records, today)
+    out["week"] = dashboard_calc.week_comparison(records, today)
+    out["recent"] = [{
+        "trainingId": r.get("trainingId"),
+        "title": r.get("title") or ("Phone health" if r.get("belongUserHealth") else "Workout"),
+        "date": str(r.get("startTime", ""))[:10],
+        "seconds": int(_num_or(r.get("trainingTime"))),
+        "volume": round(_num_or(r.get("totalCapacity")), 1),
+        "calories": int(_num_or(r.get("calorie"))),
+        "isHealth": bool(r.get("belongUserHealth")),
+    } for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)[:8]]
+
+    try:
+        out["recovery"] = dashboard_calc.muscle_recovery(
+            client.get_muscle_fatigue(), _last_trained_by_part(records, now), now)
+    except Exception as e:
+        print(f"Dashboard: no muscle fatigue ({e})")
+        out["recovery"] = {"available": False, "recovering": []}
+
+    # Overnight data lags, so look back rather than deciding from today alone.
+    out["sleep"] = {"available": False}
+    for back in range(CARDIO_LOOKBACK_DAYS):
+        stamp = (today - datetime.timedelta(days=back)).isoformat()
+        try:
+            summary = cardio_page.sleep_summary(client.get_sleep(stamp))
+        except Exception:
+            break
+        if summary.get("available"):
+            summary["date"] = stamp
+            out["sleep"] = summary
+            break
+
+    try:
+        out["plan"] = _todays_plan(today)
+    except Exception as e:
+        print(f"Dashboard: no plan ({e})")
+        out["plan"] = []
+
+    return jsonify(out)
+
+
+def _num_or(value, default=0.0):
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+# The longest recovery window, so older sessions cannot change the answer.
+RECOVERY_SCAN_HOURS = 72
+
+
+def _last_trained_by_part(records, now):
+    """body-part id -> when it was last trained.
+
+    A history record names a workout, not the muscles it hit, so this reads the exercises
+    inside each recent session and maps them through the library. Only sessions inside the
+    longest recovery window are fetched — older ones cannot affect the result, and each
+    one costs an API call.
+    """
+    index = muscle_index(client.get_library() or [])
+    part_of = {gid: entry["part"] for gid, entry in index.items() if entry.get("part")}
+    name_to_id = {name: pid for pid, name in dashboard_calc.BODY_PARTS.items()}
+    cutoff = now - datetime.timedelta(hours=RECOVERY_SCAN_HOURS)
+    last = {}
+    for rec in records:
+        if not dashboard_calc.is_gym_session(rec) or not rec.get('trainingId'):
+            continue
+        try:
+            started = datetime.datetime.fromisoformat(str(rec.get('startTime'))[:19])
+        except (TypeError, ValueError):
+            continue
+        if started < cutoff:
+            continue
+        kind = session_detail.detail_kind(rec.get('type'))
+        try:
+            detail = _session_detail(rec['trainingId'], kind) or []
+        except Exception as e:
+            if _is_auth_error(e):
+                raise
+            continue
+        for exercise in detail:
+            gid = exercise.get('actionLibraryGroupId')
+            part_name = part_of.get(int(gid)) if gid is not None else None
+            part_id = name_to_id.get(part_name)
+            if part_id is not None and (part_id not in last or started > last[part_id]):
+                last[part_id] = started
+    return last
+
+
+def _todays_plan(today):
+    """What's scheduled for today, from the month calendar."""
+    days = client.get_calendar_month(today.strftime('%Y-%m')) or []
+    for day in days:
+        if str(day.get('date')) == today.isoformat():
+            return [{"title": p.get('title') or 'Workout',
+                     "done": bool(p.get('isFinish')),
+                     "reserved": bool(p.get('isReservation')),
+                     "templateId": p.get('templateId')}
+                    for p in (day.get('trainingPlanList') or [])]
+    return []
 
 # --- Roadmap: a build-status record backed by a single JSON file ---
 ROADMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'roadmap.json')

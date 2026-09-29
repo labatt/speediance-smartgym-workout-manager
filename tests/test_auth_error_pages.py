@@ -36,10 +36,25 @@ class TestExpiredTokenRedirects(unittest.TestCase):
         self.assertEqual(resp.status_code, 302, "expired token must redirect, not 500")
         self.assertIn('/settings', resp.headers['Location'])
 
-    def test_dashboard_redirects_to_settings_instead_of_500(self):
-        resp = self._expired('/')
+    def test_workouts_grid_redirects_to_settings_instead_of_500(self):
+        resp = self._expired('/workouts')
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/settings', resp.headers['Location'])
+
+    def test_the_dashboard_api_answers_401_rather_than_500(self):
+        # The dashboard renders a shell and fetches afterwards, so an expired token
+        # surfaces here; the page redirects to /settings on a 401.
+        with mock.patch.object(app_module.client, 'credentials', {'token': 'stale', 'user_id': '1'}), \
+             mock.patch.object(app_module.client, 'get_training_records',
+                               side_effect=SpeedianceAuthError("Login expired. Please re-login.")):
+            resp = self.client.get('/api/dashboard')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_the_dashboard_page_redirects_on_a_401(self):
+        self.assertIn("window.location = '/settings'",
+                      self.client.get('/').get_data(as_text=True)
+                      if app_module.client.credentials.get('token') else
+                      open('templates/dashboard.html').read())
 
 
 if __name__ == '__main__':

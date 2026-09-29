@@ -504,6 +504,14 @@
       "affects": "templates/create.html, templates/library.html (shared filter markup)",
       "status": "queued",
       "notes": "From #60. The suggestion logic already exists in the MCP as suggest_load and in the web app's load anchors, so this is wiring rather than new analysis. Respect the unit rule: weights are in the account's display unit on read AND write, and a bilateral barbell set is the TOTAL across both cables, never one side's number."
+    },
+    {
+      "id": 63,
+      "title": "New dashboard: today's plan, recovery, week-vs-week, recent sessions, sleep",
+      "summary": "Replace the workouts grid at / with a real dashboard; move the grid to /workouts.",
+      "affects": "app.py, dashboard.py, templates/dashboard.html, templates/layout.html",
+      "status": "done",
+      "notes": "Requested 2026-09-29 ('create a cool new dashboard'). The old front page was the My Workouts grid; that moved to /workouts with its own nav entry, and / is now a real dashboard fed by one /api/dashboard call. Blocks: streak, this-week sessions/volume/time each with a percentage delta vs the previous seven days, today's plan from the month calendar, muscle recovery, recent sessions (phone-health imports marked and tinted), and sleep. dashboard.py is pure and unit-tested (18 tests). Decisions worth keeping: a delta renders ONLY when last week had a baseline, because 0% would read as 'no change' when the truth is 'nothing to compare'; an untrained today does not break a streak, since the day has not finished; and phone-health rows never count towards streak, volume or recovery, or a walk would read as a training day. BUG CAUGHT BEFORE SHIPPING: muscle recovery first derived 'when was this part last trained' from record.trainingPartId2 — a field history records DO NOT HAVE (0 of 5 live records carried it). The map was therefore always empty and the card cheerfully reported '100% ready' no matter what had been trained: a number that looked healthy and meant nothing. It now reads the exercises inside sessions from the last 72 hours and maps them to body parts through the library. Live after the fix: 29% ready, Core 50h left, Arms/Back/Shoulders 26h, Chest 2h — consistent with upper-body work the day before."
     }
   ]
 }
