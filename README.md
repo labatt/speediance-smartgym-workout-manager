@@ -205,8 +205,14 @@ were shown as failed rep targets, in red:
   `/api/workout/generate` and `/api/workout/refine` drop avoided ids from the exercise
   catalog and from the candidate pool before the model ever sees them, and the system
   prompt gets an explicit "Never include these exercises: ..." line as a second guard.
-- **The adaptive planner (`adaptive_training.py`) skips them too** — its movement
-  selection unions a caller-supplied avoided-ids set with the static `BLACKLIST`.
+- **The adaptive planner (`adaptive_training.py`) can skip them too, when asked** —
+  `build_plan(signals, avoided_ids=...)` and its movement/off-Speediance selection
+  helpers accept an `avoided_ids` set, unioned with the static `BLACKLIST`. Nothing in
+  this Flask app currently calls `build_plan()` — it's a separate, standalone planning
+  script bundled in this repo (reads its own hardcoded library-cache path, not this
+  app's `config.json`) — so today it skips avoided exercises only if *its* caller
+  passes `avoided_store.avoided_ids(avoided_store.db_path(...))` in; the plumbing to do
+  so is in place for whichever caller wires it up.
 - **Never blocks manual building** — adding an avoided exercise to the workout builder by
   hand (search/pick or import) still works; it just shows a "⊘ Marked avoided: &lt;reason&gt;"
   warning badge on that exercise's card.

@@ -64,9 +64,29 @@ class TestLoadLibraryAvoidedIds(unittest.TestCase):
 
     def test_refresh_pools_accepts_avoided_ids(self):
         planner._refresh_pools(avoided_ids={101})
-        self.addCleanup(lambda: planner._refresh_pools())   # restore real pools for other tests
         ids = {m.group_id for m in planner.ON_DEVICE_POOL}
         self.assertEqual(ids, {102})
+
+        # I-9: restore LIBRARY_CACHE/BLACKLIST BEFORE calling _refresh_pools() again, in
+        # one cleanup callback, so ordering can't get scrambled against setUp's own
+        # cleanups (which are LIFO-later than anything registered here, so they'd run
+        # AFTER whatever we register in the test body — the opposite of what a bare
+        # `addCleanup(_refresh_pools)` would need).
+        def _restore_and_refresh():
+            planner.LIBRARY_CACHE = self._orig_cache
+            planner.BLACKLIST = self._orig_blacklist
+            planner._refresh_pools()
+        self.addCleanup(_restore_and_refresh)
+
+        # Force cleanups now so this test can assert on the outcome deterministically,
+        # rather than trusting real teardown timing.
+        self.doCleanups()
+        on_ids = {m.group_id for m in planner.ON_DEVICE_POOL}
+        # Must reflect the REAL cache (restored), never this test's temp fixture (whose
+        # ids are 101/102) — that fixture file is about to be deleted by setUp's own
+        # TemporaryDirectory cleanup, which must not have already been read from twice.
+        self.assertNotIn(101, on_ids)
+        self.assertNotIn(102, on_ids)
 
     def test_refresh_pools_default_call_unaffected(self):
         planner._refresh_pools()
@@ -206,6 +226,41 @@ class TestAdaptiveTrainingPlanner(unittest.TestCase):
             if not ex.off_speediance
         ]
         self.assertEqual(positions, sorted(positions))
+
+    def test_avoided_ids_never_appear_in_the_plan(self):
+        """I-1: a plan built with avoided_ids must never contain those ids, on-device or
+        off-Speediance, whichever selection path they'd otherwise have come from."""
+        avoided = {1000, 1001, 1002, 2000}
+        plan = build_plan(TrainingSignals(
+            date="2026-06-10",
+            report_context="morning",
+            whoop_recovery=86,
+            whoop_strain_so_far=4.0,
+            bjj_strain=0.0,
+            bjj_completed=False,
+            garmin_body_battery=82,
+            morning_step_target=8500,
+        ), avoided_ids=avoided)
+
+        plan_ids = {ex.group_id for ex in plan.exercises}
+        self.assertFalse(plan_ids & avoided)
+        self.assertTrue(plan_ids)   # sanity: the rest of the pool still produced a plan
+
+    def test_avoided_ids_none_is_backward_compatible(self):
+        plan_without_arg = build_plan(TrainingSignals(
+            date="2026-06-10", report_context="morning", whoop_recovery=86,
+            whoop_strain_so_far=4.0, bjj_strain=0.0, bjj_completed=False,
+            garmin_body_battery=82, morning_step_target=8500,
+        ))
+        plan_with_none = build_plan(TrainingSignals(
+            date="2026-06-10", report_context="morning", whoop_recovery=86,
+            whoop_strain_so_far=4.0, bjj_strain=0.0, bjj_completed=False,
+            garmin_body_battery=82, morning_step_target=8500,
+        ), avoided_ids=None)
+        self.assertEqual(
+            [ex.group_id for ex in plan_without_arg.exercises],
+            [ex.group_id for ex in plan_with_none.exercises],
+        )
 
 
 if __name__ == "__main__":
