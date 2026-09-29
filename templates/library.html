@@ -1,6 +1,13 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<style>
+    .chip { padding: 0.25rem 0.7rem; border-radius: 9999px; font-size: 0.75rem;
+            background: #1f2937; color: #c3cbd9; border: 1px solid #374151; }
+    .chip:hover { background: #374151; color: #fff; }
+    .chip.active { background: #059669; color: #fff; border-color: #059669; }
+    .chip.unowned { opacity: 0.45; text-decoration: line-through; }
+</style>
 <div class="container mx-auto">
     
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -40,6 +47,61 @@
         {% endfor %}
     </div>
 
+
+    {# Filter rows below mirror what the Speediance data actually carries: muscle names from
+       the exercise's own main/assisting lists, tabName as the type, outPosition as the cable
+       height (0 top -> 10 floor) and foldingStoolAngle as the bench angle. Bench angle in
+       particular lets someone who cannot use a flat bench filter the library to what they
+       can actually perform. #}
+    <div id="advancedFilters" class="space-y-3 mb-4">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <p class="text-xs uppercase tracking-wider text-gray-500">Muscle</p>
+                <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" id="primaryOnly" class="h-3.5 w-3.5">
+                    Primary only
+                    <span title="Show a movement only where this is its MAIN muscle, not one it merely assists.">&#9432;</span>
+                </label>
+            </div>
+            <div class="flex flex-wrap gap-1.5" data-filter-row="muscleName">
+                <button data-value="all" class="chip active">All</button>
+                {% for m in ['Pecs','Back Extensors','Lats','Traps','Front Delts','Rear Delts','Side Delts',
+                             'Biceps','Triceps','Abs','Adductors','Calves','Hamstrings','Quads','Glutes'] %}
+                <button data-value="{{ m | lower }}" class="chip">{{ m }}</button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div>
+            <p class="text-xs uppercase tracking-wider text-gray-500 mb-1">Type</p>
+            <div class="flex flex-wrap gap-1.5" data-filter-row="type">
+                <button data-value="all" class="chip active">All</button>
+                {% for t in types %}<button data-value="{{ t | lower }}" class="chip">{{ t }}</button>{% endfor %}
+            </div>
+        </div>
+
+        <div>
+            <p class="text-xs uppercase tracking-wider text-gray-500 mb-1">Cable height <span class="text-gray-600 normal-case">0 top &rarr; 10 floor</span></p>
+            <div class="flex flex-wrap gap-1.5" data-filter-row="cable">
+                <button data-value="all" class="chip active">All</button>
+                <button data-value="0" class="chip">Top</button>
+                {% for n in range(1, 10) %}<button data-value="{{ n }}" class="chip">{{ n }}</button>{% endfor %}
+                <button data-value="10" class="chip">Floor</button>
+                <button data-value="none" class="chip">No cable</button>
+            </div>
+        </div>
+
+        <div>
+            <p class="text-xs uppercase tracking-wider text-gray-500 mb-1">Bench angle</p>
+            <div class="flex flex-wrap gap-1.5" data-filter-row="bench">
+                <button data-value="all" class="chip active">All</button>
+                {% for a in ['30','45','60','75','90'] %}<button data-value="{{ a }}" class="chip">{{ a }}&deg;</button>{% endfor %}
+                <button data-value="none" class="chip">No bench</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="activeChips" class="hidden flex flex-wrap items-center gap-2 mb-4"></div>
     <div class="flex flex-wrap gap-2 mb-8 justify-center md:justify-start">
         <button onclick="filterByMuscle('all', this)" class="filter-btn active px-4 py-2 rounded-full text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition">All Muscles</button>
         <button onclick="filterByMuscle('11', this)" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 transition">Chest</button>
@@ -101,7 +163,7 @@
                 </thead>
                 <tbody class="bg-gray-800 divide-y divide-gray-700">
                     {% for ex in exercises %}
-                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}" data-avoided="{{ '1' if ex.id in avoided else '0' }}" data-group-id="{{ ex.id }}">
+                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}" data-main-muscles="{{ (ex.mainMuscleGroupList | map(attribute='muscleGroupName') | join(',')) | lower }}" data-type="{{ ex.tabName | lower }}" data-cable="{{ ex.get('outPosition') if ex.get('outPosition') is not none else 'none' }}" data-bench="{{ ex.foldingStoolAngle | replace('°','') if ex.foldingStoolAngle else 'none' }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}" data-avoided="{{ '1' if ex.id in avoided else '0' }}" data-group-id="{{ ex.id }}">
                         <td class="px-4 py-2 font-mono text-xs text-gray-500 align-top">{{ ex.id }}</td>
                         <td class="px-4 py-2 font-bold text-white align-top">
                             {{ ex.title }}
@@ -142,7 +204,7 @@
         {% for ex in exercises %}
         <div class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10 relative"
            data-title="{{ ex.title | lower }}"
-           data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}"
+           data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}" data-main-muscles="{{ (ex.mainMuscleGroupList | map(attribute='muscleGroupName') | join(',')) | lower }}" data-type="{{ ex.tabName | lower }}" data-cable="{{ ex.get('outPosition') if ex.get('outPosition') is not none else 'none' }}" data-bench="{{ ex.foldingStoolAngle | replace('°','') if ex.foldingStoolAngle else 'none' }}"
            data-category="{{ ex.category_id }}"
            data-device="{{ ex.device_type_tag | default(ex.device_type) }}"
            data-accessories="{{ ex.accessories }}"
@@ -453,6 +515,23 @@
     // own main/assisting muscle names, which is finer than the body-part buttons.
     let namedMuscle = '';
 
+    // The chip rows added below the body-part buttons. Each is one value or 'all'.
+    const chipFilters = { muscleName: 'all', type: 'all', cable: 'all', bench: 'all' };
+    let primaryOnly = false;
+
+    function chipMatches(el) {
+        if (chipFilters.type !== 'all' && (el.getAttribute('data-type') || '') !== chipFilters.type) return false;
+        if (chipFilters.cable !== 'all' && (el.getAttribute('data-cable') || '') !== chipFilters.cable) return false;
+        if (chipFilters.bench !== 'all' && (el.getAttribute('data-bench') || '') !== chipFilters.bench) return false;
+        if (chipFilters.muscleName !== 'all') {
+            // "Primary only" asks for movements where this is the MAIN muscle, not one
+            // it merely assists — the two answer different training questions.
+            const attr = primaryOnly ? 'data-main-muscles' : 'data-muscles';
+            if (!(el.getAttribute(attr) || '').split(',').includes(chipFilters.muscleName)) return false;
+        }
+        return true;
+    }
+
     function runFilters() {
         applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
     }
@@ -460,6 +539,47 @@
     function matchesNamedMuscle(el) {
         if (!namedMuscle) return true;
         return (el.getAttribute('data-muscles') || '').split(',').includes(namedMuscle);
+    }
+
+    // Chip rows, the primary-only toggle, and the active-filter summary.
+    document.querySelectorAll('[data-filter-row]').forEach(row => {
+        const key = row.getAttribute('data-filter-row');
+        row.addEventListener('click', e => {
+            const btn = e.target.closest('.chip');
+            if (!btn) return;
+            chipFilters[key] = btn.dataset.value;
+            row.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === btn));
+            renderActiveChips();
+            runFilters();
+        });
+    });
+    document.getElementById('primaryOnly').addEventListener('change', e => {
+        primaryOnly = e.target.checked;
+        runFilters();
+    });
+
+    const CHIP_LABELS = { muscleName: 'Muscle', type: 'Type', cable: 'Cable', bench: 'Bench' };
+
+    function clearChip(key) {
+        chipFilters[key] = 'all';
+        const row = document.querySelector(`[data-filter-row="${key}"]`);
+        row.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.value === 'all'));
+        renderActiveChips();
+        runFilters();
+    }
+
+    function renderActiveChips() {
+        const host = document.getElementById('activeChips');
+        const active = Object.entries(chipFilters).filter(([, v]) => v !== 'all');
+        if (!active.length) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+        host.classList.remove('hidden');
+        host.innerHTML = active.map(([k, v]) =>
+            `<button class="chip active" data-clear="${k}">${CHIP_LABELS[k]}: ${v} &times;</button>`).join('')
+            + '<button class="chip" data-clear="__all">Clear all</button>';
+        host.querySelectorAll('[data-clear]').forEach(b => b.addEventListener('click', () => {
+            if (b.dataset.clear === '__all') Object.keys(chipFilters).forEach(clearChip);
+            else clearChip(b.dataset.clear);
+        }));
     }
 
     function applyFilters(searchTerm, muscleId, catId, deviceType) {
@@ -480,7 +600,7 @@
             const matchesAccessories = passesAccessoryFilter(cardAccessories, cardCategory);
             const matchesAvoided = passesAvoidedFilter(card.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(card)) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(card) && chipMatches(card)) {
                 card.style.display = 'block';
                 visibleCount++;
             } else {
@@ -503,7 +623,7 @@
             const matchesAccessories = passesAccessoryFilter(rowAccessories, rowCategory);
             const matchesAvoided = passesAvoidedFilter(row.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(row)) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(row) && chipMatches(row)) {
                 row.style.display = 'table-row';
             } else {
                 row.style.display = 'none';

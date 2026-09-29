@@ -1581,6 +1581,9 @@ def library():
         
     owned_accessories = client.credentials.get('owned_accessories', [])
     owned_devices = client.credentials.get('owned_devices', [])
+    # Exercise 'types' are the library's own tab names; read them from the data so a new
+    # Speediance category appears without a code change.
+    types = sorted({(ex.get('tabName') or '').strip() for ex in exercises if ex.get('tabName')})
     avoided = {row["group_id"]: row["reason"] for row in _avoided_list_safe()}
     return render_template(
         'library.html',
@@ -1591,6 +1594,7 @@ def library():
         owned_accessories=owned_accessories,
         owned_devices=owned_devices,
         avoided=avoided,
+        types=types,
     )
 
 @app.route('/library/refresh')
