@@ -215,7 +215,12 @@ function renderRecords(records) {
     renderRecovery(data.recovery);
     renderRecent(data.recent || [], data.unit);
     renderSleep(data.sleep);
-    renderRecords(data.records || []);
+    // Records need a per-exercise scan, so they load after the page rather than holding
+    // it up; an empty or failed result simply leaves the card hidden.
+    try {
+        const rr = await fetch('/api/dashboard/records');
+        if (rr.ok) renderRecords((await rr.json()).records || []);
+    } catch (e) { /* the card stays hidden */ }
 })();
 </script>
 {% endblock %}

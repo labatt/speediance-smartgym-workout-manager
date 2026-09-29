@@ -120,6 +120,14 @@ class TestPersonalRecords(unittest.TestCase):
         rows = [{"date": "2026-09-28", "maxWeight": 60, "totalCapacity": 1200}]
         self.assertEqual(personal_records(self.stats(rows), today=TODAY), [])
 
+    def test_the_stats_feeds_dayStr_key_is_accepted(self):
+        # userActionStatPage keys its rows `dayStr`, not `date`; missing that silently
+        # produced no records at all.
+        rows = [{"dayStr": "2026-09-01", "maxWeight": 50, "totalCapacity": 900},
+                {"dayStr": "2026-09-28", "maxWeight": 60, "totalCapacity": 1200}]
+        got = personal_records(self.stats(rows), today=TODAY)
+        self.assertEqual(got[0]["daysAgo"], 1)
+
     def test_unparseable_dates_are_skipped_not_fatal(self):
         rows = [{"date": "n/a", "maxWeight": 60}, {"date": "2026-09-28", "maxWeight": 70,
                                                    "totalCapacity": 10}]

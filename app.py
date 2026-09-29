@@ -251,6 +251,46 @@ def api_dashboard():
     return jsonify(out)
 
 
+# Bounds on the personal-records scan: each exercise costs one stats call, so this
+# looks at the movements from the most recent sessions rather than the whole catalog.
+PR_SESSIONS_SCANNED = 3
+PR_MAX_EXERCISES = 12
+
+
+@app.route('/api/dashboard/records')
+def api_dashboard_records():
+    """Recent personal bests, fetched separately so a slow scan never delays the page."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    today = datetime.date.today()
+    try:
+        records = client.get_training_records((today - datetime.timedelta(days=21)).isoformat(),
+                                              today.isoformat()) or []
+        recent = [r for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)
+                  if dashboard_calc.is_gym_session(r) and r.get("trainingId")][:PR_SESSIONS_SCANNED]
+        movements = {}
+        for rec in recent:
+            kind = session_detail.detail_kind(rec.get('type'))
+            for exercise in (_session_detail(rec['trainingId'], kind) or []):
+                gid, name = exercise.get('actionLibraryGroupId'), exercise.get('actionLibraryName')
+                if gid is not None and name and name not in movements:
+                    movements[name] = gid
+                if len(movements) >= PR_MAX_EXERCISES:
+                    break
+        stats = {}
+        for name, gid in movements.items():
+            payload = client.get_user_action_stats(gid) or {}
+            rows = payload.get('data')
+            if isinstance(rows, list) and rows:
+                stats[name] = rows
+        return jsonify({"records": dashboard_calc.personal_records(stats, today=today)})
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        print(f"Dashboard records failed: {e}")
+        return jsonify({"records": []})
+
+
 def _num_or(value, default=0.0):
     try:
         return float(value) if value is not None else default

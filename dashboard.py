@@ -165,7 +165,8 @@ def personal_records(exercise_stats, within_days=14, today=None):
         dated = []
         for row in rows or []:
             day = None
-            stamp = str(row.get("date") or row.get("startTime") or "")[:10]
+            # userActionStatPage keys its rows `dayStr`; other feeds use date/startTime.
+            stamp = str(row.get("dayStr") or row.get("date") or row.get("startTime") or "")[:10]
             try:
                 day = datetime.date.fromisoformat(stamp)
             except ValueError:
