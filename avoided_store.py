@@ -32,9 +32,17 @@ CREATE TABLE IF NOT EXISTS exercise_marks (
 
 def db_path(config):
     """Resolve the shared store path from a config/credentials dict: the
-    `avoided_db_path` key when set, else DEFAULT_PATH."""
+    `avoided_db_path` key when set, else the `AVOIDED_DB_PATH` env var when set
+    (the test suite uses this to keep every test off the real, shared DB file even
+    when a caller forgets to pass an explicit path), else DEFAULT_PATH."""
     config = config or {}
-    return config.get("avoided_db_path") or DEFAULT_PATH
+    explicit = config.get("avoided_db_path")
+    if explicit:
+        return explicit
+    env = os.environ.get("AVOIDED_DB_PATH")
+    if env:
+        return env
+    return DEFAULT_PATH
 
 
 def _now_iso():
@@ -51,7 +59,16 @@ def _connect(path):
     conn.execute(_DDL)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(exercise_marks)").fetchall()}
     if "reason" not in cols:
-        conn.execute("ALTER TABLE exercise_marks ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
+        try:
+            conn.execute("ALTER TABLE exercise_marks ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            # Another process (this app's other worker, or speediance-mcp) may have run the
+            # same migration between our PRAGMA check and this ALTER. Re-check rather than
+            # assume that's what happened: only swallow the error if the column is now
+            # actually there; otherwise it was a real failure and must surface.
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(exercise_marks)").fetchall()}
+            if "reason" not in cols:
+                raise
     conn.commit()
     return conn
 
