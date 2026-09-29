@@ -198,8 +198,8 @@
       "title": "Avoided exercises: one shared list for the web app and the MCP server (select/deselect, with reasons)",
       "summary": "Mark/unmark exercises as avoided (optional reason) from the web app (Library toggle + filter, Settings list) and from claude.ai via MCP; generators never pick them; builder and MCP create/update warn. Single store: the MCP server's SQLite (exercise_marks), shared via a web app config path.",
       "affects": "web app: new avoided store + /api/avoided routes, library.html, settings.html, create.html, workout_gen.py, adaptive_training.py; speediance-mcp: memory.py (reason), tools",
-      "status": "working",
-      "notes": "Requested 2026-09-28 ('exercises I can't do ... select and deselect'). Design approved in chat."
+      "status": "done",
+      "notes": "Requested 2026-09-28 ('exercises I can't do ... select and deselect'). Design approved in chat. DONE and deployed 2026-09-28 (merged 242bdef, pushed to the fork). One shared store (the MCP DB's exercise_marks, with a reason column). Web: Library toggle (1041 toggles render) with an inline reason and an all/hide/only filter; Settings list with remove buttons and a persistent Library link; the builder warns without blocking; AI generate/refine never pick avoided moves (refine keeps ones already in your workout, with a truthful warning); adaptive_training.build_plan accepts avoided_ids (no caller yet); store errors never break pages (503 on writes); tests isolated from the live DB. MCP: mark_exercise reason, reasons shown in reads, create/update flag avoided moves. Live check: /api/avoided lists the 21 avoided marks set via claude.ai; /library, /settings and /create all 200. Two review rounds on the web side, one on the MCP side."
     },
     {
       "id": 25,
