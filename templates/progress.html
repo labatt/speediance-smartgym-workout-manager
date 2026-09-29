@@ -110,8 +110,10 @@ const SILHOUETTE = [
 
 const FRONT = [
     ['Traps',        'Traps',        'M52 38 C56 37 64 37 68 38 C66 43 63 45 60 45 C57 45 54 43 52 38 Z'],
-    ['Front Delts',  'Front Delts',  'M33 48 C28 51 25 58 24 66 C29 64 34 61 37 57 C38 53 36 50 33 48 Z'],
-    ['Front Delts',  'Front Delts',  'M87 48 C92 51 95 58 96 66 C91 64 86 61 83 57 C82 53 84 50 87 48 Z'],
+    ['Side Delts',   'Side Delts',   'M28 45 C23 48 20 55 19 64 C22 65 25 63 27 58 C29 52 29 47 28 45 Z'],
+    ['Side Delts',   'Side Delts',   'M92 45 C97 48 100 55 101 64 C98 65 95 63 93 58 C91 52 91 47 92 45 Z'],
+    ['Front Delts',  'Front Delts',  'M34 48 C31 52 29 58 29 66 C33 64 36 61 39 57 C39 52 37 49 34 48 Z'],
+    ['Front Delts',  'Front Delts',  'M86 48 C89 52 91 58 91 66 C87 64 84 61 81 57 C81 52 83 49 86 48 Z'],
     ['Pecs',         'Pecs',         'M58 50 C49 50 41 52 36 57 C36 67 39 74 44 79 C50 81 55 81 58 79 Z'],
     ['Pecs',         'Pecs',         'M62 50 C71 50 79 52 84 57 C84 67 81 74 76 79 C70 81 65 81 62 79 Z'],
     ['Abs',          'Abs',          'M51 84 C54 83 66 83 69 84 C70 95 70 106 69 117 C69 126 68 132 67 136 '
@@ -136,8 +138,10 @@ const FRONT = [
 const BACK = [
     ['Traps',        'Traps',        'M60 38 C68 38 78 41 84 46 C80 56 74 66 68 72 C65 74 55 74 52 72 '
                                     + 'C46 66 40 56 36 46 C42 41 52 38 60 38 Z'],
-    ['Rear Delts',   'Rear Delts',   'M33 48 C28 51 25 58 24 66 C29 64 34 61 37 57 C38 53 36 50 33 48 Z'],
-    ['Rear Delts',   'Rear Delts',   'M87 48 C92 51 95 58 96 66 C91 64 86 61 83 57 C82 53 84 50 87 48 Z'],
+    ['Side Delts',   'Side Delts',   'M28 45 C23 48 20 55 19 64 C22 65 25 63 27 58 C29 52 29 47 28 45 Z'],
+    ['Side Delts',   'Side Delts',   'M92 45 C97 48 100 55 101 64 C98 65 95 63 93 58 C91 52 91 47 92 45 Z'],
+    ['Rear Delts',   'Rear Delts',   'M34 48 C31 52 29 58 29 66 C33 64 36 61 39 57 C39 52 37 49 34 48 Z'],
+    ['Rear Delts',   'Rear Delts',   'M86 48 C89 52 91 58 91 66 C87 64 84 61 81 57 C81 52 83 49 86 48 Z'],
     ['Lats',         'Lats',         'M37 60 C43 70 50 78 56 82 C56 94 55 104 54 112 C47 108 41 100 38 90 '
                                     + 'C36 80 36 69 37 60 Z'],
     ['Lats',         'Lats',         'M83 60 C77 70 70 78 64 82 C64 94 65 104 66 112 C73 108 79 100 82 90 '
@@ -213,9 +217,9 @@ function drawFigure(svg, regions, volumes, peak, unit) {
             'data-muscle': muscle, 'data-volume': volume, 'data-share': share,
             style: 'cursor:pointer',
         });
-        path.addEventListener('mouseenter', () => showTip(svg, muscle, label, volume, share, unit));
+        path.addEventListener('mouseenter', () => { setHighlight(muscle, true); showTip(label, volume, share, unit); });
         path.addEventListener('mousemove', moveTip);
-        path.addEventListener('mouseleave', hideTip);
+        path.addEventListener('mouseleave', () => { setHighlight(muscle, false); hideTip(); });
         svg.appendChild(path);
     });
     if (regions === FRONT) {
@@ -237,32 +241,34 @@ function tip() {
     }
     return tipEl;
 }
-function showTip(svg, muscle, label, volume, share, unit) {
+// A muscle appears once per view (twice when it is symmetric) and once in the table.
+// Highlighting keys on the name, so every appearance responds together — which is also
+// how you find a muscle you cannot spot on the figure.
+function setHighlight(muscle, on) {
+    const sel = `path[data-muscle="${CSS.escape(muscle)}"]`;
+    document.querySelectorAll('#figFront ' + sel + ', #figBack ' + sel).forEach(p => {
+        p.setAttribute('stroke', on ? '#e5e7eb' : '#2b3548');
+        p.setAttribute('stroke-width', on ? '1.6' : '0.7');
+    });
+    const row = document.querySelector(`tr[data-muscle="${CSS.escape(muscle)}"]`);
+    if (row) row.classList.toggle('bg-gray-800', on);
+}
+
+function showTip(label, volume, share, unit) {
     const node = tip();
     const vol = volume > 0 ? `${Math.round(volume).toLocaleString()} ${unit}` : 'no volume';
     node.innerHTML = `<span class="font-semibold">${label}</span><br>`
         + `<span class="text-gray-300">${vol}</span><br>`
         + `<span class="text-gray-400">${statusWord(volume, share, unit)}</span>`;
     node.classList.remove('hidden');
-    // Left and right are the same muscle, so light both up rather than implying they differ.
-    svg.querySelectorAll(`path[data-muscle="${CSS.escape(muscle)}"]`).forEach(p => {
-        p.setAttribute('stroke', '#e5e7eb');
-        p.setAttribute('stroke-width', '1.4');
-    });
 }
 function moveTip(e) {
     const node = tip();
     node.style.left = Math.min(e.clientX + 14, window.innerWidth - 150) + 'px';
     node.style.top = (e.clientY + 14) + 'px';
 }
-function hideTip(e) {
+function hideTip() {
     tip().classList.add('hidden');
-    const svg = e.currentTarget.ownerSVGElement;
-    const muscle = e.currentTarget.getAttribute('data-muscle');
-    svg.querySelectorAll(`path[data-muscle="${CSS.escape(muscle)}"]`).forEach(p => {
-        p.setAttribute('stroke', '#2b3548');
-        p.setAttribute('stroke-width', '0.7');
-    });
 }
 
 let currentDays = 30;
@@ -320,13 +326,19 @@ async function load(days) {
         : `${fmt(r.upper)} vs ${fmt(r.lower)} ${data.unit} — ratio ${r.upperLower.toFixed(2)} (1.00 is even).`;
 
     document.getElementById('muscleRows').innerHTML = data.byMuscle.map(row => `
-        <tr class="border-t border-gray-800">
+        <tr class="border-t border-gray-800 cursor-default" data-muscle="${row.muscle}">
             <td class="py-1.5 text-gray-300">${row.muscle}</td>
             <td class="py-1.5 pr-3 text-right text-gray-200 whitespace-nowrap">${fmt(row.volume)}</td>
             <td class="py-1.5 pl-2">
                 <span class="block h-2 rounded" style="width:${peak ? Math.max(2, 100 * row.volume / peak) : 0}%;background:${shade(peak ? row.volume / peak : 0)}"></span>
             </td>
         </tr>`).join('');
+
+    document.querySelectorAll('#muscleRows tr[data-muscle]').forEach(row => {
+        const muscle = row.dataset.muscle;
+        row.addEventListener('mouseenter', () => setHighlight(muscle, true));
+        row.addEventListener('mouseleave', () => setHighlight(muscle, false));
+    });
 
     const nt = document.getElementById('notTrained');
     nt.innerHTML = data.notTrained.length
