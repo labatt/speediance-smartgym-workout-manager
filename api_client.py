@@ -918,6 +918,21 @@ class SpeedianceClient:
             print(f"Error fetching training session info: {e}")
             return {}
 
+    def get_profile(self):
+        """The account's profile: sex, birthday, height, bodyweight, units, watch.
+        GET /api/app/userinfo/info
+        """
+        url = f"{self.base_url}/api/app/userinfo/info"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers())
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching profile: {e}")
+            return {}
+
     def get_rowing_graph(self, uuid):
         """Per-point rowing/ski telemetry for one session.
         GET /api/app/boatingSkiDataGraph/{uuid}

@@ -286,8 +286,8 @@
       "title": "Show units and profile read-only in Settings (unit system, length unit, sex, birthday, height, bodyweight)",
       "summary": "Read-only mirror of the Speediance account's units and profile ('set in the Speediance app'), so lb vs kg is always visible. Editing profile fields waits until Speediance's update route is found.",
       "affects": "web app settings.html + app.py (userinfo read)",
-      "status": "queued",
-      "notes": "From the GM Manager Settings evaluation (#31). Unit must come from the reliable source (the phone-type login 'unit'), not userinfo.weightUnit, which is 0 on lb accounts."
+      "status": "done",
+      "notes": "From the GM Manager Settings evaluation (#31). Unit must come from the reliable source (the phone-type login 'unit'), not userinfo.weightUnit, which is 0 on lb accounts. DONE 2026-09-29: profile_view.py + a read-only 'Speediance account' block in Settings (unit system, bodyweight, height, sex, birthday + age, watch, email), fed by a new api_client.get_profile() on GET /api/app/userinfo/info. The unit is taken from config (unit=1), NOT from the payload's weightUnit, which reads 0 on this imperial account — the trap this item existed to avoid. Missing fields are omitted rather than shown blank, and a failing profile fetch never takes Settings down. Bonus found in the payload: isSoftwareLoggedIn / isHardwareLoggedIn, now shown as 'Signed in right now: phone app / Gym Monster' — a direct read on the session-slot problem. 9 tests."
     },
     {
       "id": 36,

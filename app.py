@@ -12,6 +12,7 @@ from cardio_stats import is_cardio_record, derive_cardio_stats
 from rowing_stats import derive_rowing_blocks
 from muscle_balance import muscle_index, attribute, ratios, untrained
 from accessories import dedupe_accessories, is_owned, parse_selected_ids
+from profile_view import profile_summary
 import reconcile
 import session_detail
 import datetime
@@ -225,9 +226,18 @@ def settings():
     owned_ids = creds.get('owned_accessories', [])
     for entry in accessories:
         entry['owned'] = is_owned(entry, owned_ids)
+    profile = None
+    if creds.get('token'):
+        try:
+            profile = profile_summary(client.get_profile(), creds.get('unit', 0))
+        except Exception as e:
+            if _is_auth_error(e):
+                raise
+            profile = None   # the profile is a read-only mirror; never block Settings on it
     avoided = _avoided_list_safe()
     return render_template('settings.html', creds=creds, accessories=accessories,
-                           wp_connected=wellness.is_connected(), avoided=avoided)
+                           wp_connected=wellness.is_connected(), avoided=avoided,
+                           profile=profile)
 
 @app.route('/settings/custom_instruction', methods=['POST'])
 def update_custom_instruction():

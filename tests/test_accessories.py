@@ -73,6 +73,7 @@ class TestSettingsIntegration(unittest.TestCase):
         creds = {'token': 't', 'user_id': '1', 'unit': 1, 'owned_accessories': [25]}
         with mock.patch.object(app_module.client, 'credentials', creds), \
              mock.patch.object(app_module.client, 'get_accessories', return_value=CATALOG), \
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
              mock.patch.object(app_module, '_avoided_list_safe', return_value=[]), \
              mock.patch.object(app_module.wellness, 'is_connected', return_value=False):
             html = self.client.get('/settings').get_data(as_text=True)

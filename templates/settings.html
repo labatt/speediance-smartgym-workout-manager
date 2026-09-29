@@ -220,6 +220,28 @@
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Devices</button>
         </form>
 
+        {% if profile %}
+        <div class="pt-5 border-t border-gray-700">
+            <label class="block text-sm font-bold mb-1 text-gray-300">Speediance account</label>
+            <p class="text-xs text-gray-500 mb-3">Read-only — change these in the Speediance app.
+                The unit system decides how every weight in this app is labelled.</p>
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                {% for row in profile.rows %}
+                <div class="flex justify-between gap-3 py-1 border-b border-gray-800">
+                    <dt class="text-gray-400">{{ row.label }}</dt>
+                    <dd class="text-gray-200 text-right truncate">{{ row.value }}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+            <p class="text-xs text-gray-500 mt-3">
+                Signed in right now:
+                <span class="{{ 'text-green-400' if profile.signedInPhone else 'text-gray-600' }}">phone app</span>
+                &middot;
+                <span class="{{ 'text-green-400' if profile.signedInMachine else 'text-gray-600' }}">Gym Monster</span>
+            </p>
+        </div>
+        {% endif %}
+
         {% if accessories %}
         <form action="/settings/accessories" method="POST" class="pt-5 border-t border-gray-700">
             <label class="block text-sm font-bold mb-1 text-gray-300">Owned Accessories</label>
