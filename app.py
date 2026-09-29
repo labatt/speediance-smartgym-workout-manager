@@ -9,6 +9,7 @@ import workout_gen
 import avoided_store
 import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
+from rowing_stats import derive_rowing_blocks
 import reconcile
 import session_detail
 import datetime
@@ -1783,6 +1784,30 @@ def _session_detail(training_id, kind):
         detail = rows if isinstance(rows, list) else []
     return detail
 
+
+@app.route('/api/session/<int:training_id>/rowing')
+def api_session_rowing(training_id):
+    """Per-block rowing telemetry for one session.
+
+    The uuid is resolved here from the session's own summary rather than accepted from
+    the query string, so a caller can only ever read a session this account owns.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        info = client.get_training_session_info(training_id) or {}
+        if info.get("existBoatingSkiDataGraph") is not True:
+            return jsonify({"available": False,
+                            "reason": "This session has no rowing telemetry."})
+        uuid = info.get("uuid")
+        if not uuid:
+            return jsonify({"available": False,
+                            "reason": "This session has telemetry but no recording id to fetch it with."})
+        return jsonify(derive_rowing_blocks(client.get_rowing_graph(uuid)))
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/history/detail/<int:training_id>')
 def api_history_detail(training_id):

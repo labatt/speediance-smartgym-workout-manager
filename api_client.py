@@ -918,6 +918,24 @@ class SpeedianceClient:
             print(f"Error fetching training session info: {e}")
             return {}
 
+    def get_rowing_graph(self, uuid):
+        """Per-point rowing/ski telemetry for one session.
+        GET /api/app/boatingSkiDataGraph/{uuid}
+
+        Keyed on the session UUID, NOT the trainingId: the numeric id is accepted but
+        answers null. Only call it when the session's existBoatingSkiDataGraph is true.
+        """
+        url = f"{self.base_url}/api/app/boatingSkiDataGraph/{uuid}"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers())
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching rowing graph: {e}")
+            return {}
+
     def get_user_action_stats(self, group_id, page=1, size=12):
         """Fetches historical statistics for a specific exercise group."""
         url = f"{self.base_url}/api/app/actionLibraryGroup/userActionStatPage?id={group_id}&pageNo={page}&pageSize={size}"

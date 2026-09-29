@@ -712,11 +712,66 @@
 
         tiles.forEach(([label, value, hint]) => grid.appendChild(cardioTile(label, value, hint)));
         container.appendChild(grid);
+        const rowing = document.createElement('div');
+        rowing.className = 'mt-4';
+        rowing.id = 'rowingBlocks';
+        container.appendChild(rowing);
         const trend = document.createElement('div');
         trend.className = 'mt-4';
         trend.id = 'cardioTrend';
         container.appendChild(trend);
-        loadCardioTrend(rec_currentTrainingId(session));
+        const id = rec_currentTrainingId(session);
+        loadRowingBlocks(id, session);
+        loadCardioTrend(id);
+    }
+
+    // Per-block rowing telemetry. The tiles above average the WHOLE session, rest included;
+    // these blocks average only the time actually stroking, so the two legitimately differ.
+    async function loadRowingBlocks(trainingId, session) {
+        const host = document.getElementById('rowingBlocks');
+        if (!host || !trainingId || session.existBoatingSkiDataGraph !== true) return;
+        host.innerHTML = '<p class="text-xs text-gray-500">Loading stroke data…</p>';
+        let data;
+        try {
+            const resp = await fetch(`/api/session/${trainingId}/rowing`);
+            data = await resp.json();
+        } catch (e) {
+            host.innerHTML = '<p class="text-xs text-gray-500">Stroke data could not be loaded.</p>';
+            return;
+        }
+        if (!data || data.available !== true || !(data.blocks || []).length) {
+            host.innerHTML = `<p class="text-xs text-gray-500">${data && data.reason ? data.reason : 'No stroke data for this session.'}</p>`;
+            return;
+        }
+        const pace = v => v == null ? '-' : fmtPace(v).replace(' /500m', '');
+        const rows = data.blocks.map(b => `
+            <tr class="border-t border-gray-700">
+                <td class="p-2 text-gray-300">${b.block}</td>
+                <td class="p-2 text-gray-400 whitespace-nowrap">${fmtSeconds(b.seconds)}</td>
+                <td class="p-2 text-gray-400">${b.targetStrokeRate || '-'}</td>
+                <td class="p-2 text-blue-400">${b.avgStrokeRate == null ? '-' : b.avgStrokeRate}</td>
+                <td class="p-2 text-blue-400 whitespace-nowrap">${pace(b.avgPace500)}</td>
+                <td class="p-2 text-blue-400">${b.avgWatts == null ? '-' : b.avgWatts + ' W'}</td>
+                <td class="p-2 ${b.inTargetPercent == null ? 'text-gray-500' : (b.inTargetPercent >= 80 ? 'text-green-400' : 'text-yellow-400')}">${b.inTargetPercent == null ? '-' : Math.round(b.inTargetPercent) + '%'}</td>
+            </tr>`).join('');
+        host.innerHTML = `
+            <h4 class="text-sm font-semibold text-gray-200 mb-1">Stroke data by block</h4>
+            <p class="text-[11px] text-gray-500 mb-2">
+                While stroking: ${pace(data.avgPace500)} /500m avg, best ${pace(data.bestPace500)},
+                ${data.avgStrokeRate ?? '-'} spm, ${data.avgWatts ?? '-'} W.
+                ${fmtSeconds(data.restingSec)} of the ${fmtSeconds(data.durationSec)} was rest, which the tiles above include.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs min-w-[520px]">
+                <thead><tr class="text-gray-400 text-left">
+                  <th class="p-2 font-medium">#</th><th class="p-2 font-medium">Time</th>
+                  <th class="p-2 font-medium">Target spm</th><th class="p-2 font-medium">Avg spm</th>
+                  <th class="p-2 font-medium">Avg pace</th><th class="p-2 font-medium">Avg power</th>
+                  <th class="p-2 font-medium">In target</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>`;
     }
 
     function rec_currentTrainingId(session) {
