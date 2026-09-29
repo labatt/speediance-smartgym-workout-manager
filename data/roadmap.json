@@ -215,7 +215,7 @@
       "summary": "Training is split between Miami (Gym Monster, barbell, rope, both benches, AeroRow) and Tampa (a dual-stack trainer with handles and a bar, no rope, per-side loads, a six-hour window). Nothing models this, so template titles carry 'dial these numbers PER SIDE' and Claude has given wrong numbers twice.",
       "affects": "web app + speediance-mcp (preferences, templates, generators)",
       "status": "future",
-      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth."
+      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth. 2026-09-28 user: location equipment = the Speediance standard accessory list plus free-text items; exercises for any machine (including non-Speediance ones) come from the Speediance library, filtered by what that location has."
     },
     {
       "id": 27,
