@@ -424,7 +424,13 @@
 
         records.forEach(rec => {
             const tr = document.createElement('tr');
-            const typeInfo = TYPE_MAP[rec.type] || { label: `Type ${rec.type}`, color: 'text-gray-400', detailType: null };
+            // Rows imported from the phone's health app carry no `type` at all, which was
+            // rendering as the literal "Type undefined". They are walks and similar, and
+            // have no per-exercise detail to open.
+            const typeInfo = TYPE_MAP[rec.type]
+                || (rec.belongUserHealth ? { label: 'Phone health', color: 'text-cyan-400', detailType: null }
+                                         : { label: rec.type == null ? 'Unknown' : `Type ${rec.type}`,
+                                             color: 'text-gray-400', detailType: null });
             const hasDetail = typeInfo.detailType !== null;
 
             tr.className = hasDetail
