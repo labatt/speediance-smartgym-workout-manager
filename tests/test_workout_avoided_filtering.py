@@ -1,7 +1,18 @@
 """Integration coverage: /api/workout/generate and /api/workout/refine must never hand an
-avoided exercise to the model (catalog + pool_ids) and must mention avoided names in the
-system prompt when any exist. The pure filtering logic itself is unit-tested in
-tests/test_workout_gen.py (drop_avoided); this file checks app.py actually wires it in."""
+avoided exercise to the model (catalog + pool_ids), must strip one back out if the model
+returns it anyway, and must mention avoided names in the system prompt when any exist.
+The pure filtering logic itself is unit-tested in tests/test_workout_gen.py
+(drop_avoided); this file checks app.py actually wires it in.
+
+I-2: the fake model's FINAL JSON response deliberately includes the avoided id (1002),
+simulating a model that ignores the "Never include" instruction and tries to sneak it
+back in. That id survives in `library` (passed to workout_gen.validate_workout) only if
+drop_avoided failed to filter it — so this test is only meaningful because 1002 could
+plausibly appear in the output; a fake response that never contained 1002 in the first
+place (the prior version of this test) would pass whether or not drop_avoided worked at
+all. Verified by temporarily replacing workout_gen.drop_avoided with an identity
+function and confirming test_generate_never_returns_avoided_exercise and
+test_refine_never_returns_avoided_exercise both FAIL (see fix-round-1 report)."""
 
 import os
 import sys
@@ -23,6 +34,17 @@ LIB = [
      "dataStatType": 1, "completionMethod": 1, "isLeftRight": 0},
 ]
 
+# The model returns BOTH ids in its final JSON, as if it ignored the "Never include"
+# instruction — the real assertion is that 1002 gets stripped anyway (because it was
+# never in the filtered `library` validate_workout checks against), not that the model
+# happened not to mention it.
+FINAL_JSON_WITH_BOTH_IDS = (
+    '{"name": "W", "exercises": ['
+    '{"id": 1001, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]}, '
+    '{"id": 1002, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]}'
+    ']}'
+)
+
 
 class TestGenerateExcludesAvoided(unittest.TestCase):
     def setUp(self):
@@ -36,11 +58,13 @@ class TestGenerateExcludesAvoided(unittest.TestCase):
         self.c = app.app.test_client()
 
         self.captured_system_prompts = []
+        self.captured_selection_prompts = []
 
         def fake_chat_with(provider, model, prompt, cfg, system=None, timeout=120):
             if system is not None:
                 self.captured_system_prompts.append(system)
-                return True, '{"name": "W", "exercises": [{"id": 1001, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]}]}'
+                return True, FINAL_JSON_WITH_BOTH_IDS
+            self.captured_selection_prompts.append(prompt)
             return True, "[1001, 1002]"   # selection stage: model (wrongly) tries to pick the banned lift too
 
         self.patches = [
@@ -75,7 +99,10 @@ class TestGenerateExcludesAvoided(unittest.TestCase):
         data = r.get_json()
         self.assertTrue(data["ok"])
         ids = [e["id"] for e in data["workout"]["exercises"]]
+        # The model tried to include 1002 (see FINAL_JSON_WITH_BOTH_IDS) — it must be
+        # stripped, and 1001 must survive (sanity: filtering isn't wiping everything).
         self.assertNotIn(1002, ids)
+        self.assertIn(1001, ids)
         self.assertNotIn(1002, data["pool_ids"])
 
     def test_generate_system_prompt_mentions_avoided_name(self):
@@ -85,6 +112,14 @@ class TestGenerateExcludesAvoided(unittest.TestCase):
         self.assertIn("Never include these exercises", system)
         self.assertIn("Banned Lift", system)
         self.assertNotIn("[1002]", system)   # avoided exercise dropped from the catalog listing
+
+    def test_generate_selection_stage_catalog_excludes_avoided(self):
+        self.c.post("/api/workout/generate", json={"request": "back day", "recent_days": 0})
+        self.assertTrue(self.captured_selection_prompts)
+        selection_prompt = self.captured_selection_prompts[0]
+        self.assertNotIn("Banned Lift", selection_prompt)
+        self.assertNotIn("[1002]", selection_prompt)
+        self.assertIn("Seated Row", selection_prompt)   # sanity: the non-avoided one is there
 
 
 class TestRefineExcludesAvoided(unittest.TestCase):
@@ -98,9 +133,12 @@ class TestRefineExcludesAvoided(unittest.TestCase):
         app.client.credentials["avoided_db_path"] = self.db_path
         self.c = app.app.test_client()
 
+        self.captured_selection_prompts = []
+
         def fake_chat_with(provider, model, prompt, cfg, system=None, timeout=120):
             if system is not None:
-                return True, '{"name": "W", "exercises": [{"id": 1001, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]}]}'
+                return True, FINAL_JSON_WITH_BOTH_IDS
+            self.captured_selection_prompts.append(prompt)
             return True, "[1002]"
 
         self.patches = [
@@ -138,6 +176,16 @@ class TestRefineExcludesAvoided(unittest.TestCase):
         self.assertTrue(data["ok"])
         ids = [e["id"] for e in data["workout"]["exercises"]]
         self.assertNotIn(1002, ids)
+        self.assertIn(1001, ids)
+
+    def test_refine_selection_stage_catalog_excludes_avoided(self):
+        current = {"name": "W", "exercises": [{"id": 1001, "sets": [{"reps": 10, "weight": 40, "mode": 1, "rest": 60}]}]}
+        self.c.post("/api/workout/refine",
+                    json={"current_workout": current, "comment": "add more back work", "recent_days": 0})
+        self.assertTrue(self.captured_selection_prompts)
+        selection_prompt = self.captured_selection_prompts[0]
+        self.assertNotIn("Banned Lift", selection_prompt)
+        self.assertNotIn("[1002]", selection_prompt)
 
 
 if __name__ == "__main__":
