@@ -30,6 +30,7 @@ class TestSettingsSurvivesStoreFailure(unittest.TestCase):
             mock.patch.object(app.avoided_store, "list_avoided", side_effect=_broken_list_avoided),
             mock.patch.object(app.wellness, "is_connected", return_value=False),
             mock.patch.object(app.client, "get_accessories", return_value=[]),
+            mock.patch.object(app.client, "get_profile", return_value={}),
         ]
         for p in self.patches:
             p.start()
@@ -49,6 +50,7 @@ class TestLibrarySurvivesStoreFailure(unittest.TestCase):
             mock.patch.object(app.avoided_store, "list_avoided", side_effect=_broken_list_avoided),
             mock.patch.object(app.client, "get_library", return_value=list(LIB)),
             mock.patch.object(app.client, "get_accessories", return_value=[]),
+            mock.patch.object(app.client, "get_profile", return_value={}),
             mock.patch.object(app.client, "get_categories", return_value=[]),
         ]
         for p in self.patches:

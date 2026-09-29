@@ -1870,6 +1870,8 @@ def cardio_page_view():
     if not client.credentials.get("token"):
         return redirect(url_for('settings'))
     zones, cards, store_error = {"available": False, "zones": []}, [], None
+    recovery, sleep = [], {}
+    recovery_date = sleep_date = None
     try:
         zones = cardio_page.heart_rate_zones(client.get_heart_rate_zones())
         age = None
@@ -1880,6 +1882,17 @@ def cardio_page_view():
         except Exception:
             age = None
         cards = cardio_page.today_cards(client.get_health_score(), actual_age=age)
+        # Recovery and sleep are written overnight, so today may be empty while
+        # yesterday isn't. Try today, fall back once.
+        today = datetime.date.today()
+        for day in (today, today - datetime.timedelta(days=1)):
+            stamp = day.isoformat()
+            if not recovery:
+                recovery = cardio_page.recovery_cards(client.get_recovery(stamp))
+                recovery_date = stamp if recovery else None
+            if not (sleep or {}).get("available"):
+                sleep = cardio_page.sleep_summary(client.get_sleep(stamp))
+                sleep_date = stamp if sleep.get("available") else None
     except Exception as e:
         if _is_auth_error(e):
             client.logout()
@@ -1887,7 +1900,9 @@ def cardio_page_view():
             return redirect(url_for('settings'))
         print(f"Could not load cardio data: {e}")
         store_error = "Speediance didn't return cardio data just now — try again."
-    return render_template('cardio.html', zones=zones, cards=cards, store_error=store_error)
+    return render_template('cardio.html', zones=zones, cards=cards, store_error=store_error,
+                           recovery=recovery, recovery_date=recovery_date,
+                           sleep=sleep, sleep_date=sleep_date)
 
 
 @app.route('/memory')

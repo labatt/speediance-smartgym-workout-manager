@@ -34,7 +34,8 @@ class TestSettingsBackfillControls(unittest.TestCase):
 
     def test_settings_shows_connect_when_disconnected(self):
         with mock.patch.object(app_module.wellness, "is_connected", return_value=False), \
-             mock.patch.object(app_module.client, "get_accessories", return_value=[]):
+             mock.patch.object(app_module.client, "get_accessories", return_value=[]), \
+             mock.patch.object(app_module.client, "get_profile", return_value={}):
             resp = self.client.get("/settings")
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"/wp/connect", resp.data)
@@ -42,7 +43,8 @@ class TestSettingsBackfillControls(unittest.TestCase):
 
     def test_settings_shows_backfill_and_spinner_when_connected(self):
         with mock.patch.object(app_module.wellness, "is_connected", return_value=True), \
-             mock.patch.object(app_module.client, "get_accessories", return_value=[]):
+             mock.patch.object(app_module.client, "get_accessories", return_value=[]), \
+             mock.patch.object(app_module.client, "get_profile", return_value={}):
             resp = self.client.get("/settings")
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"/wp/backfill", resp.data)   # the backfill fetch

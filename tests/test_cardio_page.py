@@ -2,7 +2,9 @@
 import os, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cardio_page import _fmt_duration, heart_rate_zones, today_cards  # noqa: E402
+from cardio_page import (  # noqa: E402
+    _fmt_duration, heart_rate_zones, recovery_cards, sleep_summary, today_cards,
+)
 import app as app_module  # noqa: E402
 
 ZONES = {"watchType": 2, "maxHeartRate": 112, "minHeartRate": 67,
@@ -84,6 +86,54 @@ class TestTodayCards(unittest.TestCase):
         self.assertEqual(cards, [])
 
 
+# A wearable-equipped account. The account this was written against has none, so the
+# populated path can only be covered by a fixture — and it is the path most users hit.
+RECOVERY = {"recoveryScoreResp": {"value": 72, "recoveryScoreAvg": 68},
+            "nightHrvResp": {"nightHrv": 41.5, "nightHrvAvg": 39},
+            "nightRestingHeartRateResp": {"nightRestHeartRate": 54, "nightRestHeartRateAvg": 56},
+            "sleepResp": {"value": 81, "sleepScoreAvg": 77}}
+SLEEP = {"sleep": 415, "targetSleepMin": 432, "sleepQualityScore": 80, "sleepEfficiencyScore": 91}
+
+
+class TestRecoveryCards(unittest.TestCase):
+    def test_a_populated_account_gets_every_card(self):
+        cards = recovery_cards(RECOVERY)
+        self.assertEqual([c["label"] for c in cards],
+                         ["Recovery", "Night HRV", "Night resting HR", "Sleep score"])
+        self.assertEqual(cards[1]["value"], "41.5 ms")
+        self.assertEqual(cards[2]["hint"], "56 bpm average")
+
+    def test_an_empty_account_gets_nothing_rather_than_dashes(self):
+        self.assertEqual(recovery_cards({}), [])
+        self.assertEqual(recovery_cards({"recoveryScoreResp": {}, "nightHrvResp": {}}), [])
+        self.assertEqual(recovery_cards(None), [])
+
+    def test_an_unrecognised_field_is_surfaced_not_dropped(self):
+        # Only the empty shape could be observed live, so a key we guessed wrong must
+        # still show the user their number.
+        cards = recovery_cards({"nightHrvResp": {"someNewKey": 44}})
+        self.assertEqual(cards, [{"label": "Night HRV: someNewKey", "value": "44", "hint": None}])
+
+    def test_a_missing_average_just_omits_the_hint(self):
+        self.assertIsNone(recovery_cards({"recoveryScoreResp": {"value": 60}})[0]["hint"])
+
+
+class TestSleepSummary(unittest.TestCase):
+    def test_duration_against_target(self):
+        got = sleep_summary(SLEEP)
+        self.assertTrue(got["available"])
+        self.assertEqual((got["slept"], got["target"]), ("6h 55m", "7h 12m"))
+        self.assertFalse(got["metTarget"])
+        self.assertEqual([s["label"] for s in got["scores"]], ["Quality", "Efficiency"])
+
+    def test_meeting_the_target_is_flagged(self):
+        self.assertTrue(sleep_summary({"sleep": 480, "targetSleepMin": 432})["metTarget"])
+
+    def test_a_target_with_no_sleep_logged_is_not_available(self):
+        self.assertFalse(sleep_summary({"sleep": 0, "targetSleepMin": 432})["available"])
+        self.assertFalse(sleep_summary({})["available"])
+
+
 class TestCardioRoute(unittest.TestCase):
     def setUp(self):
         app_module.app.config['TESTING'] = True
@@ -93,19 +143,23 @@ class TestCardioRoute(unittest.TestCase):
         with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'unit': 1}), \
              mock.patch.object(app_module.client, 'get_heart_rate_zones', return_value=ZONES), \
              mock.patch.object(app_module.client, 'get_health_score', return_value=SCORE), \
-             mock.patch.object(app_module.client, 'get_profile', return_value={}):
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
+             mock.patch.object(app_module.client, 'get_recovery', return_value={}), \
+             mock.patch.object(app_module.client, 'get_sleep', return_value={}):
             html = self.client.get('/cardio').get_data(as_text=True)
         self.assertIn("Heart-rate zones", html)
         self.assertIn("3,309", html)
         self.assertIn("97-108 bpm", html)
 
-    def test_it_says_why_vo2max_is_absent_rather_than_showing_an_empty_card(self):
+    def test_it_explains_what_appears_rather_than_showing_empty_cards(self):
         with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'unit': 1}), \
              mock.patch.object(app_module.client, 'get_heart_rate_zones', return_value={}), \
              mock.patch.object(app_module.client, 'get_health_score', return_value={}), \
-             mock.patch.object(app_module.client, 'get_profile', return_value={}):
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
+             mock.patch.object(app_module.client, 'get_recovery', return_value={}), \
+             mock.patch.object(app_module.client, 'get_sleep', return_value={}):
             html = self.client.get('/cardio').get_data(as_text=True)
-        self.assertIn("What isn't here, and why", html)
+        self.assertIn("What shows up here", html)
         self.assertIn("No heart rate has been recorded yet", html)
 
     def test_a_failure_warns_instead_of_500ing(self):
@@ -115,6 +169,46 @@ class TestCardioRoute(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         # Jinja escapes the apostrophe, so match the part that survives.
         self.assertIn("return cardio data just now", resp.get_data(as_text=True))
+
+    def test_a_wearable_account_sees_recovery_and_sleep(self):
+        with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'unit': 1}), \
+             mock.patch.object(app_module.client, 'get_heart_rate_zones', return_value=ZONES), \
+             mock.patch.object(app_module.client, 'get_health_score', return_value=SCORE), \
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
+             mock.patch.object(app_module.client, 'get_recovery', return_value=RECOVERY), \
+             mock.patch.object(app_module.client, 'get_sleep', return_value=SLEEP):
+            html = self.client.get('/cardio').get_data(as_text=True)
+        self.assertIn(">Overnight recovery</h2>", html)
+        self.assertIn("41.5 ms", html)
+        self.assertIn("6h 55m", html)
+        self.assertNotIn("Nothing is wrong with your setup", html)
+
+    def test_an_empty_account_is_told_why_rather_than_shown_blanks(self):
+        with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'unit': 1}), \
+             mock.patch.object(app_module.client, 'get_heart_rate_zones', return_value=ZONES), \
+             mock.patch.object(app_module.client, 'get_health_score', return_value=SCORE), \
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
+             mock.patch.object(app_module.client, 'get_recovery', return_value={}), \
+             mock.patch.object(app_module.client, 'get_sleep', return_value={}):
+            html = self.client.get('/cardio').get_data(as_text=True)
+        self.assertNotIn(">Overnight recovery</h2>", html)
+        self.assertIn("Nothing is wrong with your setup", html)
+
+    def test_recovery_falls_back_to_yesterday(self):
+        # Written overnight, so today can legitimately be empty while yesterday is not.
+        seen = []
+        def by_date(stamp):
+            seen.append(stamp)
+            return RECOVERY if len(seen) > 1 else {}
+        with mock.patch.object(app_module.client, 'credentials', {'token': 't', 'unit': 1}), \
+             mock.patch.object(app_module.client, 'get_heart_rate_zones', return_value=ZONES), \
+             mock.patch.object(app_module.client, 'get_health_score', return_value={}), \
+             mock.patch.object(app_module.client, 'get_profile', return_value={}), \
+             mock.patch.object(app_module.client, 'get_recovery', side_effect=by_date), \
+             mock.patch.object(app_module.client, 'get_sleep', return_value={}):
+            html = self.client.get('/cardio').get_data(as_text=True)
+        self.assertEqual(len(seen), 2)
+        self.assertIn(">Overnight recovery</h2>", html)
 
     def test_signed_out_redirects(self):
         with mock.patch.object(app_module.client, 'credentials', {}):

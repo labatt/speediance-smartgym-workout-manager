@@ -20,6 +20,49 @@
     </div>
     {% endif %}
 
+    {% if recovery %}
+    <section class="bg-gray-900 rounded p-4 mb-6">
+        <div class="flex items-baseline justify-between gap-2 mb-3">
+            <h2 class="text-sm font-semibold text-gray-200">Overnight recovery</h2>
+            {% if recovery_date %}<p class="text-xs text-gray-500">{{ recovery_date }}</p>{% endif %}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {% for c in recovery %}
+            <div class="bg-gray-800 rounded p-3">
+                <p class="text-xs text-gray-400">{{ c.label }}</p>
+                <p class="text-lg font-bold text-green-400 mt-1">{{ c.value }}</p>
+                {% if c.hint %}<p class="text-[10px] text-gray-500 mt-0.5">{{ c.hint }}</p>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if sleep and sleep.available %}
+    <section class="bg-gray-900 rounded p-4 mb-6">
+        <div class="flex items-baseline justify-between gap-2 mb-3">
+            <h2 class="text-sm font-semibold text-gray-200">Sleep</h2>
+            {% if sleep_date %}<p class="text-xs text-gray-500">{{ sleep_date }}</p>{% endif %}
+        </div>
+        {% if sleep.slept %}
+        <p class="text-sm text-gray-200">
+            <span class="text-xl font-bold {{ 'text-green-400' if sleep.metTarget else 'text-amber-400' }}">{{ sleep.slept }}</span>
+            {% if sleep.target %}<span class="text-xs text-gray-400">of a {{ sleep.target }} target</span>{% endif %}
+        </p>
+        {% endif %}
+        {% if sleep.scores %}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+            {% for sc in sleep.scores %}
+            <div class="bg-gray-800 rounded p-3">
+                <p class="text-xs text-gray-400">{{ sc.label }}</p>
+                <p class="text-lg font-bold text-blue-400 mt-1">{{ sc.value }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
     <!-- Heart-rate zones -->
     <section class="bg-gray-900 rounded p-4 mb-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
@@ -76,14 +119,19 @@
     </section>
 
     <section class="bg-gray-900 rounded p-4">
-        <h2 class="text-sm font-semibold text-gray-200 mb-2">What isn't here, and why</h2>
+        <h2 class="text-sm font-semibold text-gray-200 mb-2">What shows up here</h2>
         <p class="text-xs text-gray-400 leading-relaxed">
-            VO<sub>2</sub>max, cardiorespiratory fitness and resting heart rate need overnight
-            heart-rate-variability and resting readings from a paired wearable. Speediance returns
-            nothing for them on this account, so this page leaves them out rather than showing cards
-            that would never fill in. Daily heart-rate and blood-oxygen trends aren't available
-            either &mdash; Speediance's endpoints for them reject every request shape tried so far.
-            Per-session heart rate <em>is</em> recorded, and shows in a session's
+            {% if not recovery and not (sleep and sleep.available) %}
+            <span class="text-gray-300">Overnight recovery and sleep sections appear once Speediance has
+            that data.</span> They come from a wearable that records through the night &mdash; HRV,
+            resting heart rate and sleep stages &mdash; so an account without one sees only the
+            sections above. Nothing is wrong with your setup.
+            {% else %}
+            Overnight recovery and sleep come from a wearable that records through the night.
+            {% endif %}
+            Daily heart-rate and blood-oxygen trend charts aren't built yet: Speediance's endpoints
+            for them reject every request shape tried so far, so they'd be guesswork. Per-session
+            heart rate <em>is</em> recorded and shows in a session's
             <a href="/history" class="text-blue-400 hover:underline">history</a> detail.
         </p>
     </section>

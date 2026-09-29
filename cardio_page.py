@@ -4,10 +4,17 @@ Speediance exposes rather less cardio data than its app implies. What it does gi
 without any wearable, is where recorded heart rate actually sat: five zones with their
 bpm ranges and the time spent in each. That is the page's centrepiece.
 
-Deliberately NOT rendered: VO2max, cardiorespiratory fitness and resting heart rate.
-They need overnight HRV and resting-HR readings from a paired device, and GM Manager's
-equivalent page shows all three permanently blank on this same account. An empty card
-implies the number is coming; saying it needs a wearable is the truth.
+Recovery and sleep ARE rendered, even though the account this was written against has
+neither. This is open-source software: anyone running it with a paired wearable will
+have overnight HRV, resting heart rate and sleep scores, and leaving those out because
+one developer's account is empty would ship them a worse app. A card appears when its
+number exists and is silently skipped when it doesn't, so an empty account sees a short
+explanation instead of a wall of dashes.
+
+Field names come from the app's own string pool, but only the empty shape could be
+observed live. `_first` therefore takes several candidate keys, and `extra_numbers`
+surfaces anything unrecognised rather than dropping it — so a user WITH data sees their
+numbers even if a key differs, and can report the real shape back.
 """
 
 import json
@@ -110,3 +117,82 @@ def today_cards(health_score, actual_age=None):
         cards.append({"label": "Wellness alerts", "value": str(monitor.get("totalCount")),
                       "hint": "flagged by Speediance"})
     return cards
+
+
+# Field names recovered from the app's string pool. Only the empty shape could be
+# observed on the account this was built against, so each reader tries several.
+RECOVERY_CARDS = (
+    ("recoveryScoreResp", "Recovery", ("value", "recoveryScore", "score"), ("avg", "recoveryScoreAvg"), ""),
+    ("nightHrvResp", "Night HRV", ("nightHrv", "value", "hrv"), ("nightHrvAvg",), " ms"),
+    ("nightRestingHeartRateResp", "Night resting HR",
+     ("nightRestHeartRate", "value", "restHeartRate"), ("nightRestHeartRateAvg",), " bpm"),
+    ("sleepResp", "Sleep score", ("value", "sleepScore", "score"), ("sleepScoreAvg",), ""),
+)
+
+SLEEP_SCORES = (
+    ("sleepQualityScore", "Quality"),
+    ("sleepEfficiencyScore", "Efficiency"),
+    ("sleepRegularityScore", "Regularity"),
+    ("sleepDurationScore", "Duration score"),
+)
+
+
+def _first(payload, keys):
+    """The first candidate key that carries a number."""
+    for key in keys:
+        value = _num((payload or {}).get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def extra_numbers(payload, known):
+    """Numeric fields we didn't expect, so unfamiliar data is surfaced rather than lost."""
+    known = {k.lower() for k in known}
+    out = []
+    for key, value in (payload or {}).items():
+        if key.lower() in known or isinstance(value, (dict, list)):
+            continue
+        number = _num(value)
+        if number is not None:
+            out.append({"label": key, "value": f"{number:g}"})
+    return out
+
+
+def recovery_cards(recovery):
+    """`recovery/detailByDate` -> one card per sub-report that has a number."""
+    recovery = recovery or {}
+    cards = []
+    for key, label, value_keys, avg_keys, suffix in RECOVERY_CARDS:
+        section = recovery.get(key) or {}
+        value = _first(section, value_keys)
+        if value is None:
+            cards.extend({"label": f"{label}: {e['label']}", "value": e["value"], "hint": None}
+                         for e in extra_numbers(section, value_keys + avg_keys))
+            continue
+        average = _first(section, avg_keys)
+        cards.append({
+            "label": label,
+            "value": f"{value:g}{suffix}",
+            "hint": f"{average:g}{suffix} average" if average is not None else None,
+        })
+    return cards
+
+
+def sleep_summary(sleep):
+    """`userHealth/sleep` -> slept vs target, plus whichever sub-scores are present."""
+    sleep = sleep or {}
+    minutes = _num(sleep.get("sleep"))
+    target = _num(sleep.get("targetSleepMin"))
+    scores = []
+    for key, label in SLEEP_SCORES:
+        value = _num(sleep.get(key))
+        if value is not None:
+            scores.append({"label": label, "value": f"{value:g}"})
+    return {
+        "available": bool(minutes) or bool(scores),
+        "slept": _fmt_duration(int(minutes * 60)) if minutes else None,
+        "target": _fmt_duration(int(target * 60)) if target else None,
+        "metTarget": bool(minutes and target and minutes >= target),
+        "scores": scores,
+    }

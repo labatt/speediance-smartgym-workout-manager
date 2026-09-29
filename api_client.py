@@ -963,6 +963,41 @@ class SpeedianceClient:
             print(f"Error fetching health score: {e}")
             return {}
 
+    def get_recovery(self, date_str):
+        """Overnight recovery: score, night HRV, night resting HR, sleep score.
+        GET /api/mobile/userHealth/recovery/detailByDate?dateStr=YYYY-MM-DD
+
+        Needs a wearable that records overnight; accounts without one get empty
+        sub-objects. A 500 here means "no data for that date", not a bad request.
+        """
+        return self._health_get("/api/mobile/userHealth/recovery/detailByDate", date_str)
+
+    def get_sleep(self, date_str):
+        """Sleep duration against target, plus quality/efficiency/regularity scores.
+        GET /api/mobile/userHealth/sleep?dateStr=YYYY-MM-DD
+        """
+        return self._health_get("/api/mobile/userHealth/sleep", date_str)
+
+    def _health_get(self, path, date_str):
+        """Shared reader for the dateStr-keyed health routes.
+
+        Speediance answers 500 for a date it holds nothing for, so that is treated as
+        "no data" rather than surfaced as a failure.
+        """
+        url = f"{self.base_url}{path}"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers(), params={"dateStr": date_str})
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            body = resp.json()
+            if body.get('code') not in (0, None):
+                return {}
+            return body.get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"No health data for {date_str} from {path}: {e}")
+            return {}
+
     def get_rowing_graph(self, uuid):
         """Per-point rowing/ski telemetry for one session.
         GET /api/app/boatingSkiDataGraph/{uuid}

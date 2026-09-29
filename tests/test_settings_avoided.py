@@ -22,6 +22,7 @@ class TestSettingsAvoidedCard(unittest.TestCase):
         self.patches = [
             mock.patch.object(app.wellness, "is_connected", return_value=False),
             mock.patch.object(app.client, "get_accessories", return_value=[]),
+            mock.patch.object(app.client, "get_profile", return_value={}),
         ]
         for p in self.patches:
             p.start()
