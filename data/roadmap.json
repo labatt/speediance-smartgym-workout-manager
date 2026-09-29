@@ -480,6 +480,30 @@
       "affects": "templates/library.html, app.py (library route)",
       "status": "done",
       "notes": "Requested 2026-09-29 ('all their filters are important'). Every filter maps to a field already in the cached library, confirmed against the catalog before any UI was written: foldingStoolAngle = bench angle (30/45/60/75/90, 978 with none), tabName = type (9 values), outPosition = cable height (0-10, 361 with none), and main vs main+assisting muscle names for the primary-only toggle. Verified by driving the page in a browser and checking each count against the catalog: bench 45 -> 30, no bench -> 978, cable Top -> 96, no cable -> 361, Row & Ski -> 8, Lats 140 any / 103 primary-only, Clear all -> 1040. BUG found and fixed during that check: rendering outPosition with 'is not none' emitted an EMPTY attribute for ABSENT keys, because Jinja's Undefined is not None, so 'No cable' matched 0 of 361 exercises. Uses ex.get() now, pinned by a test that also covers cable position 0 (which must not be treated as falsy). Bench angle matters most here: it filters the library to what can actually be performed given the flat-bench restriction (#27), rather than only hiding whole accessories."
+    },
+    {
+      "id": 60,
+      "title": "Evaluate GM Manager's features for inclusion (series): 11. Builder",
+      "summary": "Their two-pane builder: the full library filter set on the left, and on the right live totals, per-set rep/sec and mode dropdowns, history-suggested weights, supersets and drag reordering.",
+      "affects": "evaluation -> proposal #62",
+      "status": "done",
+      "notes": "Screens supplied 2026-09-29. Our /create is already the same two-pane shape and has two things they lack: AI generation through Claude, and JSON import/export. It also shows the 0/50 exercise cap, which theirs does not. WHAT THEY HAVE THAT WE DON'T: (1) the full filter set in the builder's library pane - we just built those filters on /library (#59) and the builder still has only search plus a category dropdown, so they should be shared rather than reimplemented; (2) LIVE TOTALS while composing (exercises, total sets, volume lb, estimated minutes); (3) weights prefilled from training history, captioned 'Suggested from your training history - adjust as needed' - the MCP already computes exactly this in suggest_load, so the web builder is the only piece missing; (4) a rep(s)/sec toggle per set, matching completionMethod; (5) a MODE dropdown; (6) Make superset; (7) drag-reorder plus up/down arrows; (8) setup tags on each builder row (Cable 6 - Mid, Bench 30) which matter for a machine you have to physically set up."
+    },
+    {
+      "id": 61,
+      "title": "Evaluate GM Manager's features for inclusion (series): 12. Custom Exercises",
+      "summary": "Create, edit and delete your own movements, which sync to the machine's Custom tab; filters by type, difficulty, muscle and equipment.",
+      "affects": "evaluation -> future proposal",
+      "status": "done",
+      "notes": "Screens supplied 2026-09-29. We have no create/edit UI for custom movements, but the capability exists in the API: our own library already carries a 'Custom' category and every item has an isCustom flag, so Speediance stores these server-side and they reach the machine. Worth doing mainly for the non-Speediance Tampa trainer (#26), where a movement may not exist in the stock library at all. Their 'Browse exercises other people shared' is GM Manager's own cloud and is not replicable, same as Shared Workouts in #55."
+    },
+    {
+      "id": 62,
+      "title": "Builder: shared filters, live totals, and weights suggested from history",
+      "summary": "Reuse the library filter set in the builder pane, show running exercise/set/volume/time totals while composing, and prefill each set's weight from training history.",
+      "affects": "templates/create.html, templates/library.html (shared filter markup)",
+      "status": "queued",
+      "notes": "From #60. The suggestion logic already exists in the MCP as suggest_load and in the web app's load anchors, so this is wiring rather than new analysis. Respect the unit rule: weights are in the account's display unit on read AND write, and a bilateral barbell set is the TOTAL across both cables, never one side's number."
     }
   ]
 }
