@@ -262,8 +262,8 @@
       "title": "Connect AI page: claude.ai connector setup, current connections, revoke button",
       "summary": "A web app page with the connector URL (https://mcp.example.com/mcp) and setup steps for claude.ai / Claude Desktop / Claude Code, the live remote connections (clients, last token use), and a button equivalent to `speediance-mcp revoke`.",
       "affects": "web app (new page + routes reading/writing the MCP data dir's oauth.db)",
-      "status": "queued",
-      "notes": "From the GM Manager Settings evaluation (#31); inspired by their 'Connect AI' page, not copied."
+      "status": "done",
+      "notes": "From the GM Manager Settings evaluation (#31); inspired by their 'Connect AI' page, not copied. DONE 2026-09-29: connections_store.py + /connect-ai page + nav link. Lists each registered AI client with its live/expired/revoked token counts, when it first connected and how long it stays signed in, plus setup steps for claude.ai and a pointer to the stdio path for Claude Desktop/Code. Revoke button = `speediance-mcp revoke` for one client, behind a confirm; the registration is kept, since reconnecting is an ordinary sign-in. A client registered but with nothing live is shown as 'needs reconnecting' rather than looking fine until the next request fails. Tokens exist in the store only as hashes, and a test asserts no token material can reach the page. The connector URL comes from config (mcp_public_url), not hardcoded, so a self-hosted copy shows its own host. 12 tests."
     },
     {
       "id": 33,

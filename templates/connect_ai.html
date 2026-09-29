@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-white">Connect AI</h1>
+    <p class="text-xs text-gray-500 mt-1 mb-5">
+        Let Claude read and manage this training data through the MCP server.
+    </p>
+
+    <!-- Live connections -->
+    <section class="mb-7">
+        <h2 class="text-sm font-semibold text-gray-200 mb-2">Connections</h2>
+        {% if not connections.available %}
+            <p class="text-sm text-gray-500">{{ connections.reason }}</p>
+        {% elif not connections.connections %}
+            <p class="text-sm text-gray-500">Nothing is connected yet. Follow the setup below.</p>
+        {% else %}
+            <ul class="space-y-2">
+            {% for c in connections.connections %}
+                <li class="bg-gray-900 rounded p-3 flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-200">
+                            {{ c.name }}
+                            {% if c.connected %}
+                                <span class="text-green-400 text-xs">&bull; connected</span>
+                            {% else %}
+                                <span class="text-yellow-400 text-xs">&bull; needs reconnecting</span>
+                            {% endif %}
+                        </p>
+                        <p class="text-[10px] text-gray-500 mt-1 break-all">
+                            first connected {{ c.created or 'unknown' }}
+                            {% if c.refreshUntil %} &middot; stays signed in until {{ c.refreshUntil }}{% endif %}
+                            &middot; {{ c.liveTokens }} live
+                            {% if c.expiredTokens %} &middot; {{ c.expiredTokens }} expired{% endif %}
+                            {% if c.revokedTokens %} &middot; {{ c.revokedTokens }} revoked{% endif %}
+                        </p>
+                    </div>
+                    {% if c.connected %}
+                    <form action="/connect-ai/revoke" method="POST" class="flex-shrink-0"
+                          onsubmit="return confirm('Sign {{ c.name }} out? It will have to connect again.');">
+                        <input type="hidden" name="client_id" value="{{ c.clientId }}">
+                        <button type="submit" class="text-[11px] px-2 py-1 rounded border border-red-800 text-red-300 hover:bg-red-900/40">Revoke</button>
+                    </form>
+                    {% endif %}
+                </li>
+            {% endfor %}
+            </ul>
+            <p class="text-[10px] text-gray-600 mt-2">
+                Tokens are stored only as hashes, so this page can show counts and times but never a credential.
+            </p>
+        {% endif %}
+    </section>
+
+    <!-- Setup -->
+    <section class="mb-7">
+        <h2 class="text-sm font-semibold text-gray-200 mb-2">Set it up</h2>
+        {% if connector_url %}
+        <p class="text-xs text-gray-400 mb-1">Connector URL</p>
+        <code class="block bg-gray-900 rounded p-2 text-xs text-green-400 break-all mb-3">{{ connector_url }}</code>
+        {% endif %}
+
+        <div class="space-y-4 text-sm text-gray-300">
+            <div>
+                <p class="font-semibold text-gray-200">claude.ai (web and mobile)</p>
+                <ol class="list-decimal ml-5 text-xs text-gray-400 space-y-0.5 mt-1">
+                    <li>Settings &rarr; Connectors &rarr; Add custom connector.</li>
+                    <li>Paste the connector URL above.</li>
+                    <li>Sign in with the Speediance account this server is set up for.</li>
+                    <li>Ask Claude to &ldquo;check my Speediance connection&rdquo;.</li>
+                </ol>
+            </div>
+            <div>
+                <p class="font-semibold text-gray-200">Claude Desktop / Claude Code</p>
+                <p class="text-xs text-gray-400 mt-1">
+                    Run the server locally over stdio instead &mdash; no URL and no OAuth. See the
+                    README in the speediance-mcp repository for the config block and
+                    <code class="text-gray-300">speediance-mcp login</code>.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2 class="text-sm font-semibold text-gray-200 mb-2">What Claude can see</h2>
+        <p class="text-xs text-gray-500 leading-relaxed">
+            Session history and per-set logs, exercise progress, rowing telemetry, heart rate, muscle
+            balance, custom workouts and the schedule, plus the
+            <a href="/memory" class="text-blue-400 hover:underline">coaching memory</a> and your
+            <a href="/settings" class="text-blue-400 hover:underline">equipment and avoided exercises</a>.
+            It can also create, edit and schedule workouts. Revoking above ends that access immediately.
+        </p>
+    </section>
+</div>
+{% endblock %}

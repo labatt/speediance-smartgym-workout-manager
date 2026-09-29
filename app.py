@@ -15,6 +15,7 @@ from accessories import dedupe_accessories
 from profile_view import profile_summary
 import equipment_store
 import facts_store
+import connections_store
 import reconcile
 import session_detail
 import datetime
@@ -1824,6 +1825,38 @@ def _session_detail(training_id, kind):
 
 
 MUSCLE_BALANCE_SESSIONS = 40
+
+
+@app.route('/connect-ai')
+def connect_ai_page():
+    """Connector setup for claude.ai plus the live remote connections."""
+    try:
+        connections = connections_store.list_connections(client.credentials)
+    except Exception as e:
+        print(f"Could not read the connection store: {e}")
+        connections = {"connections": [], "available": False,
+                       "reason": "The connection store is busy or unavailable — try again."}
+    # Configured rather than hardcoded: a self-hosted copy of this app has its own host.
+    connector_url = client.credentials.get('mcp_public_url') or ''
+    if connector_url and not connector_url.rstrip('/').endswith('/mcp'):
+        connector_url = connector_url.rstrip('/') + '/mcp'
+    return render_template('connect_ai.html', connections=connections, connector_url=connector_url)
+
+
+@app.route('/connect-ai/revoke', methods=['POST'])
+def connect_ai_revoke():
+    """Revoke every token for one AI client — the equivalent of `speediance-mcp revoke`."""
+    client_id = request.form.get('client_id') or ''
+    try:
+        revoked = connections_store.revoke_client(client_id, client.credentials)
+    except Exception as e:
+        print(f"Could not revoke a client: {e}")
+        flash("The connection store is busy or unavailable — nothing was revoked.", "error")
+        return redirect(url_for('connect_ai_page'))
+    flash(f"Revoked {revoked} token{'' if revoked == 1 else 's'}. That client must connect again."
+          if revoked else "That client had nothing live to revoke.",
+          "success" if revoked else "error")
+    return redirect(url_for('connect_ai_page'))
 
 
 @app.route('/memory')
