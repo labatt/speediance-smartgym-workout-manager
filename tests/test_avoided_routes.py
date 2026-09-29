@@ -58,6 +58,82 @@ class TestAvoidedRoutes(unittest.TestCase):
         r = self.c.post("/api/avoided")
         self.assertEqual(r.status_code, 400)
 
+    # --- I-5: stricter validation ---
+
+    def test_post_body_not_a_dict_is_400(self):
+        r = self.c.post("/api/avoided", json=[1, 2, 3])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("error", r.get_json())
+
+    def test_post_body_a_bare_string_is_400(self):
+        r = self.c.post("/api/avoided", json="1001")
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_bool_true_is_400(self):
+        # bool is a subclass of int in Python — must be explicitly rejected, not
+        # silently coerced to group_id 1.
+        r = self.c.post("/api/avoided", json={"group_id": True, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_bool_false_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": False, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_float_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 1001.5, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_whole_number_float_is_400(self):
+        # Even a whole-number float (1001.0) must be rejected — the type itself is wrong,
+        # not just non-integral values.
+        r = self.c.post("/api/avoided", json={"group_id": 1001.0, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_numeric_string_is_400(self):
+        # A numeric string is not an int — strict typing, not "parses as a number".
+        r = self.c.post("/api/avoided", json={"group_id": "1001", "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_zero_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 0, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_negative_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": -5, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_too_large_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 2**63, "name": "Row"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_group_id_max_valid_is_ok(self):
+        r = self.c.post("/api/avoided", json={"group_id": 2**63 - 1, "name": "Row"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_post_group_id_min_valid_is_ok(self):
+        r = self.c.post("/api/avoided", json={"group_id": 1, "name": "Row"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_post_name_not_a_string_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 5, "name": 12345})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_name_too_long_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 5, "name": "x" * 201})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_name_at_max_length_ok(self):
+        r = self.c.post("/api/avoided", json={"group_id": 5, "name": "x" * 200})
+        self.assertEqual(r.status_code, 200)
+
+    def test_post_reason_not_a_string_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 5, "name": "Row", "reason": 123})
+        self.assertEqual(r.status_code, 400)
+
+    def test_post_reason_a_list_is_400(self):
+        r = self.c.post("/api/avoided", json={"group_id": 5, "name": "Row", "reason": ["x"]})
+        self.assertEqual(r.status_code, 400)
+
     def test_delete_existing_returns_removed_true(self):
         self.c.post("/api/avoided", json={"group_id": 1001, "name": "Bench Press"})
         r = self.c.delete("/api/avoided/1001")

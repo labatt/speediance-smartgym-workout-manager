@@ -1415,13 +1415,36 @@ def api_avoided():
     if request.method == 'GET':
         return jsonify({"avoided": _avoided_list_safe()})
 
-    body = request.get_json(silent=True) or {}
-    try:
-        group_id = int(body.get('group_id'))
-    except (TypeError, ValueError):
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+
+    group_id = body.get('group_id')
+    # bool is a subclass of int in Python — reject it explicitly rather than silently
+    # treating {"group_id": true} as group_id 1. Floats (even whole-number ones like
+    # 1001.0) and numeric strings are rejected too: this is a type check, not "can be
+    # coerced to a number".
+    if isinstance(group_id, bool) or not isinstance(group_id, int):
         return jsonify({"error": "group_id is required and must be an integer."}), 400
-    name = body.get('name') or ''
-    reason = body.get('reason') or ''
+    if not (1 <= group_id <= 2**63 - 1):
+        return jsonify({"error": "group_id must be between 1 and 2**63-1."}), 400
+
+    # `or ''` is deliberately NOT used here: it would mask a falsy-but-wrong-typed value
+    # (e.g. name: 0) into an accepted empty string instead of rejecting it.
+    name = body.get('name')
+    if name is None:
+        name = ''
+    if not isinstance(name, str):
+        return jsonify({"error": "name must be a string."}), 400
+    if len(name) > 200:
+        return jsonify({"error": "name must be 200 characters or fewer."}), 400
+
+    reason = body.get('reason')
+    if reason is None:
+        reason = ''
+    if not isinstance(reason, str):
+        return jsonify({"error": "reason must be a string."}), 400
+
     try:
         avoided_store.set_avoided(path, group_id, name, reason)
     except ValueError as e:
