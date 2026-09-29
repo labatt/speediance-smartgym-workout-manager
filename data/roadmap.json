@@ -192,6 +192,22 @@
       "affects": "/srv/speediance-mcp (phase1 branch); nginx; pm2; DNS",
       "status": "done",
       "notes": "Requested 2026-09-28 ('I need to use it on claude.ai'). DNS created by the user's request: mcp.example.com A <your server IP> (Cloud DNS zone your-dns-zone). An SDK spike confirmed the full flow (register → authorize → our login → token → authed initialize). Plan: docs/plans/2026-09-28-phase2-remote-oauth.md (e275bac). DONE and verified live 2026-09-28: 4 plan tasks, each with a security fix round, then a final review and fix wave (store caps, `speediance-mcp revoke`, sticky logout, sign-in hardening); 305 tests. Deployed: pm2 app 'speediance-mcp' (serve --http on 127.0.0.1:8765), nginx site mcp.example.com (Let's Encrypt; per-IP limit_req on the OAuth endpoints), data dir /root/.config/speediance-mcp, signed in on client_type nano, unit lb. Bug found at deploy and fixed (51615a6): NANO/BIKE login responses have no 'unit', so the server stored kg; the known unit is now kept, and there's a --unit flag. The user connected claude.ai and it pulled their calendar; the server shows 1 client, 1 live token, 0 failures."
+    },
+    {
+      "id": 24,
+      "title": "Avoided exercises: one shared list for the web app and the MCP server (select/deselect, with reasons)",
+      "summary": "Mark/unmark exercises as avoided (optional reason) from the web app (Library toggle + filter, Settings list) and from claude.ai via MCP; generators never pick them; builder and MCP create/update warn. Single store: the MCP server's SQLite (exercise_marks), shared via a web app config path.",
+      "affects": "web app: new avoided store + /api/avoided routes, library.html, settings.html, create.html, workout_gen.py, adaptive_training.py; speediance-mcp: memory.py (reason), tools",
+      "status": "working",
+      "notes": "Requested 2026-09-28 ('exercises I can't do ... select and deselect'). Design approved in chat."
+    },
+    {
+      "id": 25,
+      "title": "MCP bug: get_calendar drops phone-health activities (walks, AeroRow rows) that GM Manager showed as otherActivities",
+      "summary": "speediance-mcp's get_calendar skips history rows imported from the phone health app (belongUserHealth), so off-machine work such as walks and AeroRow rowing is invisible and weekly load is understated. GM Manager returned these per day as otherActivities.",
+      "affects": "/srv/speediance-mcp tools/sessions.py (get_calendar), tools/coaching.py (snapshot)",
+      "status": "done",
+      "notes": "Reported 2026-09-28 by the user relaying claude.ai's comparison with GM Manager: no otherActivities on any day in September. The exclusion was deliberate (to keep gym-session counts right) but dropped the data entirely. FIXED 2026-09-28 (speediance-mcp 56c2ce0) and deployed: health imports are listed per day as otherActivities and in the snapshot. Live check: Sep 2 and Sep 3 show 27/38-min phone-health activities. Finding: Speediance only holds 2 phone-health rows in September, both odd 1-kcal ~0.006 mi overnight records; the calendar feed has no other-activities list. GM Manager's otherActivities most likely came from its own health integrations, so walks and runs live in Wellness Project, not Speediance. Machine rowing (with AeroRow) appears as normal sessions."
     }
   ]
 }
