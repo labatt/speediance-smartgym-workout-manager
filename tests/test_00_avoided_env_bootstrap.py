@@ -15,11 +15,27 @@ avoided_store.db_path() honours this env var as a fallback, below an explicit
 `avoided_db_path` config key and above DEFAULT_PATH. See
 tests/test_avoided_store.py::TestDbPath.test_suite_env_var_is_armed_and_points_away_from_real_config_dir
 for the regression guard that fails loudly if this stops being armed.
+
+`tempfile.mkdtemp` (unlike `TemporaryDirectory`) is not cleaned up on its own, so it
+would otherwise accumulate a throwaway directory on disk every run — `_avoided_test_dir`
+is registered with `atexit` for removal when the process exits. See
+tests/test_avoided_env_bootstrap_cleanup.py for the regression guard.
 """
 
+import atexit
 import os
+import shutil
 import tempfile
+
+_avoided_test_dir = None
+
+
+def _cleanup_avoided_test_dir():
+    if _avoided_test_dir:
+        shutil.rmtree(_avoided_test_dir, ignore_errors=True)
+
 
 if not os.environ.get("AVOIDED_DB_PATH"):
     _avoided_test_dir = tempfile.mkdtemp(prefix="avoided-test-")
     os.environ["AVOIDED_DB_PATH"] = os.path.join(_avoided_test_dir, "speediance-mcp.db")
+    atexit.register(_cleanup_avoided_test_dir)

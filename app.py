@@ -61,14 +61,6 @@ def _avoided_list_safe():
         return []
 
 
-def _avoided_ids_safe():
-    """set[int] of avoided ids, never raising (see _avoided_list_safe)."""
-    try:
-        return avoided_store.avoided_ids(avoided_store.db_path(client.credentials))
-    except Exception as e:
-        print(f"[avoided_store] avoided_ids failed, falling back to empty: {e}", file=sys.stderr)
-        return set()
-
 # --- Media Caching Logic ---
 # Define local cache path
 # Use base_dir to ensure it works in exe mode (though usually we want cache outside the temp exe folder)

@@ -177,6 +177,16 @@ class TestAvoidedRoutes(unittest.TestCase):
         self.assertEqual(r.get_json(),
                          {"error": "The avoided list is busy or unavailable — try again."})
 
+    def test_avoided_ids_safe_wrapper_removed_as_dead_code(self):
+        # Fix round 2, item 4: _avoided_ids_safe() was defined but never called anywhere
+        # (generate/refine need full rows — name/reason — not just ids, so it had no
+        # natural caller). Removed rather than wired in for the sake of it; this guards
+        # against silently reintroducing unused dead code.
+        self.assertFalse(hasattr(app, "_avoided_ids_safe"))
+        # The underlying store function it would have wrapped is still directly tested
+        # in tests/test_avoided_store.py and still used by adaptive_training callers.
+        self.assertTrue(hasattr(avoided_store, "avoided_ids"))
+
 
 if __name__ == "__main__":
     unittest.main()
