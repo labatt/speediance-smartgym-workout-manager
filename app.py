@@ -6,6 +6,7 @@ import schedule_planner
 import progression
 import coach
 import workout_gen
+import avoided_store
 from cardio_stats import is_cardio_record, derive_cardio_stats
 import reconcile
 import session_detail
@@ -1140,7 +1141,10 @@ def api_workout_generate():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        library = client.get_library()
+        avoided_rows = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+        avoided_id_set = {r["group_id"] for r in avoided_rows}
+        avoided_names = [r["name"] for r in avoided_rows if r["name"]]
+        library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
         catalog = workout_gen.compact_catalog(library)
 
         ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(user_request, catalog), cfg)
@@ -1174,6 +1178,7 @@ def api_workout_generate():
                 })
             ref_norm.append({"name": det.get('name', 'Workout'), "exercises": exs})
         pool_ids = list(dict.fromkeys(ref_ids + pool_ids))[:60]   # referenced first, then selected
+        pool_ids = [i for i in pool_ids if i not in avoided_id_set]
         ref_txt = workout_gen.build_reference_workouts(ref_norm, _unit_label().upper())
 
         details = {}
@@ -1203,7 +1208,8 @@ def api_workout_generate():
                     raise                 # a mid-request auth loss must still 401
                 recent_txt = ""           # otherwise recent-perf is a nicety; never block
         system = workout_gen.build_generation_system_prompt(
-            merged, _unit_label().upper(), has_recent=bool(recent_txt), has_refs=bool(ref_txt))
+            merged, _unit_label().upper(), has_recent=bool(recent_txt), has_refs=bool(ref_txt),
+            avoid_names=avoided_names)
         user = workout_gen.build_generation_user_prompt(
             user_request, references=ref_txt, recent_performance=recent_txt)
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
@@ -1261,7 +1267,10 @@ def api_workout_refine():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        library = client.get_library()
+        avoided_rows = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+        avoided_id_set = {r["group_id"] for r in avoided_rows}
+        avoided_names = [r["name"] for r in avoided_rows if r["name"]]
+        library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
         catalog = workout_gen.compact_catalog(library)
 
         ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
@@ -1273,6 +1282,7 @@ def api_workout_refine():
             except (TypeError, ValueError):
                 pass
         pool_ids = list(dict.fromkeys(cur_ids + selected))[:60]   # keep current exercises, then candidates
+        pool_ids = [i for i in pool_ids if i not in avoided_id_set]
 
         details = {}
         try:
@@ -1300,7 +1310,7 @@ def api_workout_refine():
                     raise
                 recent_txt = ""
         system = workout_gen.build_generation_system_prompt(
-            merged, _unit_label().upper(), has_recent=bool(recent_txt))
+            merged, _unit_label().upper(), has_recent=bool(recent_txt), avoid_names=avoided_names)
         user = workout_gen.build_refinement_user_prompt(current, comment, body.get('comment_log') or [])
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
         if not ok:

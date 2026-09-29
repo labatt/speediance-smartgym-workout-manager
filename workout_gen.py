@@ -63,6 +63,15 @@ def merge_exercise(lib_item, detail=None):
     }
 
 
+def drop_avoided(library, avoided_ids):
+    """Filter out library items whose id is in avoided_ids (a set/collection of ints).
+    Returns a new list; never mutates `library`. avoided_ids may be None/empty."""
+    if not avoided_ids:
+        return list(library)
+    avoided_ids = set(avoided_ids)
+    return [e for e in library if int(e.get("id", -1)) not in avoided_ids]
+
+
 def compact_catalog(library):
     """One name-only line per exercise for the cheap stage-1 selection pass."""
     lines = []
@@ -219,7 +228,7 @@ def build_recent_performance(sessions, unit_label, days):
     return "\n".join(lines)
 
 
-def build_generation_system_prompt(exercises, unit_label, has_recent=False, has_refs=False):
+def build_generation_system_prompt(exercises, unit_label, has_recent=False, has_refs=False, avoid_names=None):
     """Full 'professional fitness coach' system prompt for the selected exercise pool."""
     other = "kilograms" if unit_label == "LBS" else "pounds"
     has_timed = any(e["is_timed"] for e in exercises)
@@ -288,6 +297,11 @@ def build_generation_system_prompt(exercises, unit_label, has_recent=False, has_
             "REFERENCE WORKOUTS are provided in the user prompt as structure to adapt: reuse their "
             "exercises where they fit the request, but tailor sets and loads to the request and the "
             "athlete's recent performance rather than copying them verbatim.",
+        ]
+    if avoid_names:
+        p += [
+            "",
+            "Never include these exercises: " + ", ".join(avoid_names) + ".",
         ]
     p += [
         "",

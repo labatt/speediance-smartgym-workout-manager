@@ -34,6 +34,25 @@ class TestTagsAndCatalog(unittest.TestCase):
         self.assertIn("Back", cat)                   # category present
 
 
+class TestDropAvoided(unittest.TestCase):
+    def test_removes_avoided_ids(self):
+        filtered = wg.drop_avoided(LIB, {1002})
+        self.assertEqual(sorted(e["id"] for e in filtered), [1001, 1003])
+
+    def test_empty_avoided_returns_full_library_copy(self):
+        filtered = wg.drop_avoided(LIB, set())
+        self.assertEqual([e["id"] for e in filtered], [e["id"] for e in LIB])
+        self.assertIsNot(filtered, LIB)
+
+    def test_none_avoided_treated_as_empty(self):
+        filtered = wg.drop_avoided(LIB, None)
+        self.assertEqual([e["id"] for e in filtered], [e["id"] for e in LIB])
+
+    def test_all_avoided_yields_empty(self):
+        filtered = wg.drop_avoided(LIB, {1001, 1002, 1003})
+        self.assertEqual(filtered, [])
+
+
 class TestSelection(unittest.TestCase):
     def test_parse_ids_from_json_array_keeps_only_known(self):
         text = 'Sure! [1001, 1002, 999999]'
@@ -83,6 +102,18 @@ class TestGenerationPrompt(unittest.TestCase):
     def test_user_prompt_has_request(self):
         u = wg.build_generation_user_prompt("30 minute back day")
         self.assertIn("30 minute back day", u)
+
+    def test_system_prompt_mentions_avoided_names_when_present(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS", avoid_names=["Deadlift", "Skull Crusher"])
+        self.assertIn("Never include these exercises", p)
+        self.assertIn("Deadlift", p)
+        self.assertIn("Skull Crusher", p)
+
+    def test_system_prompt_omits_avoided_line_when_none(self):
+        p = wg.build_generation_system_prompt(self.merged, "LBS")
+        self.assertNotIn("Never include these exercises", p)
+        p2 = wg.build_generation_system_prompt(self.merged, "LBS", avoid_names=[])
+        self.assertNotIn("Never include these exercises", p2)
 
     def test_system_prompt_requires_nonzero_weight_and_places_rm(self):
         # Regression: models returned weight:0 on RM presets because the prompt never said
