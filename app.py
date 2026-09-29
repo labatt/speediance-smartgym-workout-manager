@@ -1290,18 +1290,34 @@ def api_workout_refine():
     try:
         avoided_rows = _avoided_list_safe()
         avoided_id_set = {r["group_id"] for r in avoided_rows}
-        avoided_names = [r["name"] for r in avoided_rows if r["name"]]
-        library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
-        catalog = workout_gen.compact_catalog(library)
 
-        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
-        selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
         cur_ids = []
         for e in cur_exs:
             try:
                 cur_ids.append(int(e.get('id')))
             except (TypeError, ValueError):
                 pass
+        cur_id_set = set(cur_ids)
+
+        # I-7: an exercise already in the current workout is never silently dropped just
+        # because it's since been marked avoided — it stays, with a warning explaining
+        # why — but the catalog/pool offered below for NEW picks still excludes every
+        # avoided id fully, so nothing NEW avoided can be added.
+        kept_avoided_ids = avoided_id_set & cur_id_set
+        kept_avoided_warnings = [
+            f"Kept {r['name'] or ('exercise ' + str(r['group_id']))} (marked avoided) "
+            "because it was already in your workout."
+            for r in avoided_rows if r["group_id"] in kept_avoided_ids
+        ]
+        avoided_names = [r["name"] for r in avoided_rows
+                         if r["name"] and r["group_id"] not in kept_avoided_ids]
+
+        full_library = client.get_library()
+        library = workout_gen.drop_avoided(full_library, avoided_id_set)
+        catalog = workout_gen.compact_catalog(library)
+
+        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
+        selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
         pool_ids = list(dict.fromkeys(cur_ids + selected))[:60]   # keep current exercises, then candidates
         pool_ids = [i for i in pool_ids if i not in avoided_id_set]
 
@@ -1346,7 +1362,11 @@ def api_workout_refine():
         if parsed is None:
             return jsonify({"ok": False, "text": "The model did not return valid JSON. Try again or rephrase."}), 200
 
-        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library)
+        # Validate against a library that still knows about a kept-but-avoided id (so it
+        # isn't dropped as "unknown"), while everything genuinely excluded stays excluded.
+        validation_library = workout_gen.drop_avoided(full_library, avoided_id_set - kept_avoided_ids)
+        ok, cleaned, warnings = workout_gen.validate_workout(parsed, validation_library)
+        warnings = kept_avoided_warnings + warnings
         if not ok:
             return jsonify({"ok": False, "text": "The adjusted workout had no usable exercises. Try again.",
                             "warnings": warnings}), 200
