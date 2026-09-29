@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Coaching memory</h1>
+            <p class="text-xs text-gray-500 mt-1">
+                What Claude reads before planning a workout. {{ facts.activeTotal }} active of {{ facts.total }}.
+            </p>
+        </div>
+        <a href="{{ '/memory?archived=1' if not show_archived else '/memory' }}"
+           class="text-xs px-3 py-1.5 rounded border border-gray-700 bg-gray-800 text-gray-300 hover:text-white self-start">
+            {{ 'Hide archived' if show_archived else 'Show archived' }}
+        </a>
+    </div>
+
+    {% if store_error %}
+    <div class="bg-yellow-900/40 border border-yellow-700 text-yellow-200 text-sm rounded p-3 mb-4">{{ store_error }}</div>
+    {% endif %}
+
+    {% macro fact_list(rows, tone='text-gray-200') %}
+        <ul class="space-y-2">
+        {% for f in rows %}
+            <li class="bg-gray-900 rounded p-3 {% if f.archived %}opacity-60{% endif %}">
+                <div class="flex items-start justify-between gap-3">
+                    <p class="text-sm {{ tone }} leading-relaxed">{{ f.text }}</p>
+                    {% if not f.archived %}
+                    <form action="/memory/archive" method="POST" class="flex-shrink-0">
+                        <input type="hidden" name="id" value="{{ f.id }}">
+                        <button type="submit" class="text-[11px] px-2 py-1 rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500"
+                                title="Archive this fact">Archive</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <p class="text-[10px] text-gray-500 mt-1.5">
+                    #{{ f.id }} &middot; {{ f.category }} &middot; {{ f.source }} &middot; {{ f.created }}
+                    {% if f.scope %} &middot; scope {{ f.scope }}{% endif %}
+                    {% if f.expiresAt %} &middot; expires {{ f.expiresAt[:10] }}{% endif %}
+                    {% if f.archivedReason %} &middot; <span class="text-gray-400">{{ f.archivedReason }}</span>{% endif %}
+                </p>
+            </li>
+        {% endfor %}
+        </ul>
+    {% endmacro %}
+
+    {% if facts.legacy %}
+    <section class="mb-6">
+        <h2 class="text-sm font-semibold text-yellow-400 mb-1">Awaiting curation ({{ facts.legacyTotal }})</h2>
+        <p class="text-xs text-gray-500 mb-2">
+            Carried over from the old free-form notes. They still count &mdash; treat injury ones as hard
+            constraints &mdash; but nothing has classified them yet. Ask Claude to
+            &ldquo;review my legacy facts&rdquo; to re-save each one with a proper kind and severity,
+            or archive the ones that no longer hold.
+        </p>
+        {{ fact_list(facts.legacy, 'text-yellow-100') }}
+    </section>
+    {% endif %}
+
+    {% if facts.hard %}
+    <section class="mb-6">
+        <h2 class="text-sm font-semibold text-red-400 mb-1">Hard constraints</h2>
+        <p class="text-xs text-gray-500 mb-2">Must be checked before any workout is built.</p>
+        {{ fact_list(facts.hard) }}
+    </section>
+    {% endif %}
+
+    {% for title, key, blurb in [
+        ('Soft constraints', 'soft', 'Weigh these; they bend if they must.'),
+        ('Preferences', 'preferences', 'Weights on exercise selection.'),
+        ('Goals', 'goals', 'What the training is for.'),
+        ('Recent observations', 'observations', 'Dated findings. No forward authority — the newest ten.')] %}
+        {% if facts[key] %}
+        <section class="mb-6">
+            <h2 class="text-sm font-semibold text-gray-200 mb-1">{{ title }}</h2>
+            <p class="text-xs text-gray-500 mb-2">{{ blurb }}</p>
+            {{ fact_list(facts[key]) }}
+        </section>
+        {% endif %}
+    {% endfor %}
+
+    {% if show_archived and facts.archived %}
+    <section class="mb-6">
+        <h2 class="text-sm font-semibold text-gray-400 mb-1">Archived ({{ facts.archived|length }})</h2>
+        <p class="text-xs text-gray-500 mb-2">Kept for history. Never read when planning.</p>
+        {{ fact_list(facts.archived, 'text-gray-400') }}
+    </section>
+    {% endif %}
+
+    {% if facts.total == 0 and not store_error %}
+    <p class="text-sm text-gray-500">No facts saved yet. Tell Claude something durable about your training
+        &mdash; an injury, your schedule, a goal &mdash; and it will save it here.</p>
+    {% endif %}
+
+    <p class="text-[11px] text-gray-600 mt-8 leading-relaxed">
+        This page reads the same store as Claude, and can archive a fact. Adding one, or replacing an old
+        one, happens through Claude &mdash; the length limit, duplicate check and supersede rules live
+        there, and having two sets of them would let them drift apart.
+    </p>
+</div>
+{% endblock %}

@@ -278,8 +278,8 @@
       "title": "Memory page: review and curate facts (hard/soft constraints, preferences, goals, observations, conflicts, legacy)",
       "summary": "A web app page over the MCP curated fact store (#30): grouped view, conflicts shown side by side, legacy facts to review, and archive/supersede actions. The MCP DB is the source of truth.",
       "affects": "web app (new page) reading/writing the MCP curated_facts table",
-      "status": "queued",
-      "notes": "From the GM Manager Settings evaluation (#31). Starts after #30 lands."
+      "status": "done",
+      "notes": "From the GM Manager Settings evaluation (#31). Starts after #30 lands. DONE 2026-09-29: facts_store.py + /memory page + a Memory nav link. Shows the coaching memory the way Claude reads it — hard constraints, soft constraints, preferences, goals, the 10 newest observations — with an 'Awaiting curation' block at the top for the 11 legacy facts, explaining that they still bind and how to curate them. 'Show archived' reveals superseded/expired/archived rows with the reason for each; status is derived, never stored. Deliberately read-only except Archive: creating and superseding facts stay in the MCP server, where the 600-char limit, near-duplicate check and supersede transaction live — a second rule set in the web app would drift. The page says so. Store errors warn instead of 500ing. 12 tests."
     },
     {
       "id": 35,

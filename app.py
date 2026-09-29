@@ -14,6 +14,7 @@ from muscle_balance import muscle_index, attribute, ratios, untrained
 from accessories import dedupe_accessories
 from profile_view import profile_summary
 import equipment_store
+import facts_store
 import reconcile
 import session_detail
 import datetime
@@ -1823,6 +1824,38 @@ def _session_detail(training_id, kind):
 
 
 MUSCLE_BALANCE_SESSIONS = 40
+
+
+@app.route('/memory')
+def memory_page():
+    """The coaching memory Claude reads before planning: facts grouped by kind."""
+    show_archived = request.args.get('archived') == '1'
+    store_error = None
+    try:
+        facts = facts_store.list_facts(client.credentials, include_archived=show_archived)
+    except Exception as e:
+        print(f"Could not read the fact store: {e}")
+        facts = facts_store._empty()
+        store_error = "The coaching memory is busy or unavailable — try again."
+    return render_template('memory.html', facts=facts, show_archived=show_archived,
+                           store_error=store_error)
+
+
+@app.route('/memory/archive', methods=['POST'])
+def memory_archive():
+    """Archive one fact. Archived facts stay queryable but leave every default read."""
+    try:
+        archived = facts_store.archive_fact(request.form.get('id'), client.credentials)
+    except (TypeError, ValueError):
+        flash("That fact id isn't valid.", "error")
+        return redirect(url_for('memory_page'))
+    except Exception as e:
+        print(f"Could not archive a fact: {e}")
+        flash("The coaching memory is busy or unavailable — nothing was archived.", "error")
+        return redirect(url_for('memory_page'))
+    flash("Fact archived." if archived else "That fact was already archived.",
+          "success" if archived else "error")
+    return redirect(url_for('memory_page'))
 
 
 @app.route('/progress')
