@@ -7,6 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; }
+        /* Tailwind's dim greys were chosen for white backgrounds. On this near-black page
+           text-gray-600 lands around 2.3:1 contrast and text-gray-500 around 3.9:1, both
+           under the 4.5:1 minimum for body text — captions and hints were effectively
+           unreadable. These lift the three dim steps while keeping them visibly ranked
+           below the brighter ones. Overriding centrally beats editing ~280 class uses. */
+        .text-gray-600 { color: #8b95a9; }
+        .text-gray-500 { color: #9aa4b8; }
+        .text-gray-400 { color: #b7c0d0; }
         /* The collapsed rail shows icons only; labels and section headings fold away.
            Driven by a class on <body> so it applies before first paint (see the inline
            script below) and never flashes the wrong width. */

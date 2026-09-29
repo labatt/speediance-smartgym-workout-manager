@@ -52,7 +52,7 @@
                 </div>
                 <div class="flex items-center justify-center gap-2 mt-3 text-[10px] text-gray-500">
                     <span>untrained</span>
-                    <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#273244,#6a1f56,#b5305a,#e8703a,#f7d267)"></span>
+                    <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#5a6478,#8e367a,#d6446c,#f68a48,#ffe28a)"></span>
                     <span>most worked</span>
                 </div>
                 <p class="text-[10px] text-gray-600 text-center mt-1">Hover a muscle for its volume and status.</p>
@@ -65,7 +65,7 @@
                     <table class="w-full text-xs">
                         <thead><tr class="text-gray-400 text-left">
                             <th class="pb-2 font-medium">Muscle</th>
-                            <th class="pb-2 font-medium text-right">Volume</th>
+                            <th class="pb-2 pr-3 font-medium text-right">Volume</th>
                             <th class="pb-2 font-medium w-1/3">Share</th>
                         </tr></thead>
                         <tbody id="muscleRows"></tbody>
@@ -169,9 +169,9 @@ function shade(share) {
     // hardest-worked muscles came out mud; adding teal and yellow fixed the mud but made
     // a rainbow, where nobody can tell whether green outranks blue. This ramp climbs
     // steadily in brightness, so "brighter means more" holds at every step.
-    if (!(share > 0)) return '#273244';
-    const stops = [[0, [42,42,62]], [0.25, [106,31,86]], [0.5, [181,48,90]],
-                   [0.75, [232,112,58]], [1, [247,210,103]]];
+    if (!(share > 0)) return '#5a6478';
+    const stops = [[0, [88,84,124]], [0.25, [142,54,122]], [0.5, [214,68,108]],
+                   [0.75, [246,138,72]], [1, [255,226,138]]];
     for (let i = 1; i < stops.length; i++) {
         if (share <= stops[i][0]) {
             const [p0, c0] = stops[i-1], [p1, c1] = stops[i];
@@ -180,7 +180,7 @@ function shade(share) {
             return `rgb(${c[0]},${c[1]},${c[2]})`;
         }
     }
-    return 'rgb(247,210,103)';
+    return 'rgb(255,226,138)';
 }
 
 // Plain words for the share, so the colour isn't the only thing carrying the meaning.
@@ -204,12 +204,12 @@ const FRONT_DETAIL = ['M60 86 L60 134', 'M52 98 L68 98', 'M52 110 L68 110', 'M52
 function drawFigure(svg, regions, volumes, peak, unit) {
     svg.innerHTML = '';
     // Body first, muscles over it.
-    SILHOUETTE.forEach(d => svg.appendChild(el('path', {d, fill: '#1b2330', stroke: '#111827', 'stroke-width': 0.8})));
+    SILHOUETTE.forEach(d => svg.appendChild(el('path', {d, fill: '#3f4a63', stroke: '#59657f', 'stroke-width': 0.8})));
     regions.forEach(([muscle, label, d]) => {
         const volume = volumes[muscle] || 0;
         const share = peak ? volume / peak : 0;
         const path = el('path', {
-            d, fill: shade(share), stroke: '#0f1520', 'stroke-width': 0.7,
+            d, fill: shade(share), stroke: '#2b3548', 'stroke-width': 0.7,
             'data-muscle': muscle, 'data-volume': volume, 'data-share': share,
             style: 'cursor:pointer',
         });
@@ -220,7 +220,7 @@ function drawFigure(svg, regions, volumes, peak, unit) {
     });
     if (regions === FRONT) {
         FRONT_DETAIL.forEach(d => svg.appendChild(el('path', {
-            d, stroke: '#0f1520', 'stroke-width': 0.8, fill: 'none',
+            d, stroke: '#2b3548', 'stroke-width': 0.8, fill: 'none',
             'pointer-events': 'none', opacity: '0.55',
         })));
     }
@@ -260,7 +260,7 @@ function hideTip(e) {
     const svg = e.currentTarget.ownerSVGElement;
     const muscle = e.currentTarget.getAttribute('data-muscle');
     svg.querySelectorAll(`path[data-muscle="${CSS.escape(muscle)}"]`).forEach(p => {
-        p.setAttribute('stroke', '#0f1520');
+        p.setAttribute('stroke', '#2b3548');
         p.setAttribute('stroke-width', '0.7');
     });
 }
@@ -322,7 +322,7 @@ async function load(days) {
     document.getElementById('muscleRows').innerHTML = data.byMuscle.map(row => `
         <tr class="border-t border-gray-800">
             <td class="py-1.5 text-gray-300">${row.muscle}</td>
-            <td class="py-1.5 text-right text-blue-400 whitespace-nowrap">${fmt(row.volume)}</td>
+            <td class="py-1.5 pr-3 text-right text-gray-200 whitespace-nowrap">${fmt(row.volume)}</td>
             <td class="py-1.5 pl-2">
                 <span class="block h-2 rounded" style="width:${peak ? Math.max(2, 100 * row.volume / peak) : 0}%;background:${shade(peak ? row.volume / peak : 0)}"></span>
             </td>
