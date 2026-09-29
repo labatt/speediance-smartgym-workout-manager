@@ -6,6 +6,8 @@ import schedule_planner
 import progression
 import coach
 import workout_gen
+import avoided_store
+import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
 import reconcile
 import session_detail
@@ -43,6 +45,21 @@ app.register_blueprint(init_debug(client))
 
 def _is_auth_error(error):
     return isinstance(error, SpeedianceAuthError) or str(error) == "Unauthorized"
+
+
+_AVOIDED_STORE_UNAVAILABLE_MSG = "The avoided list is busy or unavailable — try again."
+
+
+def _avoided_list_safe():
+    """avoided_store.list_avoided(), never raising. The shared SQLite file can be locked
+    by speediance-mcp or otherwise briefly unavailable — that must never break a page or
+    the AI generator; it just means nothing is treated as avoided for that one call."""
+    try:
+        return avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+    except Exception as e:
+        print(f"[avoided_store] list_avoided failed, falling back to empty: {e}", file=sys.stderr)
+        return []
+
 
 # --- Media Caching Logic ---
 # Define local cache path
@@ -202,8 +219,9 @@ def settings():
             accessories = client.get_accessories()
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
+    avoided = _avoided_list_safe()
     return render_template('settings.html', creds=creds, accessories=accessories,
-                           wp_connected=wellness.is_connected())
+                           wp_connected=wellness.is_connected(), avoided=avoided)
 
 @app.route('/settings/custom_instruction', methods=['POST'])
 def update_custom_instruction():
@@ -1140,7 +1158,10 @@ def api_workout_generate():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        library = client.get_library()
+        avoided_rows = _avoided_list_safe()
+        avoided_id_set = {r["group_id"] for r in avoided_rows}
+        avoided_names = [r["name"] for r in avoided_rows if r["name"]]
+        library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
         catalog = workout_gen.compact_catalog(library)
 
         ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(user_request, catalog), cfg)
@@ -1174,6 +1195,7 @@ def api_workout_generate():
                 })
             ref_norm.append({"name": det.get('name', 'Workout'), "exercises": exs})
         pool_ids = list(dict.fromkeys(ref_ids + pool_ids))[:60]   # referenced first, then selected
+        pool_ids = [i for i in pool_ids if i not in avoided_id_set]
         ref_txt = workout_gen.build_reference_workouts(ref_norm, _unit_label().upper())
 
         details = {}
@@ -1203,7 +1225,8 @@ def api_workout_generate():
                     raise                 # a mid-request auth loss must still 401
                 recent_txt = ""           # otherwise recent-perf is a nicety; never block
         system = workout_gen.build_generation_system_prompt(
-            merged, _unit_label().upper(), has_recent=bool(recent_txt), has_refs=bool(ref_txt))
+            merged, _unit_label().upper(), has_recent=bool(recent_txt), has_refs=bool(ref_txt),
+            avoid_names=avoided_names)
         user = workout_gen.build_generation_user_prompt(
             user_request, references=ref_txt, recent_performance=recent_txt)
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
@@ -1261,18 +1284,38 @@ def api_workout_refine():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        library = client.get_library()
-        catalog = workout_gen.compact_catalog(library)
+        avoided_rows = _avoided_list_safe()
+        avoided_id_set = {r["group_id"] for r in avoided_rows}
 
-        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
-        selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
         cur_ids = []
         for e in cur_exs:
             try:
                 cur_ids.append(int(e.get('id')))
             except (TypeError, ValueError):
                 pass
+        cur_id_set = set(cur_ids)
+
+        # I-7: an exercise already in the current workout is never silently dropped just
+        # because it's since been marked avoided — it stays, with a warning explaining
+        # why — but the catalog/pool offered below for NEW picks still excludes every
+        # avoided id fully, so nothing NEW avoided can be added.
+        kept_avoided_ids = avoided_id_set & cur_id_set
+        excluded_avoided_ids = avoided_id_set - kept_avoided_ids
+        avoided_names = [r["name"] for r in avoided_rows
+                         if r["name"] and r["group_id"] not in kept_avoided_ids]
+
+        full_library = client.get_library()
+        library = workout_gen.drop_avoided(full_library, avoided_id_set)
+        catalog = workout_gen.compact_catalog(library)
+
+        ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
+        selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
         pool_ids = list(dict.fromkeys(cur_ids + selected))[:60]   # keep current exercises, then candidates
+        # Only genuinely-excluded ids are dropped here — a kept-but-avoided id stays in
+        # the pool so it's still described in the AVAILABLE EXERCISES catalog below (the
+        # model needs its tags/description to correctly preserve it), even though the
+        # SELECTION-stage catalog above already fully excluded it from new candidates.
+        pool_ids = [i for i in pool_ids if i not in excluded_avoided_ids]
 
         details = {}
         try:
@@ -1283,7 +1326,11 @@ def api_workout_refine():
             if _is_auth_error(e):
                 raise
             details = {}
-        libmap = {int(e["id"]): e for e in library}
+        # A kept-but-avoided id needs its own entry here (drop_avoided(full_library, ...)
+        # with only the genuinely-excluded ids, not the fully-excluded `library` above),
+        # so merge_exercise/build_generation_system_prompt can describe it.
+        library_for_merge = workout_gen.drop_avoided(full_library, excluded_avoided_ids)
+        libmap = {int(e["id"]): e for e in library_for_merge}
         merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
 
         recent_txt = ""
@@ -1300,7 +1347,7 @@ def api_workout_refine():
                     raise
                 recent_txt = ""
         system = workout_gen.build_generation_system_prompt(
-            merged, _unit_label().upper(), has_recent=bool(recent_txt))
+            merged, _unit_label().upper(), has_recent=bool(recent_txt), avoid_names=avoided_names)
         user = workout_gen.build_refinement_user_prompt(current, comment, body.get('comment_log') or [])
         ok, text = coach.chat_with(provider, model, user, cfg, system=system)
         if not ok:
@@ -1315,7 +1362,25 @@ def api_workout_refine():
         if parsed is None:
             return jsonify({"ok": False, "text": "The model did not return valid JSON. Try again or rephrase."}), 200
 
-        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library)
+        # Validate against a library that still knows about a kept-but-avoided id (so it
+        # isn't dropped as "unknown"), while everything genuinely excluded stays excluded.
+        # Same filter as library_for_merge — reuse it rather than recomputing.
+        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library_for_merge)
+
+        # Report what actually happened to each kept-avoided id, not what was merely
+        # attempted: the model can still drop it (e.g. it read the comment as a
+        # replacement), so "Kept ..." would be a lie if it didn't survive.
+        cleaned_ids = {int(e["id"]) for e in (cleaned.get("exercises") or []) if e.get("id") is not None}
+        kept_avoided_warnings = []
+        for r in avoided_rows:
+            if r["group_id"] not in kept_avoided_ids:
+                continue
+            label = r["name"] or f"exercise {r['group_id']}"
+            if r["group_id"] in cleaned_ids:
+                kept_avoided_warnings.append(f"Kept {label} (marked avoided) because it was already in your workout.")
+            else:
+                kept_avoided_warnings.append(f"{label} (marked avoided) was dropped by the generator.")
+        warnings = kept_avoided_warnings + warnings
         if not ok:
             return jsonify({"ok": False, "text": "The adjusted workout had no usable exercises. Try again.",
                             "warnings": warnings}), 200
@@ -1376,6 +1441,65 @@ def api_burn_rate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/avoided', methods=['GET', 'POST'])
+def api_avoided():
+    """Avoided exercises: shared with speediance-mcp via avoided_store. No Speediance
+    token needed — this is local bookkeeping, not an API call."""
+    path = avoided_store.db_path(client.credentials)
+    if request.method == 'GET':
+        return jsonify({"avoided": _avoided_list_safe()})
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+
+    group_id = body.get('group_id')
+    # bool is a subclass of int in Python — reject it explicitly rather than silently
+    # treating {"group_id": true} as group_id 1. Floats (even whole-number ones like
+    # 1001.0) and numeric strings are rejected too: this is a type check, not "can be
+    # coerced to a number".
+    if isinstance(group_id, bool) or not isinstance(group_id, int):
+        return jsonify({"error": "group_id is required and must be an integer."}), 400
+    if not (1 <= group_id <= 2**63 - 1):
+        return jsonify({"error": "group_id must be between 1 and 2**63-1."}), 400
+
+    # `or ''` is deliberately NOT used here: it would mask a falsy-but-wrong-typed value
+    # (e.g. name: 0) into an accepted empty string instead of rejecting it.
+    name = body.get('name')
+    if name is None:
+        name = ''
+    if not isinstance(name, str):
+        return jsonify({"error": "name must be a string."}), 400
+    if len(name) > 200:
+        return jsonify({"error": "name must be 200 characters or fewer."}), 400
+
+    reason = body.get('reason')
+    if reason is None:
+        reason = ''
+    if not isinstance(reason, str):
+        return jsonify({"error": "reason must be a string."}), 400
+
+    try:
+        avoided_store.set_avoided(path, group_id, name, reason)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except sqlite3.Error as e:
+        print(f"[avoided_store] set_avoided failed: {e}", file=sys.stderr)
+        return jsonify({"error": _AVOIDED_STORE_UNAVAILABLE_MSG}), 503
+    return jsonify({"ok": True})
+
+
+@app.route('/api/avoided/<int:group_id>', methods=['DELETE'])
+def api_avoided_delete(group_id):
+    path = avoided_store.db_path(client.credentials)
+    try:
+        removed = avoided_store.clear_avoided(path, group_id)
+    except sqlite3.Error as e:
+        print(f"[avoided_store] clear_avoided failed: {e}", file=sys.stderr)
+        return jsonify({"error": _AVOIDED_STORE_UNAVAILABLE_MSG}), 503
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.route('/api/stats/<int:group_id>')
 def api_stats(group_id):
     """Returns user statistics for a specific exercise."""
@@ -1416,6 +1540,7 @@ def library():
         
     owned_accessories = client.credentials.get('owned_accessories', [])
     owned_devices = client.credentials.get('owned_devices', [])
+    avoided = {row["group_id"]: row["reason"] for row in _avoided_list_safe()}
     return render_template(
         'library.html',
         exercises=exercises,
@@ -1424,6 +1549,7 @@ def library():
         allow_monster_moves=client.allow_monster_moves,
         owned_accessories=owned_accessories,
         owned_devices=owned_devices,
+        avoided=avoided,
     )
 
 @app.route('/library/refresh')

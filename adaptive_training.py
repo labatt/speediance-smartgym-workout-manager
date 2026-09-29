@@ -36,8 +36,11 @@ UNIQUE_LOOKBACK_MAX = 30
 ON_DEVICE_COUNT = 10                # mandatory on-device lifts per workout
 OFF_SPEEDIANCE_MAX = 2              # max off-Speediance additions per workout
 
-# Optional blacklist — empty by default. Populate with group_id ints to drop
-# movements from the candidate pool. Designed to be edited in place.
+# Optional static blacklist — empty by default. Populate with group_id ints to drop
+# movements from the candidate pool. Designed to be edited in place. A caller-supplied
+# `avoided_ids` set (e.g. from the shared avoided-exercises store) is unioned with this
+# at pool-load time via _load_library()/_refresh_pools(); BLACKLIST alone remains the
+# default when no avoided_ids is passed.
 BLACKLIST: Tuple[int, ...] = ()
 
 SETUP_RANK = {"high": 0, "chest": 1, "mid": 2, "base": 3}
@@ -140,14 +143,20 @@ def _muscle_to_patterns(main_muscle: str, title: str = "") -> tuple:
     return tuple(dict.fromkeys(patterns)), unilateral
 
 
-def _load_library() -> Tuple[List[Movement], List[Movement]]:
-    """Read the Speediance library cache and return (on_device, off_device) pools."""
+def _load_library(avoided_ids: Optional[Iterable[int]] = None) -> Tuple[List[Movement], List[Movement]]:
+    """Read the Speediance library cache and return (on_device, off_device) pools.
+
+    avoided_ids: caller-supplied group ids (e.g. from the shared avoided-exercises store)
+    to exclude on top of the static BLACKLIST below. Backward compatible: omitting it
+    behaves exactly as before, filtering by BLACKLIST alone.
+    """
     if not LIBRARY_CACHE.exists():
         return [], []
-    raw = json.load(open(LIBRARY_CACHE))
+    with open(LIBRARY_CACHE) as f:
+        raw = json.load(f)
     on_device: List[Movement] = []
     off_device: List[Movement] = []
-    blacklist = set(BLACKLIST)
+    blacklist = set(BLACKLIST) | set(avoided_ids or ())
     for m in raw:
         if m.get("isCustom") not in (0, None):
             continue
@@ -195,9 +204,9 @@ ON_DEVICE_POOL: List[Movement] = []
 OFF_SPEEDIANCE_POOL: List[Movement] = []
 
 
-def _refresh_pools() -> None:
+def _refresh_pools(avoided_ids: Optional[Iterable[int]] = None) -> None:
     global ON_DEVICE_POOL, OFF_SPEEDIANCE_POOL
-    on, off = _load_library()
+    on, off = _load_library(avoided_ids=avoided_ids)
     ON_DEVICE_POOL = on
     OFF_SPEEDIANCE_POOL = off
 
@@ -517,15 +526,17 @@ def choose_patterns(signals: TrainingSignals, bucket: str) -> tuple:
     return ("pull", "push", "hinge", "legs", "core")
 
 
-def choose_implement(signals: TrainingSignals, bucket: str, count: int) -> str:
+def choose_implement(signals: TrainingSignals, bucket: str, count: int,
+                     avoided_ids: Optional[Iterable[int]] = None) -> str:
     if signals.preferred_implement:
         return signals.preferred_implement
-    if not ON_DEVICE_POOL:
+    pool = [m for m in ON_DEVICE_POOL if m.group_id not in avoided_ids] if avoided_ids else ON_DEVICE_POOL
+    if not pool:
         return "handles"
     patterns = choose_patterns(signals, bucket)
     implement_scores: Dict[str, int] = {}
-    for implement in {m.implement for m in ON_DEVICE_POOL}:
-        candidates = [m for m in ON_DEVICE_POOL if m.implement == implement]
+    for implement in {m.implement for m in pool}:
+        candidates = [m for m in pool if m.implement == implement]
         if len(candidates) < count:
             continue
         score = sum(
@@ -561,16 +572,22 @@ def _would_duplicate(signature_so_far: Tuple[Tuple[int, int], ...],
 
 def select_movements(signals: TrainingSignals, bucket: str, count: int,
                      past_signatures: List[Tuple[Tuple[int, int], ...]],
-                     window: int) -> Tuple[List[Movement], int, int]:
+                     window: int,
+                     avoided_ids: Optional[Iterable[int]] = None) -> Tuple[List[Movement], int, int]:
     """Pick `count` on-device movements, all from a single implement, that
     differ from any past plan in the lookback window. Returns (movements,
     skipped_for_uniqueness, forced_repeats).
+
+    avoided_ids: group ids to exclude from the candidate pool (e.g. from the shared
+    avoided-exercises store), on top of whatever BLACKLIST already excluded when the
+    pool was loaded.
     """
     patterns = choose_patterns(signals, bucket)
-    if not ON_DEVICE_POOL:
+    pool = [m for m in ON_DEVICE_POOL if m.group_id not in avoided_ids] if avoided_ids else ON_DEVICE_POOL
+    if not pool:
         return [], 0, 0
-    implement = choose_implement(signals, bucket, count)
-    candidates = [m for m in ON_DEVICE_POOL if m.implement == implement]
+    implement = choose_implement(signals, bucket, count, avoided_ids=avoided_ids)
+    candidates = [m for m in pool if m.implement == implement]
     ranked = sorted(
         candidates,
         key=lambda m: (
@@ -611,12 +628,15 @@ def select_movements(signals: TrainingSignals, bucket: str, count: int,
 
 def select_off_speediance(bucket: str, count: int,
                           past_signatures: List[Tuple[Tuple[int, int], ...]],
-                          window: int) -> List[Movement]:
+                          window: int,
+                          avoided_ids: Optional[Iterable[int]] = None) -> List[Movement]:
     """Pick up to `count` off-Speediance additions, avoiding any group_id
     used in past plans' off-Speediance additions (so the same jump-squat
-    doesn't show up day after day).
+    doesn't show up day after day), and any group_id in avoided_ids.
     """
-    if count <= 0 or not OFF_SPEEDIANCE_POOL:
+    pool = ([m for m in OFF_SPEEDIANCE_POOL if m.group_id not in avoided_ids]
+            if avoided_ids else OFF_SPEEDIANCE_POOL)
+    if count <= 0 or not pool:
         return []
     past_off_ids: set = set()
     for path in sorted(TRAINING_PLANS_DIR.glob("*_post_bjj.json")):
@@ -638,7 +658,7 @@ def select_off_speediance(bucket: str, count: int,
             if e.get("off_speediance") and e.get("group_id") is not None:
                 window_off_ids.add(int(e["group_id"]))
 
-    ranked = sorted(OFF_SPEEDIANCE_POOL, key=lambda m: (
+    ranked = sorted(pool, key=lambda m: (
         0 if m.group_id in window_off_ids else 1,   # prefer never-seen-in-window
         0 if m.group_id in past_off_ids else 1,     # then never-seen-ever
         -m.group_id,
@@ -663,7 +683,13 @@ def choose_rm_sequence(bucket: str) -> List[int]:
     return [WARMUP_RM] * 5 + [WORKING_RM] * 5
 
 
-def build_plan(signals: TrainingSignals) -> TrainingPlan:
+def build_plan(signals: TrainingSignals,
+               avoided_ids: Optional[Iterable[int]] = None) -> TrainingPlan:
+    """avoided_ids: group ids from the shared avoided-exercises store (unioned with
+    BLACKLIST at the selection level, see select_movements/select_off_speediance) to
+    exclude from this plan. Optional and backward compatible — omitting it (or passing
+    an empty/falsy value) reproduces the previous behaviour exactly."""
+    avoided_ids = set(avoided_ids) if avoided_ids else set()
     capacity = estimate_daily_strain_capacity(signals)
     observed_strain = max(signals.whoop_strain_so_far or 0.0, signals.bjj_strain or 0.0)
     reserved_bjj = 0.0
@@ -683,11 +709,13 @@ def build_plan(signals: TrainingSignals) -> TrainingPlan:
 
     rms = choose_rm_sequence(bucket)
     movements, skipped, forced = select_movements(
-        signals, bucket, ON_DEVICE_COUNT, past_window, window,
+        signals, bucket, ON_DEVICE_COUNT, past_window, window, avoided_ids=avoided_ids,
     )
     if not movements:
-        # Pool empty — fall back to handles w/ 0 count rather than crash
-        movements = ON_DEVICE_POOL[:ON_DEVICE_COUNT]
+        # Pool empty — fall back to handles w/ 0 count rather than crash. Still honour
+        # avoided_ids here: this fallback reads ON_DEVICE_POOL directly, bypassing the
+        # filtering select_movements already did.
+        movements = [m for m in ON_DEVICE_POOL if m.group_id not in avoided_ids][:ON_DEVICE_COUNT]
     implement = movements[0].implement if movements else "handles"
 
     # RM assignment: if forced repeats reduced the pool, fill the rest as
@@ -706,7 +734,7 @@ def build_plan(signals: TrainingSignals) -> TrainingPlan:
         off_count = min(OFF_SPEEDIANCE_MAX, 1)
     else:
         off_count = OFF_SPEEDIANCE_MAX
-    off_movements = select_off_speediance(bucket, off_count, past_window, window)
+    off_movements = select_off_speediance(bucket, off_count, past_window, window, avoided_ids=avoided_ids)
 
     exercises: List[PlannedExercise] = []
     for movement, rm in zip(movements, effective_rms):

@@ -192,6 +192,142 @@
       "affects": "/srv/speediance-mcp (phase1 branch); nginx; pm2; DNS",
       "status": "done",
       "notes": "Requested 2026-09-28 ('I need to use it on claude.ai'). DNS created by the user's request: mcp.example.com A <your server IP> (Cloud DNS zone your-dns-zone). An SDK spike confirmed the full flow (register → authorize → our login → token → authed initialize). Plan: docs/plans/2026-09-28-phase2-remote-oauth.md (e275bac). DONE and verified live 2026-09-28: 4 plan tasks, each with a security fix round, then a final review and fix wave (store caps, `speediance-mcp revoke`, sticky logout, sign-in hardening); 305 tests. Deployed: pm2 app 'speediance-mcp' (serve --http on 127.0.0.1:8765), nginx site mcp.example.com (Let's Encrypt; per-IP limit_req on the OAuth endpoints), data dir /root/.config/speediance-mcp, signed in on client_type nano, unit lb. Bug found at deploy and fixed (51615a6): NANO/BIKE login responses have no 'unit', so the server stored kg; the known unit is now kept, and there's a --unit flag. The user connected claude.ai and it pulled their calendar; the server shows 1 client, 1 live token, 0 failures."
+    },
+    {
+      "id": 24,
+      "title": "Avoided exercises: one shared list for the web app and the MCP server (select/deselect, with reasons)",
+      "summary": "Mark/unmark exercises as avoided (optional reason) from the web app (Library toggle + filter, Settings list) and from claude.ai via MCP; generators never pick them; builder and MCP create/update warn. Single store: the MCP server's SQLite (exercise_marks), shared via a web app config path.",
+      "affects": "web app: new avoided store + /api/avoided routes, library.html, settings.html, create.html, workout_gen.py, adaptive_training.py; speediance-mcp: memory.py (reason), tools",
+      "status": "working",
+      "notes": "Requested 2026-09-28 ('exercises I can't do ... select and deselect'). Design approved in chat."
+    },
+    {
+      "id": 25,
+      "title": "MCP bug: get_calendar drops phone-health activities (walks, AeroRow rows) that GM Manager showed as otherActivities",
+      "summary": "speediance-mcp's get_calendar skips history rows imported from the phone health app (belongUserHealth), so off-machine work such as walks and AeroRow rowing is invisible and weekly load is understated. GM Manager returned these per day as otherActivities.",
+      "affects": "/srv/speediance-mcp tools/sessions.py (get_calendar), tools/coaching.py (snapshot)",
+      "status": "done",
+      "notes": "Reported 2026-09-28 by the user relaying claude.ai's comparison with GM Manager: no otherActivities on any day in September. The exclusion was deliberate (to keep gym-session counts right) but dropped the data entirely. FIXED 2026-09-28 (speediance-mcp 56c2ce0) and deployed: health imports are listed per day as otherActivities and in the snapshot. Live check: Sep 2 and Sep 3 show 27/38-min phone-health activities. Finding: Speediance only holds 2 phone-health rows in September, both odd 1-kcal ~0.006 mi overnight records; the calendar feed has no other-activities list. GM Manager's otherActivities most likely came from its own health integrations, so walks and runs live in Wellness Project, not Speediance. Machine rowing (with AeroRow) appears as normal sessions."
+    },
+    {
+      "id": 26,
+      "title": "Locations as a first-class dimension (Miami vs Tampa): per-location equipment, load convention, time window; templates belong to a location",
+      "summary": "Training is split between Miami (Gym Monster, barbell, rope, both benches, AeroRow) and Tampa (a dual-stack trainer with handles and a bar, no rope, per-side loads, a six-hour window). Nothing models this, so template titles carry 'dial these numbers PER SIDE' and Claude has given wrong numbers twice.",
+      "affects": "web app + speediance-mcp (preferences, templates, generators)",
+      "status": "future",
+      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth. 2026-09-28 user: location equipment = the Speediance standard accessory list plus free-text items; exercises for any machine (including non-Speediance ones) come from the Speediance library, filtered by what that location has. 2026-09-28 user answers: (1) per-side conversion follows Speediance's own convention — a move on both cables (bar or two handles, Speediance total) is half per side; a one-sided move is the same number. (2) Tampa days are set per trip (date ranges), not fixed weekdays. (3) Free-text equipment items can map to a Speediance accessory ('straight bar' counts as Barbell) to unlock library exercises; unmapped items are just notes. 2026-09-28: add a machine model per location (GM 1 / 2 / 2s → heaviest load) from the GM Manager evaluation."
+    },
+    {
+      "id": 27,
+      "title": "Owned is not usable: Flat Bench is owned but the user can't lie flat, and the owned-equipment filter still surfaces supine flat-bench moves",
+      "summary": "Owned equipment and usable movements need separate states (or the equipment filter and the avoid list must resolve against each other) before anything reaches a workout builder.",
+      "affects": "web app + speediance-mcp (equipment filter, avoided exercises)",
+      "status": "future",
+      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)? 2026-09-28 user: for now it's the flat bench specifically, but it must work generically for other users -> a per-item 'own it, can't use it' equipment state. The MCP server is the source of truth."
+    },
+    {
+      "id": 28,
+      "title": "Split-brain owned equipment: the web app's config.json vs speediance-mcp's own preferences",
+      "summary": "The web app keeps owned accessories only in config.json (ids 4,5,2,3,9,8, no Flat Bench); the MCP server keeps a separate owned_equipment list (7 names including Flat Bench, written by Claude). Neither syncs to Speediance. Tools and the UI read different stores.",
+      "affects": "web app settings/filters + speediance-mcp preferences",
+      "status": "queued",
+      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7. 2026-09-28 user decision: the MCP server is the source of truth for shared data (equipment, avoided, and later locations); the web app reads and writes the MCP DB."
+    },
+    {
+      "id": 29,
+      "title": "Web app accessory tiles duplicate the same item (Handles ×3, Tricep Rope ×3, Ankle Straps ×3, Skiing Handles ×3, Extender Belt ×2)",
+      "summary": "The accessory catalog has several ids per name (the Monster 3/Ultra duplicates); Settings renders one tile per id, so ticking the 'wrong' Handles silently breaks the filter. Dedupe by name (keep the id list), as the MCP server does.",
+      "affects": "templates/settings.html + app.py /settings/accessories",
+      "status": "queued",
+      "notes": "Raised 2026-09-28."
+    },
+    {
+      "id": 30,
+      "title": "Curated fact store for the Speediance MCP server",
+      "summary": "Replace the free-form fact layer with typed, validated facts: kind (constraint/preference/observation/goal), severity (hard/soft), category enum, scope, supersedes chains, 600-char hard limit (no truncation), near-duplicate rejection (~0.85), import_facts with dry run, archive-not-delete, list_facts audit, grouped reads with hard constraints in their own block, and read-time conflict detection.",
+      "affects": "speediance-mcp: memory.py, tools/memory_tools.py, tools/coaching.py, server.py, README, tests",
+      "status": "done",
+      "notes": "Logged before starting. The MCP server already has free-form coaching facts (remember_fact/forget_fact, with categories and expiry); clarifying what 'curated' should add. 2026-09-28: user chose 'facts about you, curated' and supplied the full spec (from a predecessor system's 59-fact failure). Spec in the repo: docs/specs/2026-09-28-curated-facts.md (97eb4ff). The live store has 11 legacy facts (one is 736 chars) → migrated as archived legacy rows (kept whole), surfaced as legacyToReview for curation via import_facts/supersedes. DONE and deployed 2026-09-28 (speediance-mcp f810c92..129658d): built to the user's spec with all 9 acceptance tests; review → fix round 1 (legacy facts stay visible as legacyUnreviewed, near-match refusals name differences and suggest supersedes, different scopes neither dedupe nor conflict, create/update echo hardConstraints, expires_days validation, multi-piece legacy split, conflict texts and number rules, real atomicity test) → fix round 2 (units stop year-ignoring so 2000 m vs 2100 m counts, strict expires_days at the MCP boundary, case-insensitive scope, category differences); 398 tests. The live DB was backed up to /root/.config/speediance-mcp/backup-* before the restart; the migration shows legacyUnreviewed 11 and no active facts yet. Next step for the user: curate the 11 in claude.ai (e.g. 'review my legacy facts')."
+    },
+    {
+      "id": 31,
+      "title": "Evaluate GM Manager's features for inclusion (series): 1. Settings",
+      "summary": "The user is pasting GM Manager screens one area at a time. For each: evaluate the functionality for our single-user app (not multi-tenant), recommend include / adapt / skip, and never copy the look — ours must be visibly different.",
+      "affects": "planning only (candidates become their own items once chosen)",
+      "status": "done",
+      "notes": "2026-09-28: Settings screens received (Account, Preferences, Profile, Training, Language & region, Calendar sync, Shared workout, Privacy & data). Footer claim: preferences/profile live on the Speediance cloud account, so the phone app and machine follow them. Evaluated 2026-09-28 and the user queued 4 items in order: Connect AI page, Calendar sync, Memory page, units/profile read-only (#32-#35). Machine model (GM1/2/2s load ceiling) folds into Locations (#26). Skipped the multi-tenant features: sharing, analytics, terms, remove profile."
+    },
+    {
+      "id": 32,
+      "title": "Connect AI page: claude.ai connector setup, current connections, revoke button",
+      "summary": "A web app page with the connector URL (https://mcp.example.com/mcp) and setup steps for claude.ai / Claude Desktop / Claude Code, the live remote connections (clients, last token use), and a button equivalent to `speediance-mcp revoke`.",
+      "affects": "web app (new page + routes reading/writing the MCP data dir's oauth.db)",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31); inspired by their 'Connect AI' page, not copied."
+    },
+    {
+      "id": 33,
+      "title": "Calendar sync: private ICS feed of scheduled and completed workouts",
+      "summary": "A secret-URL .ics feed that Google/Apple/Outlook can subscribe to, with scheduled templates and completed sessions (GM Manager charges for this). Needs one narrow nginx exception to basic auth for the feed path, protected by a long revocable token; create/revoke links in Settings.",
+      "affects": "web app (feed route, token store, settings UI) + nginx location exception",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Security: the token is the only gate, so it must be long, random, revocable, and never logged."
+    },
+    {
+      "id": 34,
+      "title": "Memory page: review and curate facts (hard/soft constraints, preferences, goals, observations, conflicts, legacy)",
+      "summary": "A web app page over the MCP curated fact store (#30): grouped view, conflicts shown side by side, legacy facts to review, and archive/supersede actions. The MCP DB is the source of truth.",
+      "affects": "web app (new page) reading/writing the MCP curated_facts table",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Starts after #30 lands."
+    },
+    {
+      "id": 35,
+      "title": "Show units and profile read-only in Settings (unit system, length unit, sex, birthday, height, bodyweight)",
+      "summary": "Read-only mirror of the Speediance account's units and profile ('set in the Speediance app'), so lb vs kg is always visible. Editing profile fields waits until Speediance's update route is found.",
+      "affects": "web app settings.html + app.py (userinfo read)",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Unit must come from the reliable source (the phone-type login 'unit'), not userinfo.weightUnit, which is 0 on lb accounts."
+    },
+    {
+      "id": 36,
+      "title": "Evaluate GM Manager's features for inclusion (series): 2. Progress",
+      "summary": "Progress page: volume/calories/time trend cards with day/week/month/year buckets and drill-down tables; muscle focus (body map, per-muscle volume, push:pull and upper:lower ratios, muscles not trained in 30 days); per-exercise progress (sparklines, % change, top-set and volume charts, bests).",
+      "affects": "planning only",
+      "status": "done",
+      "notes": "2026-09-28: screens received. Evaluated; the user queued parts 1-3 (#37-#39), including our own body-map figure. Finding recorded: GM Manager's per-muscle totals give every touched muscle full volume, and its % change is last vs first even with 2 sessions."
+    },
+    {
+      "id": 37,
+      "title": "Progress page part 1: trend cards (gym vs phone-health) + per-exercise progress + drill-down on every chart",
+      "summary": "Volume/calories/time/sessions per day, week, month or year, with change vs the previous period; built from the session history so gym numbers are exact and phone-health activity is a separate band. Per-exercise list with sparklines and a clearly defined change (last session vs the average of the previous 4; no % from fewer than 3 sessions), plus detail charts (top-set weight, session volume) and bests. Every chart opens a total/average/peak + table view. Two-cable totals; avoided moves badged, not hidden.",
+      "affects": "web app: new /progress page + JSON routes; uses history + per-exercise stats",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 38,
+      "title": "Progress page part 2: muscle balance (per-muscle volume, push:pull, upper:lower, not trained in 30 days) + MCP get_muscle_balance",
+      "summary": "Per-muscle volume from each session's exercises, with the main muscle weighted 100% and assisting muscles 50% (stated on the page); push:pull and upper:lower ratio bars; muscles not trained in N days. The same numbers are exposed to claude.ai as a new MCP tool, get_muscle_balance(days).",
+      "affects": "web app progress page + speediance-mcp new tool",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 39,
+      "title": "Progress page part 3: our own body-map figure (front/back) coloured by muscle volume",
+      "summary": "An original SVG front/back body figure with per-muscle regions shaded by the part-2 muscle volumes. It must look visibly different from GM Manager's figure (our own artwork, style and palette).",
+      "affects": "web app progress page (SVG asset + rendering)",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 40,
+      "title": "Evaluate GM Manager's features for inclusion (series): 3. Health & Wellness",
+      "summary": "Wellness Monitor score, wellness age, strength score, fitness (CRF), VO2max; sleep stages and score; training status (fatigue vs fitness, acute/chronic load); overnight vitals vs baseline (HRV, resting HR, SpO2, respiratory rate, skin temp); night recovery; vitals; body composition; activity (steps, dietary intake); other activity (phone-health imports, with per-item and all-future Ignore); recovery / muscle readiness body map (% ready, overloaded groups, hours to recovery).",
+      "affects": "planning only",
+      "status": "working",
+      "notes": "2026-09-28: screens received. GM Manager says this is synced from Speediance's Wellness+ data."
     }
   ]
 }
