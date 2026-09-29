@@ -1304,11 +1304,7 @@ def api_workout_refine():
         # why — but the catalog/pool offered below for NEW picks still excludes every
         # avoided id fully, so nothing NEW avoided can be added.
         kept_avoided_ids = avoided_id_set & cur_id_set
-        kept_avoided_warnings = [
-            f"Kept {r['name'] or ('exercise ' + str(r['group_id']))} (marked avoided) "
-            "because it was already in your workout."
-            for r in avoided_rows if r["group_id"] in kept_avoided_ids
-        ]
+        excluded_avoided_ids = avoided_id_set - kept_avoided_ids
         avoided_names = [r["name"] for r in avoided_rows
                          if r["name"] and r["group_id"] not in kept_avoided_ids]
 
@@ -1319,7 +1315,11 @@ def api_workout_refine():
         ok, sel = coach.chat_with(provider, model, workout_gen.build_selection_prompt(comment, catalog), cfg)
         selected = workout_gen.parse_selected_ids(sel if ok else "", library, request=comment)
         pool_ids = list(dict.fromkeys(cur_ids + selected))[:60]   # keep current exercises, then candidates
-        pool_ids = [i for i in pool_ids if i not in avoided_id_set]
+        # Only genuinely-excluded ids are dropped here — a kept-but-avoided id stays in
+        # the pool so it's still described in the AVAILABLE EXERCISES catalog below (the
+        # model needs its tags/description to correctly preserve it), even though the
+        # SELECTION-stage catalog above already fully excluded it from new candidates.
+        pool_ids = [i for i in pool_ids if i not in excluded_avoided_ids]
 
         details = {}
         try:
@@ -1330,7 +1330,11 @@ def api_workout_refine():
             if _is_auth_error(e):
                 raise
             details = {}
-        libmap = {int(e["id"]): e for e in library}
+        # A kept-but-avoided id needs its own entry here (drop_avoided(full_library, ...)
+        # with only the genuinely-excluded ids, not the fully-excluded `library` above),
+        # so merge_exercise/build_generation_system_prompt can describe it.
+        library_for_merge = workout_gen.drop_avoided(full_library, excluded_avoided_ids)
+        libmap = {int(e["id"]): e for e in library_for_merge}
         merged = [workout_gen.merge_exercise(libmap[i], details.get(i)) for i in pool_ids if i in libmap]
 
         recent_txt = ""
@@ -1364,8 +1368,22 @@ def api_workout_refine():
 
         # Validate against a library that still knows about a kept-but-avoided id (so it
         # isn't dropped as "unknown"), while everything genuinely excluded stays excluded.
-        validation_library = workout_gen.drop_avoided(full_library, avoided_id_set - kept_avoided_ids)
-        ok, cleaned, warnings = workout_gen.validate_workout(parsed, validation_library)
+        # Same filter as library_for_merge — reuse it rather than recomputing.
+        ok, cleaned, warnings = workout_gen.validate_workout(parsed, library_for_merge)
+
+        # Report what actually happened to each kept-avoided id, not what was merely
+        # attempted: the model can still drop it (e.g. it read the comment as a
+        # replacement), so "Kept ..." would be a lie if it didn't survive.
+        cleaned_ids = {int(e["id"]) for e in (cleaned.get("exercises") or []) if e.get("id") is not None}
+        kept_avoided_warnings = []
+        for r in avoided_rows:
+            if r["group_id"] not in kept_avoided_ids:
+                continue
+            label = r["name"] or f"exercise {r['group_id']}"
+            if r["group_id"] in cleaned_ids:
+                kept_avoided_warnings.append(f"Kept {label} (marked avoided) because it was already in your workout.")
+            else:
+                kept_avoided_warnings.append(f"{label} (marked avoided) was dropped by the generator.")
         warnings = kept_avoided_warnings + warnings
         if not ok:
             return jsonify({"ok": False, "text": "The adjusted workout had no usable exercises. Try again.",
