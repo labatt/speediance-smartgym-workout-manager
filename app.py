@@ -11,6 +11,7 @@ import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
 from rowing_stats import derive_rowing_blocks
 from muscle_balance import muscle_index, attribute, ratios, untrained
+from accessories import dedupe_accessories, is_owned, parse_selected_ids
 import reconcile
 import session_detail
 import datetime
@@ -218,9 +219,12 @@ def settings():
     accessories = []
     if creds.get('token'):
         try:
-            accessories = client.get_accessories()
+            accessories = dedupe_accessories(client.get_accessories())
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
+    owned_ids = creds.get('owned_accessories', [])
+    for entry in accessories:
+        entry['owned'] = is_owned(entry, owned_ids)
     avoided = _avoided_list_safe()
     return render_template('settings.html', creds=creds, accessories=accessories,
                            wp_connected=wellness.is_connected(), avoided=avoided)
@@ -257,8 +261,8 @@ def update_unit():
 
 @app.route('/settings/accessories', methods=['POST'])
 def update_accessories():
-    selected = request.form.getlist('accessories')
-    owned = [int(x) for x in selected]
+    # Each tile submits every id behind its name, so ticking one owns all its duplicates.
+    owned = parse_selected_ids(request.form.getlist('accessories'))
     creds = client.credentials
     client.save_config(
         creds.get('user_id'),

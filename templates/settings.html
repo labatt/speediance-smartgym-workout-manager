@@ -227,8 +227,8 @@
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
                 {% for acc in accessories %}
                 <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                    <input type="checkbox" name="accessories" value="{{ acc.id }}" class="h-4 w-4 flex-shrink-0"
-                        {% if acc.id in creds.owned_accessories %}checked{% endif %}>
+                    <input type="checkbox" name="accessories" value="{{ acc.ids|join(',') }}" class="h-4 w-4 flex-shrink-0"
+                        {% if acc.owned %}checked{% endif %}>
                     {% if acc.img %}
                     <img src="{{ acc.img }}" alt="" class="w-8 h-8 object-contain flex-shrink-0">
                     {% endif %}

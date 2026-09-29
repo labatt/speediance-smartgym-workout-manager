@@ -238,8 +238,8 @@
       "title": "Web app accessory tiles duplicate the same item (Handles ×3, Tricep Rope ×3, Ankle Straps ×3, Skiing Handles ×3, Extender Belt ×2)",
       "summary": "The accessory catalog has several ids per name (the Monster 3/Ultra duplicates); Settings renders one tile per id, so ticking the 'wrong' Handles silently breaks the filter. Dedupe by name (keep the id list), as the MCP server does.",
       "affects": "templates/settings.html + app.py /settings/accessories",
-      "status": "queued",
-      "notes": "Raised 2026-09-28."
+      "status": "done",
+      "notes": "Raised 2026-09-28. DONE 2026-09-29: accessories.py (dedupe_accessories / is_owned / parse_selected_ids) + Settings grid. One tile per NAME, carrying every id behind it: ticking it owns all the duplicates, and owning any duplicate ticks it — so the 'wrong' Handles can no longer silently break the filter. Matches speediance-mcp's list_accessories. 12 tests."
     },
     {
       "id": 30,
