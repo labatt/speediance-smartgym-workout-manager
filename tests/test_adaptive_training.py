@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -18,6 +19,59 @@ from adaptive_training import (
     build_plan,
     build_speediance_payload_exercises,
 )
+
+
+RAW_LIBRARY = [
+    {"id": 101, "title": "Handle Row", "isCustom": 0, "isUseDevice": True,
+     "accessories": "5", "mainMuscleGroupName": "Back", "outPosition": 0},
+    {"id": 102, "title": "Handle Press", "isCustom": 0, "isUseDevice": True,
+     "accessories": "5", "mainMuscleGroupName": "Chest", "outPosition": 0},
+    {"id": 103, "title": "Bodyweight Plank", "isCustom": 0, "isUseDevice": False,
+     "accessories": "", "mainMuscleGroupName": "Core", "outPosition": None},
+]
+
+
+class TestLoadLibraryAvoidedIds(unittest.TestCase):
+    """BLACKLIST is the static, hand-edited list; avoided_ids is the caller-supplied set
+    from the shared avoided-exercises store. Both must be excluded from the pool."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self._cache_path = Path(self._tmp.name) / "library_cache.json"
+        self._cache_path.write_text(json.dumps(RAW_LIBRARY))
+        self._orig_cache = planner.LIBRARY_CACHE
+        self._orig_blacklist = planner.BLACKLIST
+        planner.LIBRARY_CACHE = self._cache_path
+        self.addCleanup(lambda: setattr(planner, "LIBRARY_CACHE", self._orig_cache))
+        self.addCleanup(lambda: setattr(planner, "BLACKLIST", self._orig_blacklist))
+
+    def test_no_avoided_ids_keeps_backward_compatible_default(self):
+        on, off = planner._load_library()
+        ids = {m.group_id for m in on}
+        self.assertEqual(ids, {101, 102})
+
+    def test_avoided_ids_excluded_from_on_device_pool(self):
+        on, off = planner._load_library(avoided_ids={102})
+        ids = {m.group_id for m in on}
+        self.assertEqual(ids, {101})
+
+    def test_avoided_ids_combine_with_static_blacklist(self):
+        planner.BLACKLIST = (101,)
+        on, off = planner._load_library(avoided_ids={102})
+        ids = {m.group_id for m in on}
+        self.assertEqual(ids, set())
+
+    def test_refresh_pools_accepts_avoided_ids(self):
+        planner._refresh_pools(avoided_ids={101})
+        self.addCleanup(lambda: planner._refresh_pools())   # restore real pools for other tests
+        ids = {m.group_id for m in planner.ON_DEVICE_POOL}
+        self.assertEqual(ids, {102})
+
+    def test_refresh_pools_default_call_unaffected(self):
+        planner._refresh_pools()
+        ids = {m.group_id for m in planner.ON_DEVICE_POOL}
+        self.assertEqual(ids, {101, 102})
 
 
 class TestAdaptiveTrainingPlanner(unittest.TestCase):

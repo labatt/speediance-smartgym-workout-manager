@@ -36,8 +36,11 @@ UNIQUE_LOOKBACK_MAX = 30
 ON_DEVICE_COUNT = 10                # mandatory on-device lifts per workout
 OFF_SPEEDIANCE_MAX = 2              # max off-Speediance additions per workout
 
-# Optional blacklist — empty by default. Populate with group_id ints to drop
-# movements from the candidate pool. Designed to be edited in place.
+# Optional static blacklist — empty by default. Populate with group_id ints to drop
+# movements from the candidate pool. Designed to be edited in place. A caller-supplied
+# `avoided_ids` set (e.g. from the shared avoided-exercises store) is unioned with this
+# at pool-load time via _load_library()/_refresh_pools(); BLACKLIST alone remains the
+# default when no avoided_ids is passed.
 BLACKLIST: Tuple[int, ...] = ()
 
 SETUP_RANK = {"high": 0, "chest": 1, "mid": 2, "base": 3}
@@ -140,14 +143,20 @@ def _muscle_to_patterns(main_muscle: str, title: str = "") -> tuple:
     return tuple(dict.fromkeys(patterns)), unilateral
 
 
-def _load_library() -> Tuple[List[Movement], List[Movement]]:
-    """Read the Speediance library cache and return (on_device, off_device) pools."""
+def _load_library(avoided_ids: Optional[Iterable[int]] = None) -> Tuple[List[Movement], List[Movement]]:
+    """Read the Speediance library cache and return (on_device, off_device) pools.
+
+    avoided_ids: caller-supplied group ids (e.g. from the shared avoided-exercises store)
+    to exclude on top of the static BLACKLIST below. Backward compatible: omitting it
+    behaves exactly as before, filtering by BLACKLIST alone.
+    """
     if not LIBRARY_CACHE.exists():
         return [], []
-    raw = json.load(open(LIBRARY_CACHE))
+    with open(LIBRARY_CACHE) as f:
+        raw = json.load(f)
     on_device: List[Movement] = []
     off_device: List[Movement] = []
-    blacklist = set(BLACKLIST)
+    blacklist = set(BLACKLIST) | set(avoided_ids or ())
     for m in raw:
         if m.get("isCustom") not in (0, None):
             continue
@@ -195,9 +204,9 @@ ON_DEVICE_POOL: List[Movement] = []
 OFF_SPEEDIANCE_POOL: List[Movement] = []
 
 
-def _refresh_pools() -> None:
+def _refresh_pools(avoided_ids: Optional[Iterable[int]] = None) -> None:
     global ON_DEVICE_POOL, OFF_SPEEDIANCE_POOL
-    on, off = _load_library()
+    on, off = _load_library(avoided_ids=avoided_ids)
     ON_DEVICE_POOL = on
     OFF_SPEEDIANCE_POOL = off
 
