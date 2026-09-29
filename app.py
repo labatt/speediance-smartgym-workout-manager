@@ -1386,6 +1386,35 @@ def api_burn_rate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/avoided', methods=['GET', 'POST'])
+def api_avoided():
+    """Avoided exercises: shared with speediance-mcp via avoided_store. No Speediance
+    token needed — this is local bookkeeping, not an API call."""
+    path = avoided_store.db_path(client.credentials)
+    if request.method == 'GET':
+        return jsonify({"avoided": avoided_store.list_avoided(path)})
+
+    body = request.get_json(silent=True) or {}
+    try:
+        group_id = int(body.get('group_id'))
+    except (TypeError, ValueError):
+        return jsonify({"error": "group_id is required and must be an integer."}), 400
+    name = body.get('name') or ''
+    reason = body.get('reason') or ''
+    try:
+        avoided_store.set_avoided(path, group_id, name, reason)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@app.route('/api/avoided/<int:group_id>', methods=['DELETE'])
+def api_avoided_delete(group_id):
+    path = avoided_store.db_path(client.credentials)
+    removed = avoided_store.clear_avoided(path, group_id)
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.route('/api/stats/<int:group_id>')
 def api_stats(group_id):
     """Returns user statistics for a specific exercise."""
