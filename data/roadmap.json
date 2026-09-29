@@ -208,6 +208,38 @@
       "affects": "/srv/speediance-mcp tools/sessions.py (get_calendar), tools/coaching.py (snapshot)",
       "status": "done",
       "notes": "Reported 2026-09-28 by the user relaying claude.ai's comparison with GM Manager: no otherActivities on any day in September. The exclusion was deliberate (to keep gym-session counts right) but dropped the data entirely. FIXED 2026-09-28 (speediance-mcp 56c2ce0) and deployed: health imports are listed per day as otherActivities and in the snapshot. Live check: Sep 2 and Sep 3 show 27/38-min phone-health activities. Finding: Speediance only holds 2 phone-health rows in September, both odd 1-kcal ~0.006 mi overnight records; the calendar feed has no other-activities list. GM Manager's otherActivities most likely came from its own health integrations, so walks and runs live in Wellness Project, not Speediance. Machine rowing (with AeroRow) appears as normal sessions."
+    },
+    {
+      "id": 26,
+      "title": "Locations as a first-class dimension (Miami vs Tampa): per-location equipment, load convention, time window; templates belong to a location",
+      "summary": "Training is split between Miami (Gym Monster, barbell, rope, both benches, AeroRow) and Tampa (a dual-stack trainer with handles and a bar, no rope, per-side loads, a six-hour window). Nothing models this, so template titles carry 'dial these numbers PER SIDE' and Claude has given wrong numbers twice.",
+      "affects": "web app + speediance-mcp (preferences, templates, generators)",
+      "status": "future",
+      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location."
+    },
+    {
+      "id": 27,
+      "title": "Owned is not usable: Flat Bench is owned but the user can't lie flat, and the owned-equipment filter still surfaces supine flat-bench moves",
+      "summary": "Owned equipment and usable movements need separate states (or the equipment filter and the avoid list must resolve against each other) before anything reaches a workout builder.",
+      "affects": "web app + speediance-mcp (equipment filter, avoided exercises)",
+      "status": "future",
+      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)?"
+    },
+    {
+      "id": 28,
+      "title": "Split-brain owned equipment: the web app's config.json vs speediance-mcp's own preferences",
+      "summary": "The web app keeps owned accessories only in config.json (ids 4,5,2,3,9,8, no Flat Bench); the MCP server keeps a separate owned_equipment list (7 names including Flat Bench, written by Claude). Neither syncs to Speediance. Tools and the UI read different stores.",
+      "affects": "web app settings/filters + speediance-mcp preferences",
+      "status": "queued",
+      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7."
+    },
+    {
+      "id": 29,
+      "title": "Web app accessory tiles duplicate the same item (Handles ×3, Tricep Rope ×3, Ankle Straps ×3, Skiing Handles ×3, Extender Belt ×2)",
+      "summary": "The accessory catalog has several ids per name (the Monster 3/Ultra duplicates); Settings renders one tile per id, so ticking the 'wrong' Handles silently breaks the filter. Dedupe by name (keep the id list), as the MCP server does.",
+      "affects": "templates/settings.html + app.py /settings/accessories",
+      "status": "queued",
+      "notes": "Raised 2026-09-28."
     }
   ]
 }
