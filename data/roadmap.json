@@ -215,7 +215,7 @@
       "summary": "Training is split between Miami (Gym Monster, barbell, rope, both benches, AeroRow) and Tampa (a dual-stack trainer with handles and a bar, no rope, per-side loads, a six-hour window). Nothing models this, so template titles carry 'dial these numbers PER SIDE' and Claude has given wrong numbers twice.",
       "affects": "web app + speediance-mcp (preferences, templates, generators)",
       "status": "future",
-      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth. 2026-09-28 user: location equipment = the Speediance standard accessory list plus free-text items; exercises for any machine (including non-Speediance ones) come from the Speediance library, filtered by what that location has. 2026-09-28 user answers: (1) per-side conversion follows Speediance's own convention — a move on both cables (bar or two handles, Speediance total) is half per side; a one-sided move is the same number. (2) Tampa days are set per trip (date ranges), not fixed weekdays. (3) Free-text equipment items can map to a Speediance accessory ('straight bar' counts as Barbell) to unlock library exercises; unmapped items are just notes."
+      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth. 2026-09-28 user: location equipment = the Speediance standard accessory list plus free-text items; exercises for any machine (including non-Speediance ones) come from the Speediance library, filtered by what that location has. 2026-09-28 user answers: (1) per-side conversion follows Speediance's own convention — a move on both cables (bar or two handles, Speediance total) is half per side; a one-sided move is the same number. (2) Tampa days are set per trip (date ranges), not fixed weekdays. (3) Free-text equipment items can map to a Speediance accessory ('straight bar' counts as Barbell) to unlock library exercises; unmapped items are just notes. 2026-09-28: add a machine model per location (GM 1 / 2 / 2s → heaviest load) from the GM Manager evaluation."
     },
     {
       "id": 27,
@@ -248,6 +248,46 @@
       "affects": "speediance-mcp: memory.py, tools/memory_tools.py, tools/coaching.py, server.py, README, tests",
       "status": "working",
       "notes": "Logged before starting. The MCP server already has free-form coaching facts (remember_fact/forget_fact, with categories and expiry); clarifying what 'curated' should add. 2026-09-28: user chose 'facts about you, curated' and supplied the full spec (from a predecessor system's 59-fact failure). Spec in the repo: docs/specs/2026-09-28-curated-facts.md (97eb4ff). The live store has 11 legacy facts (one is 736 chars) → migrated as archived legacy rows (kept whole), surfaced as legacyToReview for curation via import_facts/supersedes."
+    },
+    {
+      "id": 31,
+      "title": "Evaluate GM Manager's features for inclusion (series): 1. Settings",
+      "summary": "The user is pasting GM Manager screens one area at a time. For each: evaluate the functionality for our single-user app (not multi-tenant), recommend include / adapt / skip, and never copy the look — ours must be visibly different.",
+      "affects": "planning only (candidates become their own items once chosen)",
+      "status": "done",
+      "notes": "2026-09-28: Settings screens received (Account, Preferences, Profile, Training, Language & region, Calendar sync, Shared workout, Privacy & data). Footer claim: preferences/profile live on the Speediance cloud account, so the phone app and machine follow them. Evaluated 2026-09-28 and the user queued 4 items in order: Connect AI page, Calendar sync, Memory page, units/profile read-only (#32-#35). Machine model (GM1/2/2s load ceiling) folds into Locations (#26). Skipped the multi-tenant features: sharing, analytics, terms, remove profile."
+    },
+    {
+      "id": 32,
+      "title": "Connect AI page: claude.ai connector setup, current connections, revoke button",
+      "summary": "A web app page with the connector URL (https://mcp.example.com/mcp) and setup steps for claude.ai / Claude Desktop / Claude Code, the live remote connections (clients, last token use), and a button equivalent to `speediance-mcp revoke`.",
+      "affects": "web app (new page + routes reading/writing the MCP data dir's oauth.db)",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31); inspired by their 'Connect AI' page, not copied."
+    },
+    {
+      "id": 33,
+      "title": "Calendar sync: private ICS feed of scheduled and completed workouts",
+      "summary": "A secret-URL .ics feed that Google/Apple/Outlook can subscribe to, with scheduled templates and completed sessions (GM Manager charges for this). Needs one narrow nginx exception to basic auth for the feed path, protected by a long revocable token; create/revoke links in Settings.",
+      "affects": "web app (feed route, token store, settings UI) + nginx location exception",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Security: the token is the only gate, so it must be long, random, revocable, and never logged."
+    },
+    {
+      "id": 34,
+      "title": "Memory page: review and curate facts (hard/soft constraints, preferences, goals, observations, conflicts, legacy)",
+      "summary": "A web app page over the MCP curated fact store (#30): grouped view, conflicts shown side by side, legacy facts to review, and archive/supersede actions. The MCP DB is the source of truth.",
+      "affects": "web app (new page) reading/writing the MCP curated_facts table",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Starts after #30 lands."
+    },
+    {
+      "id": 35,
+      "title": "Show units and profile read-only in Settings (unit system, length unit, sex, birthday, height, bodyweight)",
+      "summary": "Read-only mirror of the Speediance account's units and profile ('set in the Speediance app'), so lb vs kg is always visible. Editing profile fields waits until Speediance's update route is found.",
+      "affects": "web app settings.html + app.py (userinfo read)",
+      "status": "queued",
+      "notes": "From the GM Manager Settings evaluation (#31). Unit must come from the reliable source (the phone-type login 'unit'), not userinfo.weightUnit, which is 0 on lb accounts."
     }
   ]
 }
