@@ -215,7 +215,7 @@
       "summary": "Training is split between Miami (Gym Monster, barbell, rope, both benches, AeroRow) and Tampa (a dual-stack trainer with handles and a bar, no rope, per-side loads, a six-hour window). Nothing models this, so template titles carry 'dial these numbers PER SIDE' and Claude has given wrong numbers twice.",
       "affects": "web app + speediance-mcp (preferences, templates, generators)",
       "status": "future",
-      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location."
+      "notes": "Raised 2026-09-28 via claude.ai's review. Needs a design conversation first (architectural): location entities, per-location equipment/load convention/window, template-to-location mapping, day-of-week schedule per location. 2026-09-28 user: Tampa's trainer is a standard weight/cable machine, not Speediance. The MCP server is the source of truth."
     },
     {
       "id": 27,
@@ -223,7 +223,7 @@
       "summary": "Owned equipment and usable movements need separate states (or the equipment filter and the avoid list must resolve against each other) before anything reaches a workout builder.",
       "affects": "web app + speediance-mcp (equipment filter, avoided exercises)",
       "status": "future",
-      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)?"
+      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)? 2026-09-28 user: for now it's the flat bench specifically, but it must work generically for other users -> a per-item 'own it, can't use it' equipment state. The MCP server is the source of truth."
     },
     {
       "id": 28,
@@ -231,7 +231,7 @@
       "summary": "The web app keeps owned accessories only in config.json (ids 4,5,2,3,9,8, no Flat Bench); the MCP server keeps a separate owned_equipment list (7 names including Flat Bench, written by Claude). Neither syncs to Speediance. Tools and the UI read different stores.",
       "affects": "web app settings/filters + speediance-mcp preferences",
       "status": "queued",
-      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7."
+      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7. 2026-09-28 user decision: the MCP server is the source of truth for shared data (equipment, avoided, and later locations); the web app reads and writes the MCP DB."
     },
     {
       "id": 29,
