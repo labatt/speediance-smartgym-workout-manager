@@ -45,6 +45,26 @@ app.register_blueprint(init_debug(client))
 def _is_auth_error(error):
     return isinstance(error, SpeedianceAuthError) or str(error) == "Unauthorized"
 
+
+def _avoided_list_safe():
+    """avoided_store.list_avoided(), never raising. The shared SQLite file can be locked
+    by speediance-mcp or otherwise briefly unavailable — that must never break a page or
+    the AI generator; it just means nothing is treated as avoided for that one call."""
+    try:
+        return avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+    except Exception as e:
+        print(f"[avoided_store] list_avoided failed, falling back to empty: {e}", file=sys.stderr)
+        return []
+
+
+def _avoided_ids_safe():
+    """set[int] of avoided ids, never raising (see _avoided_list_safe)."""
+    try:
+        return avoided_store.avoided_ids(avoided_store.db_path(client.credentials))
+    except Exception as e:
+        print(f"[avoided_store] avoided_ids failed, falling back to empty: {e}", file=sys.stderr)
+        return set()
+
 # --- Media Caching Logic ---
 # Define local cache path
 # Use base_dir to ensure it works in exe mode (though usually we want cache outside the temp exe folder)
@@ -203,7 +223,7 @@ def settings():
             accessories = client.get_accessories()
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
-    avoided = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+    avoided = _avoided_list_safe()
     return render_template('settings.html', creds=creds, accessories=accessories,
                            wp_connected=wellness.is_connected(), avoided=avoided)
 
@@ -1142,7 +1162,7 @@ def api_workout_generate():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        avoided_rows = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+        avoided_rows = _avoided_list_safe()
         avoided_id_set = {r["group_id"] for r in avoided_rows}
         avoided_names = [r["name"] for r in avoided_rows if r["name"]]
         library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
@@ -1268,7 +1288,7 @@ def api_workout_refine():
                         "text": "The AI Workout Generator isn't set up yet — pick a provider, add its key, "
                                 "and choose a model in Settings."}), 200
     try:
-        avoided_rows = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
+        avoided_rows = _avoided_list_safe()
         avoided_id_set = {r["group_id"] for r in avoided_rows}
         avoided_names = [r["name"] for r in avoided_rows if r["name"]]
         library = workout_gen.drop_avoided(client.get_library(), avoided_id_set)
@@ -1393,7 +1413,7 @@ def api_avoided():
     token needed — this is local bookkeeping, not an API call."""
     path = avoided_store.db_path(client.credentials)
     if request.method == 'GET':
-        return jsonify({"avoided": avoided_store.list_avoided(path)})
+        return jsonify({"avoided": _avoided_list_safe()})
 
     body = request.get_json(silent=True) or {}
     try:
@@ -1456,8 +1476,7 @@ def library():
         
     owned_accessories = client.credentials.get('owned_accessories', [])
     owned_devices = client.credentials.get('owned_devices', [])
-    avoided = {row["group_id"]: row["reason"]
-               for row in avoided_store.list_avoided(avoided_store.db_path(client.credentials))}
+    avoided = {row["group_id"]: row["reason"] for row in _avoided_list_safe()}
     return render_template(
         'library.html',
         exercises=exercises,
