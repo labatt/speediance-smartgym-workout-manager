@@ -10,6 +10,7 @@ import avoided_store
 import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
 from rowing_stats import derive_rowing_blocks
+from muscle_balance import muscle_index, attribute, ratios, untrained
 import reconcile
 import session_detail
 import datetime
@@ -1783,6 +1784,66 @@ def _session_detail(training_id, kind):
         rows = client.get_training_detail(training_id, "free_detail")
         detail = rows if isinstance(rows, list) else []
     return detail
+
+
+MUSCLE_BALANCE_SESSIONS = 40
+
+
+@app.route('/progress')
+def progress_page():
+    """Muscle balance: per-muscle volume, push:pull, upper:lower and a body map."""
+    return render_template('progress.html')
+
+
+@app.route('/api/progress/muscles')
+def api_progress_muscles():
+    """Per-muscle volume, push:pull and upper:lower over the last N days.
+
+    The muscle lists come from the cached exercise library, so this costs no extra
+    library calls; only each session's own detail is fetched.
+    """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    try:
+        days = max(1, min(int(request.args.get('days', 30)), 365))
+    except (TypeError, ValueError):
+        days = 30
+    try:
+        end = datetime.date.today()
+        start = end - datetime.timedelta(days=days - 1)
+        records = [r for r in (client.get_training_records(start.isoformat(), end.isoformat()) or [])
+                   if r.get('trainingId')][:MUSCLE_BALANCE_SESSIONS]
+        index = muscle_index(client.get_library() or [])
+        exercises = []
+        for rec in records:
+            kind = session_detail.detail_kind(rec.get('type'))
+            try:
+                detail = _session_detail(rec['trainingId'], kind)
+            except Exception as se:
+                if _is_auth_error(se):
+                    raise
+                continue  # one unreadable session must not empty the whole page
+            exercises.extend(detail or [])
+        spread = attribute(exercises, index)
+        by_muscle = spread["byMuscle"]
+        return jsonify({
+            "windowDays": days,
+            "sessions": len(records),
+            "unit": _unit_label(),
+            "attribution": "main muscle 100%, assisting muscle 50%",
+            "byMuscle": [{"muscle": m, "volume": v} for m, v in
+                         sorted(by_muscle.items(), key=lambda kv: kv[1], reverse=True)],
+            "byBodyPart": [{"bodyPart": p, "volume": v} for p, v in
+                           sorted(spread["byBodyPart"].items(), key=lambda kv: kv[1], reverse=True)],
+            "ratios": ratios(by_muscle),
+            "notTrained": untrained(by_muscle, index),
+            "unweightedExercises": spread["unweightedExercises"],
+            "exercisesNotInLibrary": spread["exercisesNotInLibrary"],
+        })
+    except Exception as e:
+        if _is_auth_error(e):
+            return jsonify({"error": str(e)}), 401
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/session/<int:training_id>/rowing')

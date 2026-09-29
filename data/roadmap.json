@@ -310,16 +310,16 @@
       "title": "Progress page part 2: muscle balance (per-muscle volume, push:pull, upper:lower, not trained in 30 days) + MCP get_muscle_balance",
       "summary": "Per-muscle volume from each session's exercises, with the main muscle weighted 100% and assisting muscles 50% (stated on the page); push:pull and upper:lower ratio bars; muscles not trained in N days. The same numbers are exposed to claude.ai as a new MCP tool, get_muscle_balance(days).",
       "affects": "web app progress page + speediance-mcp new tool",
-      "status": "queued",
-      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+      "status": "done",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure. DONE 2026-09-29. MCP (source of truth, fac565d): speediance/muscles.py + get_muscle_balance(days) — tool 29. Web (independent twin, no MCP dependency): muscle_balance.py, GET /api/progress/muscles?days=N, and the /progress page. Key finding: the cached exercise library ALREADY carries mainMuscleGroupList/auxiliaryMuscleGroupList for all 1,040 movements, so per-muscle analysis costs no extra API calls; session payloads only carry the coarse trainingPartId2. 17 muscles over 8 body parts. Decisions: main 100% / assisting 50% (stated on the page, since the attributed total then exceeds the weight lifted); Full Body joins neither chain (counting it both ways flatters every ratio); a muscle that only ever assists is never listed as 'not trained' (that would be a catalog artefact); timed/level work carries no volume and is surfaced as unweightedExercises rather than counted as zero. Verified: both implementations agree exactly on the same 10-day window (push:pull 0.91, upper:lower 2.62, not trained Adductors + Side Delts). 30-day live read: push:pull 0.48, upper:lower 3.51 — pull and upper body dominate."
     },
     {
       "id": 39,
       "title": "Progress page part 3: our own body-map figure (front/back) coloured by muscle volume",
       "summary": "An original SVG front/back body figure with per-muscle regions shaded by the part-2 muscle volumes. It must look visibly different from GM Manager's figure (our own artwork, style and palette).",
       "affects": "web app progress page (SVG asset + rendering)",
-      "status": "queued",
-      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+      "status": "done",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure. DONE 2026-09-29 as part of the /progress page: an original abstract block figure (front and back) drawn as SVG paths in templates/progress.html — deliberately geometric rather than anatomical, so it shares no artwork with GM Manager. 16 regions per view keyed to the API's own muscle names, shaded grey->blue->amber by each muscle's share of the window's peak, with a hover title giving the exact volume."
     },
     {
       "id": 40,
@@ -350,8 +350,8 @@
       "title": "Crack request params for recovery / sleep / readiness / daily-condition routes",
       "summary": "Check whether the account has real recovery/sleep data (mockReport/hasReal*), then decompile libapp.so with Blutter to read the exact request parameters, then confirm with one read per route.",
       "affects": "research (scratchpad); feeds Health & Wellness decisions and MCP/web features",
-      "status": "working",
-      "notes": "Requested 2026-09-29 ('yes' to: two data-existence reads, then Blutter). Static decompile runs locally; live calls are GET only, nano token, no relogin, spaced. Endpoint names only; no Speediance code published. 2026-09-29: hasRealRecoveryData=false, hasRealSleepData=true (recovery screen likely shows sample data; sleep is worth cracking). App is Flutter 3.44.7 / Dart 3.12.2. Build deps installed (cmake, ninja-build, pkg-config, libicu-dev, libcapstone-dev); Blutter cloned (4a60ac6, 2026-08-18) to the scratchpad. Running it was blocked by the session's permission guard (it executes freshly downloaded code) — waiting on the user."
+      "status": "done",
+      "notes": "Requested 2026-09-29 ('yes' to: two data-existence reads, then Blutter). Static decompile runs locally; live calls are GET only, nano token, no relogin, spaced. Endpoint names only; no Speediance code published. 2026-09-29: hasRealRecoveryData=false, hasRealSleepData=true (recovery screen likely shows sample data; sleep is worth cracking). App is Flutter 3.44.7 / Dart 3.12.2. Build deps installed (cmake, ninja-build, pkg-config, libicu-dev, libcapstone-dev); Blutter cloned (4a60ac6, 2026-08-18) to the scratchpad. Running it was blocked by the session's permission guard (it executes freshly downloaded code) — waiting on the user. DONE 2026-09-29. Blutter's output is structure-only (class/method skeletons, no instruction bodies), so params weren't recoverable statically; instead the candidate key names were harvested from the app's string pool and only existing ones were tried. ANSWER: the date parameter is `dateStr` (YYYY-MM-DD). Confirmed working: mobile/userHealth/recovery/detailByDate?dateStr (returns recoveryScoreResp/nightHrvResp/nightRestingHeartRateResp/sleepResp/muscleLoadResp, all empty for this account — no overnight HRV source), mobile/userHealth/sleep?dateStr ({sleep, targetSleepMin}), and mobile/userHealth/physicalCondition/detailByDate?dateStr — which returns REAL readiness data: physicalConditionValue, physicalConditionScore, fitness, fatigue, trainingStatus, plus physicalConditionParam.trainingStatusScore/trainingStatusScoreAvg. On 2026-09-28: score 90.4, fitness 5.99, fatigue 6.81, trainingStatus 1.14, trainingStatusScore 93.6 (avg 87.36). mobile/userHealth/sleep/rhythm is POST (code 12), not GET. Still unknown after bounded probing: calendar/scores, newIndex/healthDataIndicators, physicalCondition/listDailyDateRange — none accept dateStr, startDate/endDate, startDateStr/endDateStr, beginDateStr, monthStr or dateType. Implication for the Health & Wellness decision: recovery/readiness cards would be EMPTY (no wearable), but training status (fitness vs fatigue) is real and daily."
     }
   ]
 }

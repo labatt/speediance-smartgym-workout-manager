@@ -1,0 +1,230 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Muscle balance</h1>
+            <p class="text-xs text-gray-500 mt-1">Where the work actually landed.</p>
+        </div>
+        <div class="flex flex-wrap gap-2" id="rangeButtons">
+            {% for d in [7, 30, 90] %}
+            <button data-days="{{ d }}" class="rangeBtn px-3 py-1.5 rounded text-sm border border-gray-700 bg-gray-800 text-gray-300 hover:text-white">{{ d }} days</button>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="status" class="text-sm text-gray-400 mb-4">Loading…</div>
+
+    <div id="panel" class="hidden">
+        <!-- Balance ratios -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+            <div class="bg-gray-900 rounded p-4">
+                <div class="flex justify-between text-xs text-gray-400 mb-1"><span>Push</span><span>Pull</span></div>
+                <div class="h-3 rounded overflow-hidden flex bg-gray-800">
+                    <div id="pushBar" class="bg-blue-500" style="width:50%"></div>
+                    <div id="pullBar" class="bg-purple-500" style="width:50%"></div>
+                </div>
+                <p id="pushPullText" class="text-xs text-gray-500 mt-2"></p>
+            </div>
+            <div class="bg-gray-900 rounded p-4">
+                <div class="flex justify-between text-xs text-gray-400 mb-1"><span>Upper</span><span>Lower</span></div>
+                <div class="h-3 rounded overflow-hidden flex bg-gray-800">
+                    <div id="upperBar" class="bg-green-500" style="width:50%"></div>
+                    <div id="lowerBar" class="bg-amber-500" style="width:50%"></div>
+                </div>
+                <p id="upperLowerText" class="text-xs text-gray-500 mt-2"></p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Body map -->
+            <div class="bg-gray-900 rounded p-4">
+                <h2 class="text-sm font-semibold text-gray-200 mb-3">Body map</h2>
+                <div class="flex justify-center gap-4">
+                    <svg viewBox="0 0 130 290" class="w-1/2 max-w-[200px]" id="figFront" aria-label="Front view"></svg>
+                    <svg viewBox="0 0 130 290" class="w-1/2 max-w-[200px]" id="figBack" aria-label="Back view"></svg>
+                </div>
+                <div class="flex items-center justify-center gap-2 mt-3 text-[10px] text-gray-500">
+                    <span>less</span>
+                    <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#1f2937,#2563eb,#f59e0b)"></span>
+                    <span>more</span>
+                </div>
+                <p class="text-[10px] text-gray-600 text-center mt-1">Front and back. Shading is each muscle's share of the window's volume.</p>
+            </div>
+
+            <!-- Table -->
+            <div class="bg-gray-900 rounded p-4">
+                <h2 class="text-sm font-semibold text-gray-200 mb-3">Volume by muscle</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                        <thead><tr class="text-gray-400 text-left">
+                            <th class="pb-2 font-medium">Muscle</th>
+                            <th class="pb-2 font-medium text-right">Volume</th>
+                            <th class="pb-2 font-medium w-1/3">Share</th>
+                        </tr></thead>
+                        <tbody id="muscleRows"></tbody>
+                    </table>
+                </div>
+                <div id="notTrained" class="mt-4 text-xs"></div>
+                <p id="caveats" class="mt-4 text-[10px] text-gray-600 leading-relaxed"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Abstract block figure, drawn here rather than traced from anyone else's artwork.
+// Each region carries the muscle name the API uses, so shading is a direct lookup.
+const FRONT = [
+    ['head',            'M65 8 a13 13 0 1 1 -0.1 0 Z',                 null],
+    ['Traps',           'M47 34 L83 34 L92 44 L38 44 Z',               'Traps'],
+    ['Front Delts',     'M30 45 a13 11 0 0 0 -8 18 L34 63 L38 46 Z',   'Front Delts'],
+    ['Front Delts R',   'M100 45 a13 11 0 0 1 8 18 L96 63 L92 46 Z',   'Front Delts'],
+    ['Pecs',            'M40 47 L64 47 L64 76 L38 72 Z',               'Pecs'],
+    ['Pecs R',          'M66 47 L90 47 L92 72 L66 76 Z',               'Pecs'],
+    ['Abs',             'M43 79 L87 79 L84 126 L46 126 Z',             'Abs'],
+    ['Biceps',          'M20 66 L33 66 L31 96 L19 94 Z',               'Biceps'],
+    ['Biceps R',        'M97 66 L110 66 L111 94 L99 96 Z',             'Biceps'],
+    ['Forearms',        'M19 98 L31 99 L29 130 L17 128 Z',             'Forearms'],
+    ['Forearms R',      'M99 99 L111 98 L113 128 L101 130 Z',          'Forearms'],
+    ['Adductors',       'M58 130 L72 130 L70 176 L60 176 Z',           'Adductors'],
+    ['Quads',           'M44 130 L56 130 L54 190 L40 188 Z',           'Quads'],
+    ['Quads R',         'M74 130 L86 130 L90 188 L76 190 Z',           'Quads'],
+    ['Calves',          'M42 196 L54 196 L52 244 L41 242 Z',           'Calves'],
+    ['Calves R',        'M76 196 L88 196 L89 242 L78 244 Z',           'Calves'],
+];
+const BACK = [
+    ['head',            'M65 8 a13 13 0 1 1 -0.1 0 Z',                 null],
+    ['Traps',           'M46 34 L84 34 L88 66 L65 74 L42 66 Z',        'Traps'],
+    ['Rear Delts',      'M30 45 a13 11 0 0 0 -8 18 L34 63 L38 46 Z',   'Rear Delts'],
+    ['Rear Delts R',    'M100 45 a13 11 0 0 1 8 18 L96 63 L92 46 Z',   'Rear Delts'],
+    ['Lats',            'M38 68 L62 76 L60 112 L40 100 Z',             'Lats'],
+    ['Lats R',          'M92 68 L90 100 L70 112 L68 76 Z',             'Lats'],
+    ['Back Extensors',  'M58 80 L72 80 L72 126 L58 126 Z',             'Back Extensors'],
+    ['Triceps',         'M20 66 L33 66 L31 96 L19 94 Z',               'Triceps'],
+    ['Triceps R',       'M97 66 L110 66 L111 94 L99 96 Z',             'Triceps'],
+    ['Forearms',        'M19 98 L31 99 L29 130 L17 128 Z',             'Forearms'],
+    ['Forearms R',      'M99 99 L111 98 L113 128 L101 130 Z',          'Forearms'],
+    ['Glutes',          'M43 130 L64 130 L64 162 L45 162 Z',           'Glutes'],
+    ['Glutes R',        'M66 130 L87 130 L85 162 L66 162 Z',           'Glutes'],
+    ['Hamstrings',      'M44 165 L56 165 L54 212 L41 210 Z',           'Hamstrings'],
+    ['Hamstrings R',    'M74 165 L86 165 L89 210 L76 212 Z',           'Hamstrings'],
+    ['Calves',          'M42 216 L54 216 L52 256 L41 254 Z',           'Calves'],
+    ['Calves R',        'M76 216 L88 216 L89 254 L78 256 Z',           'Calves'],
+];
+
+function shade(share) {
+    // share is 0..1 of the biggest muscle. Grey -> blue -> amber.
+    if (!(share > 0)) return '#1f2937';
+    const stops = [[0, [31,41,55]], [0.45, [37,99,235]], [1, [245,158,11]]];
+    for (let i = 1; i < stops.length; i++) {
+        if (share <= stops[i][0]) {
+            const [p0, c0] = stops[i-1], [p1, c1] = stops[i];
+            const t = (share - p0) / (p1 - p0 || 1);
+            const c = c0.map((v, j) => Math.round(v + (c1[j] - v) * t));
+            return `rgb(${c[0]},${c[1]},${c[2]})`;
+        }
+    }
+    return 'rgb(245,158,11)';
+}
+
+function drawFigure(svg, regions, volumes, peak) {
+    svg.innerHTML = '';
+    const ns = 'http://www.w3.org/2000/svg';
+    regions.forEach(([label, d, muscle]) => {
+        const path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', d);
+        const vol = muscle ? (volumes[muscle] || 0) : 0;
+        path.setAttribute('fill', muscle ? shade(peak ? vol / peak : 0) : '#374151');
+        path.setAttribute('stroke', '#111827');
+        path.setAttribute('stroke-width', '1.2');
+        if (muscle) {
+            const title = document.createElementNS(ns, 'title');
+            title.textContent = `${muscle}: ${Math.round(vol).toLocaleString()}`;
+            path.appendChild(title);
+        }
+        svg.appendChild(path);
+    });
+}
+
+let currentDays = 30;
+
+async function load(days) {
+    currentDays = days;
+    document.querySelectorAll('.rangeBtn').forEach(b => {
+        const on = Number(b.dataset.days) === days;
+        b.classList.toggle('bg-green-600', on);
+        b.classList.toggle('text-white', on);
+        b.classList.toggle('bg-gray-800', !on);
+    });
+    const status = document.getElementById('status'), panel = document.getElementById('panel');
+    status.textContent = 'Loading…'; status.className = 'text-sm text-gray-400 mb-4';
+    panel.classList.add('hidden');
+
+    let data;
+    try {
+        const resp = await fetch(`/api/progress/muscles?days=${days}`);
+        data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    } catch (e) {
+        status.textContent = `Could not load muscle balance: ${e.message}`;
+        status.className = 'text-sm text-red-400 mb-4';
+        return;
+    }
+
+    const volumes = {};
+    data.byMuscle.forEach(r => { volumes[r.muscle] = r.volume; });
+    const peak = data.byMuscle.length ? data.byMuscle[0].volume : 0;
+
+    if (!data.byMuscle.length) {
+        status.textContent = `No weighted work in the last ${days} days.`;
+        status.className = 'text-sm text-gray-400 mb-4';
+        return;
+    }
+    status.textContent = `${data.sessions} session${data.sessions === 1 ? '' : 's'} in the last ${days} days.`;
+    panel.classList.remove('hidden');
+
+    drawFigure(document.getElementById('figFront'), FRONT, volumes, peak);
+    drawFigure(document.getElementById('figBack'), BACK, volumes, peak);
+
+    const r = data.ratios;
+    const pct = (a, b) => (a + b > 0 ? (100 * a / (a + b)) : 50);
+    document.getElementById('pushBar').style.width = pct(r.push, r.pull) + '%';
+    document.getElementById('pullBar').style.width = (100 - pct(r.push, r.pull)) + '%';
+    document.getElementById('upperBar').style.width = pct(r.upper, r.lower) + '%';
+    document.getElementById('lowerBar').style.width = (100 - pct(r.upper, r.lower)) + '%';
+    const fmt = v => Math.round(v).toLocaleString();
+    document.getElementById('pushPullText').textContent = r.pushPull == null
+        ? `Push ${fmt(r.push)} ${data.unit}, no pull volume to compare.`
+        : `${fmt(r.push)} vs ${fmt(r.pull)} ${data.unit} — ratio ${r.pushPull.toFixed(2)} (1.00 is even).`;
+    document.getElementById('upperLowerText').textContent = r.upperLower == null
+        ? `Upper ${fmt(r.upper)} ${data.unit}, no lower volume to compare.`
+        : `${fmt(r.upper)} vs ${fmt(r.lower)} ${data.unit} — ratio ${r.upperLower.toFixed(2)} (1.00 is even).`;
+
+    document.getElementById('muscleRows').innerHTML = data.byMuscle.map(row => `
+        <tr class="border-t border-gray-800">
+            <td class="py-1.5 text-gray-300">${row.muscle}</td>
+            <td class="py-1.5 text-right text-blue-400 whitespace-nowrap">${fmt(row.volume)}</td>
+            <td class="py-1.5 pl-2">
+                <span class="block h-2 rounded" style="width:${peak ? Math.max(2, 100 * row.volume / peak) : 0}%;background:${shade(peak ? row.volume / peak : 0)}"></span>
+            </td>
+        </tr>`).join('');
+
+    const nt = document.getElementById('notTrained');
+    nt.innerHTML = data.notTrained.length
+        ? `<span class="text-gray-400">Not trained in ${days} days:</span> <span class="text-yellow-400">${data.notTrained.join(', ')}</span>`
+        : `<span class="text-green-400">Every muscle got some work in this window.</span>`;
+
+    const bits = [`Volume is reps x weight, in ${data.unit}. Attribution: ${data.attribution} — so the attributed total is larger than the weight actually lifted.`];
+    if (data.unweightedExercises) bits.push(`${data.unweightedExercises} timed or level-based exercise${data.unweightedExercises === 1 ? '' : 's'} (rowing, Vita, planks) carried no weight and are not counted.`);
+    if (data.exercisesNotInLibrary.length) bits.push(`Not found in the library, so not attributed: ${data.exercisesNotInLibrary.join(', ')}.`);
+    document.getElementById('caveats').textContent = bits.join(' ');
+}
+
+document.getElementById('rangeButtons').addEventListener('click', e => {
+    const btn = e.target.closest('.rangeBtn');
+    if (btn) load(Number(btn.dataset.days));
+});
+load(30);
+</script>
+{% endblock %}
