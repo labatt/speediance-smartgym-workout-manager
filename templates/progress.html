@@ -166,6 +166,11 @@ const BACK = [
 
 const NS = 'http://www.w3.org/2000/svg';
 
+// Muscle and exercise names come from the Speediance API and are interpolated into
+// innerHTML below, so they are escaped rather than trusted.
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 function shade(share) {
     // share is 0..1 of the most-worked muscle, on a magma-style ramp: deep indigo ->
     // purple -> red -> orange -> pale yellow. Two earlier attempts were worse and are
@@ -262,7 +267,7 @@ function setHighlight(muscle, on) {
 function showTip(label, volume, share, unit) {
     const node = tip();
     const vol = volume > 0 ? `${Math.round(volume).toLocaleString()} ${unit}` : 'no volume';
-    node.innerHTML = `<span class="font-semibold">${label}</span><br>`
+    node.innerHTML = `<span class="font-semibold">${esc(label)}</span><br>`
         + `<span class="text-gray-300">${vol}</span><br>`
         + `<span class="text-gray-400">${statusWord(volume, share, unit)}</span><br>`
         + `<span class="text-gray-500">click for exercises</span>`;
@@ -332,8 +337,8 @@ async function load(days) {
         : `${fmt(r.upper)} vs ${fmt(r.lower)} ${data.unit} — ratio ${r.upperLower.toFixed(2)} (1.00 is even).`;
 
     document.getElementById('muscleRows').innerHTML = data.byMuscle.map(row => `
-        <tr class="border-t border-gray-800 cursor-pointer" data-muscle="${row.muscle}" title="Show exercises that work ${row.muscle}">
-            <td class="py-1.5 text-gray-300">${row.muscle}</td>
+        <tr class="border-t border-gray-800 cursor-pointer" data-muscle="${esc(row.muscle)}" title="Show exercises that work ${esc(row.muscle)}">
+            <td class="py-1.5 text-gray-300">${esc(row.muscle)}</td>
             <td class="py-1.5 pr-3 text-right text-gray-200 whitespace-nowrap">${fmt(row.volume)}</td>
             <td class="py-1.5 pl-2">
                 <span class="block h-2 rounded" style="width:${peak ? Math.max(2, 100 * row.volume / peak) : 0}%;background:${shade(peak ? row.volume / peak : 0)}"></span>
@@ -349,12 +354,12 @@ async function load(days) {
 
     const nt = document.getElementById('notTrained');
     nt.innerHTML = data.notTrained.length
-        ? `<span class="text-gray-400">Not trained in ${days} days:</span> <span class="text-yellow-400">${data.notTrained.join(', ')}</span>`
+        ? `<span class="text-gray-400">Not trained in ${days} days:</span> <span class="text-yellow-400">${data.notTrained.map(esc).join(', ')}</span>`
         : `<span class="text-green-400">Every muscle got some work in this window.</span>`;
 
     const bits = [`Volume is reps x weight, in ${data.unit}. Attribution: ${data.attribution} — so the attributed total is larger than the weight actually lifted.`];
     if (data.unweightedExercises) bits.push(`${data.unweightedExercises} timed or level-based exercise${data.unweightedExercises === 1 ? '' : 's'} (rowing, Vita, planks) carried no weight and are not counted.`);
-    if (data.exercisesNotInLibrary.length) bits.push(`Not found in the library, so not attributed: ${data.exercisesNotInLibrary.join(', ')}.`);
+    if (data.exercisesNotInLibrary.length) bits.push(`Not found in the library, so not attributed: ${data.exercisesNotInLibrary.map(esc).join(', ')}.`);
     document.getElementById('caveats').textContent = bits.join(' ');
 }
 
