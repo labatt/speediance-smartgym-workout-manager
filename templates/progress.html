@@ -40,16 +40,22 @@
             <!-- Body map -->
             <div class="bg-gray-900 rounded p-4">
                 <h2 class="text-sm font-semibold text-gray-200 mb-3">Body map</h2>
-                <div class="flex justify-center gap-4">
-                    <svg viewBox="0 0 130 290" class="w-1/2 max-w-[200px]" id="figFront" aria-label="Front view"></svg>
-                    <svg viewBox="0 0 130 290" class="w-1/2 max-w-[200px]" id="figBack" aria-label="Back view"></svg>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wider text-gray-500 text-center mb-1">Front</p>
+                        <svg viewBox="0 0 120 300" class="w-full max-w-[170px] mx-auto block" id="figFront" role="img" aria-label="Front view, shaded by muscle volume"></svg>
+                    </div>
+                    <div>
+                        <p class="text-[10px] uppercase tracking-wider text-gray-500 text-center mb-1">Back</p>
+                        <svg viewBox="0 0 120 300" class="w-full max-w-[170px] mx-auto block" id="figBack" role="img" aria-label="Back view, shaded by muscle volume"></svg>
+                    </div>
                 </div>
                 <div class="flex items-center justify-center gap-2 mt-3 text-[10px] text-gray-500">
-                    <span>less</span>
-                    <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#1f2937,#2563eb,#f59e0b)"></span>
-                    <span>more</span>
+                    <span>untrained</span>
+                    <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#273244,#6a1f56,#b5305a,#e8703a,#f7d267)"></span>
+                    <span>most worked</span>
                 </div>
-                <p class="text-[10px] text-gray-600 text-center mt-1">Front and back. Shading is each muscle's share of the window's volume.</p>
+                <p class="text-[10px] text-gray-600 text-center mt-1">Hover a muscle for its volume and status.</p>
             </div>
 
             <!-- Table -->
@@ -73,50 +79,99 @@
 </div>
 
 <script>
-// Abstract block figure, drawn here rather than traced from anyone else's artwork.
-// Each region carries the muscle name the API uses, so shading is a direct lookup.
-const FRONT = [
-    ['head',            'M65 8 a13 13 0 1 1 -0.1 0 Z',                 null],
-    ['Traps',           'M47 34 L83 34 L92 44 L38 44 Z',               'Traps'],
-    ['Front Delts',     'M30 45 a13 11 0 0 0 -8 18 L34 63 L38 46 Z',   'Front Delts'],
-    ['Front Delts R',   'M100 45 a13 11 0 0 1 8 18 L96 63 L92 46 Z',   'Front Delts'],
-    ['Pecs',            'M40 47 L64 47 L64 76 L38 72 Z',               'Pecs'],
-    ['Pecs R',          'M66 47 L90 47 L92 72 L66 76 Z',               'Pecs'],
-    ['Abs',             'M43 79 L87 79 L84 126 L46 126 Z',             'Abs'],
-    ['Biceps',          'M20 66 L33 66 L31 96 L19 94 Z',               'Biceps'],
-    ['Biceps R',        'M97 66 L110 66 L111 94 L99 96 Z',             'Biceps'],
-    ['Forearms',        'M19 98 L31 99 L29 130 L17 128 Z',             'Forearms'],
-    ['Forearms R',      'M99 99 L111 98 L113 128 L101 130 Z',          'Forearms'],
-    ['Adductors',       'M58 130 L72 130 L70 176 L60 176 Z',           'Adductors'],
-    ['Quads',           'M44 130 L56 130 L54 190 L40 188 Z',           'Quads'],
-    ['Quads R',         'M74 130 L86 130 L90 188 L76 190 Z',           'Quads'],
-    ['Calves',          'M42 196 L54 196 L52 244 L41 242 Z',           'Calves'],
-    ['Calves R',        'M76 196 L88 196 L89 242 L78 244 Z',           'Calves'],
-];
-const BACK = [
-    ['head',            'M65 8 a13 13 0 1 1 -0.1 0 Z',                 null],
-    ['Traps',           'M46 34 L84 34 L88 66 L65 74 L42 66 Z',        'Traps'],
-    ['Rear Delts',      'M30 45 a13 11 0 0 0 -8 18 L34 63 L38 46 Z',   'Rear Delts'],
-    ['Rear Delts R',    'M100 45 a13 11 0 0 1 8 18 L96 63 L92 46 Z',   'Rear Delts'],
-    ['Lats',            'M38 68 L62 76 L60 112 L40 100 Z',             'Lats'],
-    ['Lats R',          'M92 68 L90 100 L70 112 L68 76 Z',             'Lats'],
-    ['Back Extensors',  'M58 80 L72 80 L72 126 L58 126 Z',             'Back Extensors'],
-    ['Triceps',         'M20 66 L33 66 L31 96 L19 94 Z',               'Triceps'],
-    ['Triceps R',       'M97 66 L110 66 L111 94 L99 96 Z',             'Triceps'],
-    ['Forearms',        'M19 98 L31 99 L29 130 L17 128 Z',             'Forearms'],
-    ['Forearms R',      'M99 99 L111 98 L113 128 L101 130 Z',          'Forearms'],
-    ['Glutes',          'M43 130 L64 130 L64 162 L45 162 Z',           'Glutes'],
-    ['Glutes R',        'M66 130 L87 130 L85 162 L66 162 Z',           'Glutes'],
-    ['Hamstrings',      'M44 165 L56 165 L54 212 L41 210 Z',           'Hamstrings'],
-    ['Hamstrings R',    'M74 165 L86 165 L89 210 L76 212 Z',           'Hamstrings'],
-    ['Calves',          'M42 216 L54 216 L52 256 L41 254 Z',           'Calves'],
-    ['Calves R',        'M76 216 L88 216 L89 254 L78 256 Z',           'Calves'],
+// Original figure, drawn here as bezier outlines rather than traced from anyone else's
+// artwork. `silhouette` is the body shape; regions sit on top of it and carry the muscle
+// name the API uses, so shading is a direct lookup. Symmetric muscles appear twice (left
+// and right) and share one name, so both light up together.
+const SILHOUETTE = [
+    // head, neck
+    'M60 10 C67 10 71 15 71 22 C71 29 67 34 60 34 C53 34 49 29 49 22 C49 15 53 10 60 10 Z',
+    'M55 33 L65 33 L66 41 L54 41 Z',
+    // torso: shoulders out, waist in, hips out
+    'M60 39 C72 39 83 43 88 49 C93 55 94 64 93 74 C92 86 89 98 87 110 C86 122 87 132 86 142 '
+    + 'C78 146 68 147 60 147 C52 147 42 146 34 142 C33 132 34 122 33 110 '
+    + 'C31 98 28 86 27 74 C26 64 27 55 32 49 C37 43 48 39 60 39 Z',
+    // arms
+    'M31 50 C25 53 21 60 19 70 C17 82 15 96 14 110 C13 122 13 130 14 137 L23 137 '
+    + 'C24 128 25 118 27 106 C29 92 31 76 34 62 Z',
+    'M89 50 C95 53 99 60 101 70 C103 82 105 96 106 110 C107 122 107 130 106 137 L97 137 '
+    + 'C96 128 95 118 93 106 C91 92 89 76 86 62 Z',
+    // hands
+    'M14 138 C12 144 13 151 17 152 C21 153 24 148 23 138 Z',
+    'M106 138 C108 144 107 151 103 152 C99 153 96 148 97 138 Z',
+    // legs: thigh, knee, calf, foot
+    'M57 146 C50 146 41 145 35 143 C35 158 37 174 39 190 C41 204 42 216 43 228 '
+    + 'C44 242 45 258 46 272 L56 272 C56 258 56 242 56 228 C56 214 57 198 57 182 Z',
+    'M63 146 C70 146 79 145 85 143 C85 158 83 174 81 190 C79 204 78 216 77 228 '
+    + 'C76 242 75 258 74 272 L64 272 C64 258 64 242 64 228 C64 214 63 198 63 182 Z',
+    'M45 273 L57 273 L57 282 C57 286 53 288 47 288 C43 288 43 284 44 280 Z',
+    'M63 273 L75 273 L76 280 C77 284 77 288 73 288 C67 288 63 286 63 282 Z',
 ];
 
+const FRONT = [
+    ['Traps',        'Traps',        'M52 38 C56 37 64 37 68 38 C66 43 63 45 60 45 C57 45 54 43 52 38 Z'],
+    ['Front Delts',  'Front Delts',  'M33 48 C28 51 25 58 24 66 C29 64 34 61 37 57 C38 53 36 50 33 48 Z'],
+    ['Front Delts',  'Front Delts',  'M87 48 C92 51 95 58 96 66 C91 64 86 61 83 57 C82 53 84 50 87 48 Z'],
+    ['Pecs',         'Pecs',         'M58 50 C49 50 41 52 36 57 C36 67 39 74 44 79 C50 81 55 81 58 79 Z'],
+    ['Pecs',         'Pecs',         'M62 50 C71 50 79 52 84 57 C84 67 81 74 76 79 C70 81 65 81 62 79 Z'],
+    ['Abs',          'Abs',          'M51 84 C54 83 66 83 69 84 C70 95 70 106 69 117 C69 126 68 132 67 136 '
+                                    + 'C63 138 57 138 53 136 C52 132 51 126 51 117 C50 106 50 95 51 84 Z'],
+    ['Biceps',       'Biceps',       'M31 62 C27 66 24 76 23 88 C27 87 31 84 33 79 C34 72 33 66 31 62 Z'],
+    ['Biceps',       'Biceps',       'M89 62 C93 66 96 76 97 88 C93 87 89 84 87 79 C86 72 87 66 89 62 Z'],
+    ['Forearms',     'Forearms',     'M22 92 C19 100 17 114 16 130 C20 130 23 127 24 120 C25 110 24 99 22 92 Z'],
+    ['Forearms',     'Forearms',     'M98 92 C101 100 103 114 104 130 C100 130 97 127 96 120 C95 110 96 99 98 92 Z'],
+    // Inner-thigh slivers on each leg. Deliberately NOT a block between the legs.
+    ['Adductors',    'Adductors',    'M55 150 C57 162 57 174 56 186 C53 184 51 176 51 166 C51 158 53 152 55 150 Z'],
+    ['Adductors',    'Adductors',    'M65 150 C63 162 63 174 64 186 C67 184 69 176 69 166 C69 158 67 152 65 150 Z'],
+    ['Quads',        'Quads',        'M38 148 C43 150 49 151 53 151 C54 164 54 178 53 192 C48 194 43 193 40 190 '
+                                    + 'C39 176 38 162 38 148 Z'],
+    ['Quads',        'Quads',        'M82 148 C77 150 71 151 67 151 C66 164 66 178 67 192 C72 194 77 193 80 190 '
+                                    + 'C81 176 82 162 82 148 Z'],
+    ['Calves',       'Calves',       'M42 206 C46 205 51 205 54 206 C54 220 53 234 52 248 C48 249 45 248 44 246 '
+                                    + 'C43 232 42 218 42 206 Z'],
+    ['Calves',       'Calves',       'M78 206 C74 205 69 205 66 206 C66 220 67 234 68 248 C72 249 75 248 76 246 '
+                                    + 'C77 232 78 218 78 206 Z'],
+];
+
+const BACK = [
+    ['Traps',        'Traps',        'M60 38 C68 38 78 41 84 46 C80 56 74 66 68 72 C65 74 55 74 52 72 '
+                                    + 'C46 66 40 56 36 46 C42 41 52 38 60 38 Z'],
+    ['Rear Delts',   'Rear Delts',   'M33 48 C28 51 25 58 24 66 C29 64 34 61 37 57 C38 53 36 50 33 48 Z'],
+    ['Rear Delts',   'Rear Delts',   'M87 48 C92 51 95 58 96 66 C91 64 86 61 83 57 C82 53 84 50 87 48 Z'],
+    ['Lats',         'Lats',         'M37 60 C43 70 50 78 56 82 C56 94 55 104 54 112 C47 108 41 100 38 90 '
+                                    + 'C36 80 36 69 37 60 Z'],
+    ['Lats',         'Lats',         'M83 60 C77 70 70 78 64 82 C64 94 65 104 66 112 C73 108 79 100 82 90 '
+                                    + 'C84 80 84 69 83 60 Z'],
+    ['Back Extensors', 'Back Extensors', 'M57 76 C59 75 61 75 63 76 C64 92 64 108 63 124 C63 132 62 138 61 141 '
+                                    + 'C60 141 60 141 59 141 C58 138 57 132 57 124 C56 108 56 92 57 76 Z'],
+    ['Triceps',      'Triceps',      'M31 62 C27 66 24 76 23 88 C27 87 31 84 33 79 C34 72 33 66 31 62 Z'],
+    ['Triceps',      'Triceps',      'M89 62 C93 66 96 76 97 88 C93 87 89 84 87 79 C86 72 87 66 89 62 Z'],
+    ['Forearms',     'Forearms',     'M22 92 C19 100 17 114 16 130 C20 130 23 127 24 120 C25 110 24 99 22 92 Z'],
+    ['Forearms',     'Forearms',     'M98 92 C101 100 103 114 104 130 C100 130 97 127 96 120 C95 110 96 99 98 92 Z'],
+    ['Glutes',       'Glutes',       'M58 126 C51 126 43 128 38 132 C38 143 41 152 46 156 C51 158 56 157 58 155 Z'],
+    ['Glutes',       'Glutes',       'M62 126 C69 126 77 128 82 132 C82 143 79 152 74 156 C69 158 64 157 62 155 Z'],
+    ['Hamstrings',   'Hamstrings',   'M39 160 C44 162 49 163 53 163 C54 176 54 188 53 200 C48 202 43 201 41 198 '
+                                    + 'C40 186 39 172 39 160 Z'],
+    ['Hamstrings',   'Hamstrings',   'M81 160 C76 162 71 163 67 163 C66 176 66 188 67 200 C72 202 77 201 79 198 '
+                                    + 'C80 186 81 172 81 160 Z'],
+    ['Calves',       'Calves',       'M42 210 C46 209 51 209 54 210 C54 224 53 238 52 250 C48 251 45 250 44 248 '
+                                    + 'C43 234 42 222 42 210 Z'],
+    ['Calves',       'Calves',       'M78 210 C74 209 69 209 66 210 C66 224 67 238 68 250 C72 251 75 250 76 248 '
+                                    + 'C77 234 78 222 78 210 Z'],
+];
+
+const NS = 'http://www.w3.org/2000/svg';
+
 function shade(share) {
-    // share is 0..1 of the biggest muscle. Grey -> blue -> amber.
-    if (!(share > 0)) return '#1f2937';
-    const stops = [[0, [31,41,55]], [0.45, [37,99,235]], [1, [245,158,11]]];
+    // share is 0..1 of the most-worked muscle, on a magma-style ramp: deep indigo ->
+    // purple -> red -> orange -> pale yellow. Two earlier attempts were worse and are
+    // worth not repeating: blue straight to amber interpolates through grey, so the
+    // hardest-worked muscles came out mud; adding teal and yellow fixed the mud but made
+    // a rainbow, where nobody can tell whether green outranks blue. This ramp climbs
+    // steadily in brightness, so "brighter means more" holds at every step.
+    if (!(share > 0)) return '#273244';
+    const stops = [[0, [42,42,62]], [0.25, [106,31,86]], [0.5, [181,48,90]],
+                   [0.75, [232,112,58]], [1, [247,210,103]]];
     for (let i = 1; i < stops.length; i++) {
         if (share <= stops[i][0]) {
             const [p0, c0] = stops[i-1], [p1, c1] = stops[i];
@@ -125,25 +180,88 @@ function shade(share) {
             return `rgb(${c[0]},${c[1]},${c[2]})`;
         }
     }
-    return 'rgb(245,158,11)';
+    return 'rgb(247,210,103)';
 }
 
-function drawFigure(svg, regions, volumes, peak) {
+// Plain words for the share, so the colour isn't the only thing carrying the meaning.
+function statusWord(volume, share, unit) {
+    if (!(volume > 0)) return 'not trained in this window';
+    if (share >= 0.75) return 'most worked';
+    if (share >= 0.4) return 'worked hard';
+    if (share >= 0.15) return 'moderate';
+    return 'light';
+}
+
+function el(tag, attrs) {
+    const node = document.createElementNS(NS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    return node;
+}
+
+// Drawn over the front torso purely to give the abs shape some definition.
+const FRONT_DETAIL = ['M60 86 L60 134', 'M52 98 L68 98', 'M52 110 L68 110', 'M52 122 L68 122'];
+
+function drawFigure(svg, regions, volumes, peak, unit) {
     svg.innerHTML = '';
-    const ns = 'http://www.w3.org/2000/svg';
-    regions.forEach(([label, d, muscle]) => {
-        const path = document.createElementNS(ns, 'path');
-        path.setAttribute('d', d);
-        const vol = muscle ? (volumes[muscle] || 0) : 0;
-        path.setAttribute('fill', muscle ? shade(peak ? vol / peak : 0) : '#374151');
-        path.setAttribute('stroke', '#111827');
-        path.setAttribute('stroke-width', '1.2');
-        if (muscle) {
-            const title = document.createElementNS(ns, 'title');
-            title.textContent = `${muscle}: ${Math.round(vol).toLocaleString()}`;
-            path.appendChild(title);
-        }
+    // Body first, muscles over it.
+    SILHOUETTE.forEach(d => svg.appendChild(el('path', {d, fill: '#1b2330', stroke: '#111827', 'stroke-width': 0.8})));
+    regions.forEach(([muscle, label, d]) => {
+        const volume = volumes[muscle] || 0;
+        const share = peak ? volume / peak : 0;
+        const path = el('path', {
+            d, fill: shade(share), stroke: '#0f1520', 'stroke-width': 0.7,
+            'data-muscle': muscle, 'data-volume': volume, 'data-share': share,
+            style: 'cursor:pointer',
+        });
+        path.addEventListener('mouseenter', () => showTip(svg, muscle, label, volume, share, unit));
+        path.addEventListener('mousemove', moveTip);
+        path.addEventListener('mouseleave', hideTip);
         svg.appendChild(path);
+    });
+    if (regions === FRONT) {
+        FRONT_DETAIL.forEach(d => svg.appendChild(el('path', {
+            d, stroke: '#0f1520', 'stroke-width': 0.8, fill: 'none',
+            'pointer-events': 'none', opacity: '0.55',
+        })));
+    }
+}
+
+// One tooltip element, reused. It reports the muscle, its volume and its status in words.
+let tipEl = null;
+function tip() {
+    if (!tipEl) {
+        tipEl = document.createElement('div');
+        tipEl.className = 'fixed hidden z-50 pointer-events-none rounded border border-gray-600 '
+                        + 'bg-gray-800 px-2 py-1 text-xs text-gray-100 shadow-lg';
+        document.body.appendChild(tipEl);
+    }
+    return tipEl;
+}
+function showTip(svg, muscle, label, volume, share, unit) {
+    const node = tip();
+    const vol = volume > 0 ? `${Math.round(volume).toLocaleString()} ${unit}` : 'no volume';
+    node.innerHTML = `<span class="font-semibold">${label}</span><br>`
+        + `<span class="text-gray-300">${vol}</span><br>`
+        + `<span class="text-gray-400">${statusWord(volume, share, unit)}</span>`;
+    node.classList.remove('hidden');
+    // Left and right are the same muscle, so light both up rather than implying they differ.
+    svg.querySelectorAll(`path[data-muscle="${CSS.escape(muscle)}"]`).forEach(p => {
+        p.setAttribute('stroke', '#e5e7eb');
+        p.setAttribute('stroke-width', '1.4');
+    });
+}
+function moveTip(e) {
+    const node = tip();
+    node.style.left = Math.min(e.clientX + 14, window.innerWidth - 150) + 'px';
+    node.style.top = (e.clientY + 14) + 'px';
+}
+function hideTip(e) {
+    tip().classList.add('hidden');
+    const svg = e.currentTarget.ownerSVGElement;
+    const muscle = e.currentTarget.getAttribute('data-muscle');
+    svg.querySelectorAll(`path[data-muscle="${CSS.escape(muscle)}"]`).forEach(p => {
+        p.setAttribute('stroke', '#0f1520');
+        p.setAttribute('stroke-width', '0.7');
     });
 }
 
@@ -184,8 +302,8 @@ async function load(days) {
     status.textContent = `${data.sessions} session${data.sessions === 1 ? '' : 's'} in the last ${days} days.`;
     panel.classList.remove('hidden');
 
-    drawFigure(document.getElementById('figFront'), FRONT, volumes, peak);
-    drawFigure(document.getElementById('figBack'), BACK, volumes, peak);
+    drawFigure(document.getElementById('figFront'), FRONT, volumes, peak, data.unit);
+    drawFigure(document.getElementById('figBack'), BACK, volumes, peak, data.unit);
 
     const r = data.ratios;
     const pct = (a, b) => (a + b > 0 ? (100 * a / (a + b)) : 50);

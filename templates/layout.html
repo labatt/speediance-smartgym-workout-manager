@@ -5,102 +5,143 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unofficial Speediance Workout Manager</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>body { background-color: #0d1117; color: #c9d1d9; }</style>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; }
+        /* The collapsed rail shows icons only; labels and section headings fold away.
+           Driven by a class on <body> so it applies before first paint (see the inline
+           script below) and never flashes the wrong width. */
+        body.nav-collapsed #sidebar { width: 3.5rem; }
+        body.nav-collapsed .nav-label,
+        body.nav-collapsed .nav-section-title,
+        body.nav-collapsed .nav-wordmark { display: none; }
+        body.nav-collapsed #sidebar .nav-item { justify-content: center; }
+        @media (min-width: 768px) {
+            body.nav-collapsed #contentWrap { margin-left: 3.5rem; }
+            #contentWrap { margin-left: 14rem; }
+        }
+        /* No CSS tooltip for the collapsed rail: the sidebar scrolls, and overflow-y:auto
+           clips any absolutely-positioned child, so one never appeared. The title attribute
+           on each item cannot be clipped by an ancestor, so that carries the label instead. */
+    </style>
     {% block head %}{% endblock %}
 </head>
-<body class="min-h-screen flex flex-col">
-    {% set nav_links = [
-        ('/', 'Dashboard'), ('/library', 'Library'), ('/create', 'Build Workout'),
-        ('/schedule', 'Schedule'), ('/history', 'History'), ('/progress', 'Progress'),
-        ('/memory', 'Memory'), ('/connect-ai', 'Connect AI'),
-        ('/assessment', 'Assessment'),
-        ('/browse', 'Browse')
+<body class="min-h-screen">
+    <script>
+        // Applied before paint so a collapsed sidebar doesn't flash open on every page load.
+        try { if (localStorage.getItem('navCollapsed') === '1') document.body.classList.add('nav-collapsed'); } catch (e) {}
+    </script>
+    {# Grouped so the list stays readable as pages are added: TRAIN is what you do next,
+       REVIEW is what already happened, SETUP is configuration. Icons are inline SVG paths
+       (no icon font to load) and double as the collapsed rail. #}
+    {% set nav_groups = [
+        ('Train', [
+            ('/', 'Dashboard', 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'),
+            ('/create', 'Build Workout', 'M12 4v16m8-8H4'),
+            ('/schedule', 'Schedule', 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'),
+        ]),
+        ('Review', [
+            ('/history', 'History', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'),
+            ('/progress', 'Progress', 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
+            ('/assessment', 'Assessment', 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'),
+            ('/browse', 'Browse', 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'),
+        ]),
+        ('Setup', [
+            ('/library', 'Library', 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253'),
+            ('/memory', 'Memory', 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'),
+            ('/connect-ai', 'Connect AI', 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1'),
+            ('/settings', 'Settings', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'),
+        ]),
     ] %}
-    {# Session state (dot + email + login/logout). Speediance permits one live session
-       per account, so signing in on the phone app silently kills this one — without this
-       indicator the app just appears to break. Rendered in the desktop bar and, compactly,
-       inside the mobile menu. #}
-    <nav class="bg-gray-900 border-b border-gray-800 p-4">
-        <div class="container mx-auto flex justify-between items-center">
-            <a href="/" class="text-lg sm:text-xl font-bold text-white">UNOFFICIAL <span class="text-green-500">WORKOUT MANAGER</span></a>
 
-            <!-- Desktop nav (md and up) -->
-            <div class="hidden md:flex items-center space-x-4">
-                {% for href, label in nav_links %}
-                <a href="{{ href }}" class="hover:text-white">{{ label }}</a>
-                {% endfor %}
-                <a href="/settings" class="text-gray-500 hover:text-white">Settings</a>
-                <span class="inline-flex items-center gap-2 pl-4 ml-2 border-l border-gray-700">
-                    {% if auth_state.logged_in %}
-                        <span class="w-2 h-2 rounded-full bg-green-500" title="Connected"></span>
-                        <span class="text-xs text-gray-400" title="{{ auth_state.email }}">{{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}</span>
-                        <a href="/logout" class="text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition">Log out</a>
-                    {% else %}
-                        <span class="w-2 h-2 rounded-full bg-red-500" title="Signed out"></span>
-                        <span class="text-xs text-red-400">Signed out</span>
-                        {% if auth_state.can_quick_login %}
-                            <form method="POST" action="/auth/relogin" class="inline"><button type="submit" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition" title="Sign back in as {{ auth_state.email }}">Log in</button></form>
-                        {% else %}
-                            <a href="/settings" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition">Log in</a>
-                        {% endif %}
-                    {% endif %}
-                </span>
-            </div>
-
-            <!-- Mobile: connection dot (always visible) + hamburger -->
-            <div class="flex items-center gap-3 md:hidden">
-                <span class="w-2.5 h-2.5 rounded-full {{ 'bg-green-500' if auth_state.logged_in else 'bg-red-500' }}" title="{{ 'Connected' if auth_state.logged_in else 'Signed out' }}"></span>
-                <button id="navToggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mobileMenu" class="text-gray-300 hover:text-white p-1 -mr-1">
-                    <svg id="navIconOpen" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-                    <svg id="navIconClose" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-        </div>
-
-        <!-- Mobile dropdown menu -->
-        <div id="mobileMenu" class="hidden md:hidden mt-3 pt-3 border-t border-gray-800">
-            {% for href, label in nav_links %}
-            <a href="{{ href }}" class="block py-2 px-2 rounded hover:bg-gray-800 hover:text-white">{{ label }}</a>
-            {% endfor %}
-            <a href="/settings" class="block py-2 px-2 rounded text-gray-400 hover:bg-gray-800 hover:text-white">Settings</a>
-            <div class="mt-2 pt-3 border-t border-gray-800 flex items-center gap-2 px-2">
-                {% if auth_state.logged_in %}
-                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                    <span class="text-xs text-gray-400 flex-grow truncate" title="{{ auth_state.email }}">{{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}</span>
-                    <a href="/logout" class="text-xs px-3 py-1.5 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition">Log out</a>
-                {% else %}
-                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
-                    <span class="text-xs text-red-400 flex-grow">Signed out</span>
-                    {% if auth_state.can_quick_login %}
-                        <form method="POST" action="/auth/relogin" class="inline"><button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition" title="Sign back in as {{ auth_state.email }}">Log in</button></form>
-                    {% else %}
-                        <a href="/settings" class="text-xs px-3 py-1.5 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition">Log in</a>
-                    {% endif %}
-                {% endif %}
-            </div>
-        </div>
-    </nav>
-
-    <main class="container mx-auto p-4 flex-grow">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    {% if category == 'error' %}
-                        <div class="p-4 mb-4 rounded bg-red-900 text-red-200 border border-red-700">{{ message }}</div>
-                    {% elif category == 'success' %}
-                        <div class="p-4 mb-4 rounded bg-green-900 text-green-200 border border-green-700">{{ message }}</div>
-                    {% elif category == 'debug' %}
-                        <div class="p-4 mb-4 rounded bg-gray-800 text-gray-300 border border-gray-600 font-mono text-sm whitespace-pre-wrap overflow-x-auto"><strong>Debug Info:</strong><br>{{ message }}</div>
-                    {% else %}
-                        <div class="p-4 mb-4 rounded bg-blue-900 text-blue-200 border border-blue-700">{{ message }}</div>
-                    {% endif %}
-                {% endfor %}
+    {% macro auth_badge(compact=false) %}
+        {% if auth_state.logged_in %}
+            <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Connected"></span>
+            <span class="text-xs text-gray-400 truncate nav-label" title="{{ auth_state.email }}">{{ auth_state.email.split('@')[0] if auth_state.email else 'Connected' }}</span>
+            <a href="/logout" class="text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition nav-label">Log out</a>
+        {% else %}
+            <span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Signed out"></span>
+            <span class="text-xs text-red-400 flex-grow nav-label">Signed out</span>
+            {% if auth_state.can_quick_login %}
+                <form method="POST" action="/auth/relogin" class="inline nav-label"><button type="submit" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition" title="Sign back in as {{ auth_state.email }}">Log in</button></form>
+            {% else %}
+                <a href="/settings" class="text-xs px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-bold transition nav-label">Log in</a>
             {% endif %}
-        {% endwith %}
-        {% block content %}{% endblock %}
-    </main>
+        {% endif %}
+    {% endmacro %}
+
+    <!-- Mobile top bar: wordmark, connection dot, drawer toggle -->
+    <header class="md:hidden sticky top-0 z-40 bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <a href="/" class="text-base font-bold text-white">UNOFFICIAL <span class="text-green-500">WM</span></a>
+        <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full {{ 'bg-green-500' if auth_state.logged_in else 'bg-red-500' }}" title="{{ 'Connected' if auth_state.logged_in else 'Signed out' }}"></span>
+            <button id="drawerToggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar" class="text-gray-300 hover:text-white p-1 -mr-1">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Backdrop, mobile drawer only -->
+    <div id="drawerBackdrop" class="hidden fixed inset-0 bg-black/60 z-40 md:hidden"></div>
+
+    <aside id="sidebar"
+           class="fixed inset-y-0 left-0 z-50 w-56 bg-gray-900 border-r border-gray-800 flex flex-col
+                  -translate-x-full md:translate-x-0 transition-transform duration-200 overflow-y-auto">
+        <div class="flex items-center justify-between px-3 py-4 border-b border-gray-800">
+            <a href="/" class="text-sm font-bold text-white nav-wordmark leading-tight">UNOFFICIAL<br><span class="text-green-500">WORKOUT MANAGER</span></a>
+            <button id="railToggle" type="button" title="Collapse or expand the menu"
+                    class="hidden md:block text-gray-500 hover:text-white p-1 flex-shrink-0">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <button id="drawerClose" type="button" aria-label="Close navigation" class="md:hidden text-gray-400 hover:text-white p-1">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <nav class="flex-grow py-2">
+            {% for section, links in nav_groups %}
+            <p class="nav-section-title px-3 pt-3 pb-1 text-[10px] font-semibold tracking-wider text-gray-600 uppercase">{{ section }}</p>
+            {% for href, label, icon in links %}
+            {% set active = (request.path == href) or (href != '/' and request.path.startswith(href)) %}
+            <a href="{{ href }}" data-label="{{ label }}" title="{{ label }}"
+               class="nav-item relative flex items-center gap-2.5 mx-1 px-2 py-2 rounded text-sm
+                      {% if active %}bg-gray-800 text-white border-l-2 border-green-500{% else %}text-gray-400 hover:bg-gray-800 hover:text-white border-l-2 border-transparent{% endif %}">
+                <svg class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icon }}"/></svg>
+                <span class="nav-label truncate">{{ label }}</span>
+            </a>
+            {% endfor %}
+            {% endfor %}
+        </nav>
+
+        {# Speediance permits one live session per client type, so signing in on the phone can end
+           this one. Without this indicator the app just appears to break. #}
+        <div class="border-t border-gray-800 px-3 py-3 flex items-center gap-2">
+            {{ auth_badge() }}
+        </div>
+    </aside>
+
+    <div id="contentWrap" class="min-h-screen flex flex-col transition-[margin] duration-200">
+        <main class="w-full max-w-6xl mx-auto p-4 flex-grow">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        {% if category == 'error' %}
+                            <div class="p-4 mb-4 rounded bg-red-900 text-red-200 border border-red-700">{{ message }}</div>
+                        {% elif category == 'success' %}
+                            <div class="p-4 mb-4 rounded bg-green-900 text-green-200 border border-green-700">{{ message }}</div>
+                        {% elif category == 'debug' %}
+                            <div class="p-4 mb-4 rounded bg-gray-800 text-gray-300 border border-gray-600 font-mono text-sm whitespace-pre-wrap overflow-x-auto"><strong>Debug Info:</strong><br>{{ message }}</div>
+                        {% else %}
+                            <div class="p-4 mb-4 rounded bg-blue-900 text-blue-200 border border-blue-700">{{ message }}</div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
     <!-- Debug Button -->
-    <button onclick="showDebugInfo()" class="fixed bottom-4 right-4 bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg border border-gray-500 z-50" title="See Last API Response">
+    <button onclick="showDebugInfo()" class="fixed bottom-4 right-4 bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-full shadow-lg border border-gray-500 z-40" title="See Last API Response">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
         </svg>
@@ -129,7 +170,6 @@
             const content = document.getElementById('debugContent');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
-            
             try {
                 const response = await fetch('/debug/last_response');
                 const data = await response.json();
@@ -138,26 +178,33 @@
                 content.textContent = "Error fetching debug info: " + e;
             }
         }
-
         function closeDebugModal() {
             const modal = document.getElementById('debugModal');
             modal.classList.add('hidden');
             modal.classList.remove('flex');
         }
 
-        // Mobile hamburger menu toggle
+        // Sidebar: a slide-in drawer on phones, a collapsible rail on desktop.
         (function () {
-            var btn = document.getElementById('navToggle');
-            var menu = document.getElementById('mobileMenu');
-            var iconOpen = document.getElementById('navIconOpen');
-            var iconClose = document.getElementById('navIconClose');
-            if (!btn || !menu) return;
-            btn.addEventListener('click', function () {
-                var nowHidden = menu.classList.toggle('hidden');
-                var open = !nowHidden;
-                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-                iconOpen.classList.toggle('hidden', open);
-                iconClose.classList.toggle('hidden', !open);
+            var sidebar = document.getElementById('sidebar');
+            var backdrop = document.getElementById('drawerBackdrop');
+            var openBtn = document.getElementById('drawerToggle');
+            var closeBtn = document.getElementById('drawerClose');
+            var railBtn = document.getElementById('railToggle');
+
+            function setDrawer(open) {
+                sidebar.classList.toggle('-translate-x-full', !open);
+                backdrop.classList.toggle('hidden', !open);
+                if (openBtn) openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            }
+            if (openBtn) openBtn.addEventListener('click', function () { setDrawer(true); });
+            if (closeBtn) closeBtn.addEventListener('click', function () { setDrawer(false); });
+            if (backdrop) backdrop.addEventListener('click', function () { setDrawer(false); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setDrawer(false); });
+
+            if (railBtn) railBtn.addEventListener('click', function () {
+                var collapsed = document.body.classList.toggle('nav-collapsed');
+                try { localStorage.setItem('navCollapsed', collapsed ? '1' : '0'); } catch (e) {}
             });
         })();
     </script>

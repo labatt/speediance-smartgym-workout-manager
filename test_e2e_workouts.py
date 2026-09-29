@@ -6,6 +6,21 @@ from copy import deepcopy
 from api_client import SpeedianceClient
 
 
+def _require_optin() -> None:
+    """These tests CREATE workouts on the real Speediance account, and each failure leaves
+    one behind: 30 E2E_TEST_* templates had accumulated there by 2026-09-29, because a
+    plain `pytest` run executed them and they failed before their cleanup. Writing to a
+    live account is not something an ordinary test run should do, so they are opt-in.
+
+        SPEEDIANCE_E2E=1 pytest test_e2e_workouts.py
+    """
+    if os.environ.get("SPEEDIANCE_E2E") != "1":
+        raise unittest.SkipTest(
+            "Live-account E2E tests are opt-in: they create real workouts. "
+            "Set SPEEDIANCE_E2E=1 to run them."
+        )
+
+
 def _require_creds(client: SpeedianceClient) -> None:
     user_id = client.credentials.get("user_id")
     token = client.credentials.get("token")
@@ -25,6 +40,7 @@ class TestWorkoutE2E(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        _require_optin()
         cls.client = SpeedianceClient()
 
         # Optional override via env
