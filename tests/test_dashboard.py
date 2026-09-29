@@ -103,13 +103,43 @@ class TestPersonalRecords(unittest.TestCase):
     def stats(self, rows):
         return {"Barbell Row": rows}
 
-    def test_a_recent_best_is_reported(self):
+    def test_a_recent_best_carries_the_number_and_what_it_beat(self):
         rows = [{"date": "2026-09-01", "maxWeight": 50, "totalCapacity": 900},
                 {"date": "2026-09-28", "maxWeight": 60, "totalCapacity": 1200}]
         got = personal_records(self.stats(rows), today=TODAY)
         self.assertEqual(got[0]["exercise"], "Barbell Row")
-        self.assertEqual(sorted(got[0]["kinds"]), ["Best day volume", "Heaviest weight"])
+        self.assertEqual(sorted(k["kind"] for k in got[0]["kinds"]),
+                         ["Best day volume", "Heaviest weight"])
+        weight = next(k for k in got[0]["kinds"] if k["kind"] == "Heaviest weight")
+        # The number is what makes it a record, and the previous best is what makes it mean
+        # something — reporting one without the other says nothing.
+        self.assertEqual((weight["value"], weight["previous"]), (60.0, 50.0))
+        self.assertEqual((weight["gain"], weight["gainPercent"]), (10.0, 20))
         self.assertEqual(got[0]["daysAgo"], 1)
+
+    def test_the_latest_day_that_reached_the_best_is_reported(self):
+        # Repeating a best is today's news, not a callback to the first time.
+        rows = [{"date": "2026-09-01", "maxWeight": 60, "totalCapacity": 100},
+                {"date": "2026-09-20", "maxWeight": 55, "totalCapacity": 100},
+                {"date": "2026-09-28", "maxWeight": 65, "totalCapacity": 100}]
+        got = personal_records(self.stats(rows), today=TODAY)
+        weight = next(k for k in got[0]["kinds"] if k["kind"] == "Heaviest weight")
+        self.assertEqual(weight["date"], "2026-09-28")
+        self.assertEqual(weight["previous"], 60.0)
+
+    def test_matching_an_older_best_is_not_a_record(self):
+        # Equalling a previous best is not beating it.
+        rows = [{"date": "2026-09-01", "maxWeight": 60, "totalCapacity": 100},
+                {"date": "2026-09-28", "maxWeight": 60, "totalCapacity": 100}]
+        self.assertEqual(personal_records(self.stats(rows), today=TODAY), [])
+
+    def test_a_first_ever_best_has_no_previous(self):
+        rows = [{"date": "2026-09-27", "maxWeight": 0, "totalCapacity": 500},
+                {"date": "2026-09-28", "maxWeight": 40, "totalCapacity": 400}]
+        got = personal_records(self.stats(rows), today=TODAY)
+        weight = next(k for k in got[0]["kinds"] if k["kind"] == "Heaviest weight")
+        self.assertIsNone(weight["previous"])
+        self.assertIsNone(weight["gain"])
 
     def test_an_old_best_is_not_news(self):
         rows = [{"date": "2026-01-01", "maxWeight": 50, "totalCapacity": 900},

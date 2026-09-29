@@ -153,10 +153,13 @@ def muscle_recovery(fatigue_rows, last_trained, now):
 
 
 def personal_records(exercise_stats, within_days=14, today=None):
-    """Recent bests worth surfacing: heaviest weight, and biggest single-day volume.
+    """Recent bests, with the number that made each one a record and what it beat.
 
-    `exercise_stats` maps an exercise name to its dated rows. Only records set inside the
-    window are returned — an all-time best from a year ago is not news.
+    `exercise_stats` maps an exercise name to its dated rows (userActionStatPage shape:
+    `dayStr`, `maxWeight`, `totalCapacity`). A record is reported for the LATEST day that
+    achieved the best, so repeating a best reads as today's news rather than the first
+    time it happened. `previous` is the best before that day, which is what makes the
+    record meaningful — "1,210 lbs" alone says nothing about whether it was hard-won.
     """
     today = today or datetime.date.today()
     cutoff = today - datetime.timedelta(days=within_days)
@@ -164,7 +167,6 @@ def personal_records(exercise_stats, within_days=14, today=None):
     for name, rows in (exercise_stats or {}).items():
         dated = []
         for row in rows or []:
-            day = None
             # userActionStatPage keys its rows `dayStr`; other feeds use date/startTime.
             stamp = str(row.get("dayStr") or row.get("date") or row.get("startTime") or "")[:10]
             try:
@@ -175,19 +177,36 @@ def personal_records(exercise_stats, within_days=14, today=None):
         if len(dated) < 2:
             continue                      # a first-ever entry is not a record
         dated.sort()
-        best_weight = max(d[1] for d in dated)
-        best_volume = max(d[2] for d in dated)
-        for day, weight, volume in dated:
+
+        kinds = []
+        for label, index in (("Heaviest weight", 1), ("Best day volume", 2)):
+            values = [d[index] for d in dated]
+            best = max(values)
+            if not best:
+                continue
+            # The most recent day that reached the best, so a repeat counts as news.
+            day = max(d[0] for d in dated if d[index] >= best)
             if day < cutoff:
                 continue
-            kinds = []
-            if weight and weight >= best_weight:
-                kinds.append("Heaviest weight")
-            if volume and volume >= best_volume:
-                kinds.append("Best day volume")
-            if kinds:
-                out.append({"exercise": name, "kinds": kinds, "date": day.isoformat(),
-                            "daysAgo": (today - day).days})
-                break
+            # A zero is a day the movement carried no weight (bodyweight or timed), not a
+            # previous best — "+40 vs 0" would read as progress that never happened.
+            earlier = [d[index] for d in dated if d[0] < day and d[index] > 0]
+            previous = max(earlier) if earlier else None
+            if previous is not None and best <= previous:
+                continue                  # tied an older best rather than beating it
+            kinds.append({
+                "kind": label,
+                "value": round(best, 1),
+                "previous": round(previous, 1) if previous is not None else None,
+                "gain": round(best - previous, 1) if previous is not None else None,
+                "gainPercent": (round(100.0 * (best - previous) / previous)
+                                if previous else None),
+                "date": day.isoformat(),
+                "daysAgo": (today - day).days,
+            })
+        if kinds:
+            newest = min(k["daysAgo"] for k in kinds)
+            out.append({"exercise": name, "kinds": kinds,
+                        "date": min(k["date"] for k in kinds), "daysAgo": newest})
     out.sort(key=lambda r: r["daysAgo"])
     return out
