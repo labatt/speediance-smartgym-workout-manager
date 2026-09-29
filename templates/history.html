@@ -1048,16 +1048,21 @@
                         const completed = reps >= target;
                         const repsColor = completed ? 'text-green-400' : 'text-red-400';
 
-                        // Side label for unilateral
+                        // Side label for unilateral. Each side counts from 1: three rounds
+                        // of left-then-right is "L1 R1 L2 R2 L3 R3", not "L1 R2 L3 R4 L5 R6".
                         let sideLabel = '';
-                        if (isUnilateral) {
-                            if (s.leftRight === 1) sideLabel = '<span class="text-green-400 font-bold mr-1">L</span>';
-                            else if (s.leftRight === 2) sideLabel = '<span class="text-blue-400 font-bold mr-1">R</span>';
+                        let setNumber = i + 1;
+                        if (isUnilateral && (s.leftRight === 1 || s.leftRight === 2)) {
+                            const side = s.leftRight;
+                            sideLabel = side === 1
+                                ? '<span class="text-green-400 font-bold mr-1">L</span>'
+                                : '<span class="text-blue-400 font-bold mr-1">R</span>';
+                            setNumber = sets.slice(0, i + 1).filter(x => x.leftRight === side).length;
                         }
 
                         setsHtml += `
                             <div class="grid grid-cols-12 gap-1 items-center bg-gray-800/50 rounded px-1 py-0.5 text-xs">
-                                <div class="col-span-1 text-center text-gray-500 font-mono">${sideLabel}${i + 1}</div>
+                                <div class="col-span-1 text-center text-gray-500 font-mono">${sideLabel}${setNumber}</div>
                                 <div class="col-span-3 ${repsColor} font-medium">${reps}${target ? ` / ${target}` : ''}</div>
                                 <div class="col-span-3 text-white">${weightDisplay}</div>
                                 <div class="col-span-3 text-gray-400">${cap > 0 ? `${Math.round(cap)} ${unitLabel}` : '-'}</div>
@@ -1079,7 +1084,7 @@
                             ${ratingHtml}
                         </div>
                         <div class="flex gap-3 mt-0.5">
-                            <span class="text-xs text-gray-400">${sets.length} set${sets.length !== 1 ? 's' : ''}${isTimer ? ' · timer' : isVita ? ' · timed' : ''}</span>
+                            <span class="text-xs text-gray-400">${setCountLabel(sets, isUnilateral)}${isTimer ? ' · timer' : isVita ? ' · timed' : ''}</span>
                             ${!isTimeBased && totalCap > 0 ? `<span class="text-xs text-green-400">${Math.round(totalCap).toLocaleString()} ${unitLabel} vol</span>` : ''}
                             ${!isTimeBased && ex.maxWeight ? `<span class="text-xs text-blue-400">max ${fmtWeight(ex.maxWeight)} ${unitLabel}</span>` : ''}
                         </div>
@@ -1094,6 +1099,18 @@
             `;
             container.appendChild(card);
         });
+    }
+
+    // A unilateral exercise logs each side as its own set, so a plain count doubles what
+    // was actually performed. Report it per side when both sides were worked evenly.
+    function setCountLabel(sets, isUnilateral) {
+        const n = sets.length;
+        if (isUnilateral) {
+            const left = sets.filter(s => s.leftRight === 1).length;
+            const right = sets.filter(s => s.leftRight === 2).length;
+            if (left > 0 && left === right) return `${left} set${left !== 1 ? 's' : ''} per side`;
+        }
+        return `${n} set${n !== 1 ? 's' : ''}`;
     }
 
     function downloadCurrentDetail() {
