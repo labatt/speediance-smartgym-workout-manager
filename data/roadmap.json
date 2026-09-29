@@ -246,8 +246,8 @@
       "title": "Curated fact store for the Speediance MCP server",
       "summary": "Replace the free-form fact layer with typed, validated facts: kind (constraint/preference/observation/goal), severity (hard/soft), category enum, scope, supersedes chains, 600-char hard limit (no truncation), near-duplicate rejection (~0.85), import_facts with dry run, archive-not-delete, list_facts audit, grouped reads with hard constraints in their own block, and read-time conflict detection.",
       "affects": "speediance-mcp: memory.py, tools/memory_tools.py, tools/coaching.py, server.py, README, tests",
-      "status": "working",
-      "notes": "Logged before starting. The MCP server already has free-form coaching facts (remember_fact/forget_fact, with categories and expiry); clarifying what 'curated' should add. 2026-09-28: user chose 'facts about you, curated' and supplied the full spec (from a predecessor system's 59-fact failure). Spec in the repo: docs/specs/2026-09-28-curated-facts.md (97eb4ff). The live store has 11 legacy facts (one is 736 chars) → migrated as archived legacy rows (kept whole), surfaced as legacyToReview for curation via import_facts/supersedes."
+      "status": "done",
+      "notes": "Logged before starting. The MCP server already has free-form coaching facts (remember_fact/forget_fact, with categories and expiry); clarifying what 'curated' should add. 2026-09-28: user chose 'facts about you, curated' and supplied the full spec (from a predecessor system's 59-fact failure). Spec in the repo: docs/specs/2026-09-28-curated-facts.md (97eb4ff). The live store has 11 legacy facts (one is 736 chars) → migrated as archived legacy rows (kept whole), surfaced as legacyToReview for curation via import_facts/supersedes. DONE and deployed 2026-09-28 (speediance-mcp f810c92..129658d): built to the user's spec with all 9 acceptance tests; review → fix round 1 (legacy facts stay visible as legacyUnreviewed, near-match refusals name differences and suggest supersedes, different scopes neither dedupe nor conflict, create/update echo hardConstraints, expires_days validation, multi-piece legacy split, conflict texts and number rules, real atomicity test) → fix round 2 (units stop year-ignoring so 2000 m vs 2100 m counts, strict expires_days at the MCP boundary, case-insensitive scope, category differences); 398 tests. The live DB was backed up to /root/.config/speediance-mcp/backup-* before the restart; the migration shows legacyUnreviewed 11 and no active facts yet. Next step for the user: curate the 11 in claude.ai (e.g. 'review my legacy facts')."
     },
     {
       "id": 31,
@@ -320,6 +320,14 @@
       "affects": "web app progress page (SVG asset + rendering)",
       "status": "queued",
       "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 40,
+      "title": "Evaluate GM Manager's features for inclusion (series): 3. Health & Wellness",
+      "summary": "Wellness Monitor score, wellness age, strength score, fitness (CRF), VO2max; sleep stages and score; training status (fatigue vs fitness, acute/chronic load); overnight vitals vs baseline (HRV, resting HR, SpO2, respiratory rate, skin temp); night recovery; vitals; body composition; activity (steps, dietary intake); other activity (phone-health imports, with per-item and all-future Ignore); recovery / muscle readiness body map (% ready, overloaded groups, hours to recovery).",
+      "affects": "planning only",
+      "status": "working",
+      "notes": "2026-09-28: screens received. GM Manager says this is synced from Speediance's Wellness+ data."
     }
   ]
 }
