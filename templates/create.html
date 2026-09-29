@@ -279,7 +279,10 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-        await loadAvoidedMap();
+        // Non-blocking: the builder/library must be usable immediately even if this
+        // fetch is slow or fails. Once it resolves, re-render so any already-visible
+        // exercise picks up its warning banner retroactively.
+        loadAvoidedMap().then(() => { if (workoutData.length) renderBuilder(); });
 
         // Search & Filter Logic
         const searchInput = document.getElementById('search');

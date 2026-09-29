@@ -43,6 +43,15 @@ class TestCreatePageWarnsOnAvoided(unittest.TestCase):
         html = r.get_data(as_text=True)
         self.assertIn("Marked avoided", html)
 
+    def test_load_avoided_map_does_not_block_init(self):
+        """I-6: the avoided-map fetch must not block the rest of page init — the builder
+        (or the library search/filter wiring) must be usable immediately, with the
+        avoided-map fetch running in the background and re-rendering once it resolves."""
+        r = self.c.get("/create")
+        html = r.get_data(as_text=True)
+        self.assertNotIn("await loadAvoidedMap()", html)
+        self.assertIn("loadAvoidedMap().then(", html)
+
 
 if __name__ == "__main__":
     unittest.main()

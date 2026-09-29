@@ -133,8 +133,7 @@
 
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="exercise-grid">
         {% for ex in exercises %}
-        <a href="/exercise/{{ ex.id }}"
-           class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10 relative"
+        <div class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10 relative"
            data-title="{{ ex.title | lower }}"
            data-muscle="{{ ex.trainingPartId2 }}"
            data-category="{{ ex.category_id }}"
@@ -142,41 +141,45 @@
            data-accessories="{{ ex.accessories }}"
            data-avoided="{{ '1' if ex.id in avoided else '0' }}">
 
-            <div class="aspect-square bg-gray-900 overflow-hidden relative">
-                <img src="{{ ex.img | local_cache }}" alt="{{ ex.title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy">
+            <!-- A <button> cannot legally nest inside an <a> — the avoid toggle below is a
+                 SIBLING of this link, positioned over it, not a descendant of it. -->
+            <a href="/exercise/{{ ex.id }}" class="block">
+                <div class="aspect-square bg-gray-900 overflow-hidden relative">
+                    <img src="{{ ex.img | local_cache }}" alt="{{ ex.title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy">
 
-                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition flex items-center justify-center">
-                    <svg class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition transform scale-75 group-hover:scale-100" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition flex items-center justify-center">
+                        <svg class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition transform scale-75 group-hover:scale-100" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
                 </div>
 
-                <button type="button"
-                        class="avoid-toggle-btn absolute top-1.5 right-1.5 z-20 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold border shadow transition
-                               {% if ex.id in avoided %}bg-red-600/90 border-red-400 text-white{% else %}bg-gray-900/70 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}"
-                        data-group-id="{{ ex.id }}"
-                        data-name="{{ ex.title }}"
-                        title="{% if ex.id in avoided %}Avoided{% if avoided[ex.id] %}: {{ avoided[ex.id] }}{% endif %} — click to un-avoid{% else %}Mark as avoided{% endif %}"
-                        onclick="event.preventDefault(); event.stopPropagation(); onAvoidToggleClick(this);">⊘</button>
-            </div>
-
-            <div class="p-4">
-                <h3 class="text-white font-bold text-sm md:text-base line-clamp-2 leading-tight min-h-[2.5rem]">{{ ex.title }}</h3>
-                <div class="mt-2 flex items-center gap-2">
-                    <span class="text-xs font-mono text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">
-                        {% if ex.trainingPartId2 == 11 %}Chest
-                        {% elif ex.trainingPartId2 == 12 %}Shoulder
-                        {% elif ex.trainingPartId2 == 13 %}Back
-                        {% elif ex.trainingPartId2 == 14 %}Glutes
-                        {% elif ex.trainingPartId2 == 15 %}Legs
-                        {% elif ex.trainingPartId2 == 16 %}Arms
-                        {% elif ex.trainingPartId2 == 17 %}Abs
-                        {% else %}General{% endif %}
-                    </span>
-                    {% if ex.isBarbell == 1 %}
-                    <span class="text-xs text-blue-400 bg-blue-900/20 px-1.5 rounded">Barbell</span>
-                    {% endif %}
+                <div class="p-4">
+                    <h3 class="text-white font-bold text-sm md:text-base line-clamp-2 leading-tight min-h-[2.5rem]">{{ ex.title }}</h3>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span class="text-xs font-mono text-gray-500 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">
+                            {% if ex.trainingPartId2 == 11 %}Chest
+                            {% elif ex.trainingPartId2 == 12 %}Shoulder
+                            {% elif ex.trainingPartId2 == 13 %}Back
+                            {% elif ex.trainingPartId2 == 14 %}Glutes
+                            {% elif ex.trainingPartId2 == 15 %}Legs
+                            {% elif ex.trainingPartId2 == 16 %}Arms
+                            {% elif ex.trainingPartId2 == 17 %}Abs
+                            {% else %}General{% endif %}
+                        </span>
+                        {% if ex.isBarbell == 1 %}
+                        <span class="text-xs text-blue-400 bg-blue-900/20 px-1.5 rounded">Barbell</span>
+                        {% endif %}
+                    </div>
                 </div>
-            </div>
-        </a>
+            </a>
+
+            <button type="button"
+                    class="avoid-toggle-btn absolute top-1.5 right-1.5 z-20 w-9 h-9 min-w-[36px] min-h-[36px] rounded-full flex items-center justify-center text-base font-bold border shadow transition
+                           {% if ex.id in avoided %}bg-red-600/90 border-red-400 text-white{% else %}bg-gray-900/70 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}"
+                    data-group-id="{{ ex.id }}"
+                    data-name="{{ ex.title }}"
+                    title="{% if ex.id in avoided %}Avoided{% if avoided[ex.id] %}: {{ avoided[ex.id] }}{% endif %} — click to un-avoid{% else %}Mark as avoided{% endif %}"
+                    onclick="onAvoidToggleClick(this);">⊘</button>
+        </div>
         {% endfor %}
     </div>
 
@@ -245,10 +248,24 @@
         const groupId = btn.dataset.groupId;
         const name = btn.dataset.name;
         if (Object.prototype.hasOwnProperty.call(avoidedMap, groupId)) {
-            removeAvoided(groupId);
+            removeAvoided(groupId, btn);
         } else {
             showAvoidReasonPopover(btn, groupId, name);
         }
+    }
+
+    // Small inline error, shown in the same popover slot as the reason input — never a
+    // browser alert(), and built with textContent (message is ours, but stay consistent).
+    function showInlineError(anchorBtn, message) {
+        closeAnyOpenAvoidPopover();
+        const card = anchorBtn.closest('.exercise-card');
+        if (!card) return;
+        const err = document.createElement('div');
+        err.className = 'avoid-popover absolute inset-x-2 bottom-2 z-30 bg-red-950/95 border border-red-700 rounded p-2 shadow-lg text-xs text-red-200';
+        err.textContent = message;
+        err.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+        card.appendChild(err);
+        setTimeout(() => { if (err.parentNode) err.remove(); }, 4000);
     }
 
     function showAvoidReasonPopover(anchorBtn, groupId, name) {
@@ -277,10 +294,13 @@
         saveBtn.type = 'button';
         saveBtn.textContent = 'Save';
         saveBtn.className = 'flex-1 bg-red-600 hover:bg-red-700 text-white text-xs py-1 rounded';
+        const doSave = () => {
+            setAvoided(groupId, name, input.value, anchorBtn);
+            pop.remove();
+        };
         saveBtn.addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
-            setAvoided(groupId, name, input.value);
-            pop.remove();
+            doSave();
         });
 
         const cancelBtn = document.createElement('button');
@@ -292,6 +312,18 @@
             pop.remove();
         });
 
+        // Enter saves / Escape cancels — the popover is a small inline form, not a dialog,
+        // so it should behave like one without requiring a mouse.
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                doSave();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                pop.remove();
+            }
+        });
+
         row.appendChild(saveBtn);
         row.appendChild(cancelBtn);
         pop.appendChild(label);
@@ -301,28 +333,38 @@
         input.focus();
     }
 
-    async function setAvoided(groupId, name, reason) {
+    async function setAvoided(groupId, name, reason, btn) {
         try {
             const res = await fetch('/api/avoided', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ group_id: parseInt(groupId, 10), name: name, reason: reason || '' }),
             });
-            if (!res.ok) return;
+            if (!res.ok) {
+                showInlineError(btn, "Couldn't mark this avoided — try again.");
+                return;
+            }
             avoidedMap[groupId] = reason || '';
             setCardAvoidedState(groupId, true, reason || '');
             applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
-        } catch (e) { /* best effort */ }
+        } catch (e) {
+            showInlineError(btn, "Couldn't mark this avoided — try again.");
+        }
     }
 
-    async function removeAvoided(groupId) {
+    async function removeAvoided(groupId, btn) {
         try {
             const res = await fetch(`/api/avoided/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
-            if (!res.ok) return;
+            if (!res.ok) {
+                showInlineError(btn, "Couldn't remove — try again.");
+                return;
+            }
             delete avoidedMap[groupId];
             setCardAvoidedState(groupId, false, '');
             applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
-        } catch (e) { /* best effort */ }
+        } catch (e) {
+            showInlineError(btn, "Couldn't remove — try again.");
+        }
     }
 
     const avoidedFilterSelect = document.getElementById('avoided-filter');

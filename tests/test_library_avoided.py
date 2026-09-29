@@ -1,7 +1,9 @@
 import os
+import re
 import sys
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -72,6 +74,63 @@ class TestLibraryAvoidedRendering(unittest.TestCase):
         r = self.c.get("/library")
         html = r.get_data(as_text=True)
         self.assertIn('avoided-filter', html)
+
+    # --- I-8 ---
+
+    def test_avoid_toggle_button_is_not_nested_inside_an_anchor(self):
+        """Interactive content (a <button>) inside an <a> is invalid HTML — the toggle
+        must be a sibling of the card's link, not a descendant of it."""
+        r = self.c.get("/library")
+        html = r.get_data(as_text=True)
+
+        class _AnchorNestingChecker(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.a_depth = 0
+                self.violations = 0
+                self.saw_button = False
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'a':
+                    self.a_depth += 1
+                if tag == 'button' and 'avoid-toggle-btn' in (attrs.get('class') or ''):
+                    self.saw_button = True
+                    if self.a_depth > 0:
+                        self.violations += 1
+
+            def handle_endtag(self, tag):
+                if tag == 'a' and self.a_depth > 0:
+                    self.a_depth -= 1
+
+        checker = _AnchorNestingChecker()
+        checker.feed(html)
+        self.assertTrue(checker.saw_button, "expected to find at least one avoid-toggle-btn")
+        self.assertEqual(checker.violations, 0,
+                         "avoid-toggle-btn must never be nested inside an <a> element")
+
+    def test_reason_popover_handles_enter_and_escape(self):
+        r = self.c.get("/library")
+        html = r.get_data(as_text=True)
+        self.assertIn("'Enter'", html)
+        self.assertIn("'Escape'", html)
+
+    def test_toggle_button_meets_minimum_touch_target(self):
+        r = self.c.get("/library")
+        html = r.get_data(as_text=True)
+        m = re.search(r'class="avoid-toggle-btn([^"]*)"', html)
+        self.assertIsNotNone(m, "expected an avoid-toggle-btn element")
+        classes = m.group(1)
+        # Tailwind: w-9/h-9 = 2.25rem = 36px at the default root font size.
+        self.assertIn("w-9", classes)
+        self.assertIn("h-9", classes)
+
+    def test_inline_error_shown_on_avoid_failure(self):
+        r = self.c.get("/library")
+        html = r.get_data(as_text=True)
+        self.assertIn("showInlineError", html)
+        # Called from both the save and the remove paths, not just defined.
+        self.assertGreaterEqual(html.count("showInlineError"), 3)
 
 
 if __name__ == "__main__":
