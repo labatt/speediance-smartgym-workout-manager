@@ -288,6 +288,38 @@
       "affects": "web app settings.html + app.py (userinfo read)",
       "status": "queued",
       "notes": "From the GM Manager Settings evaluation (#31). Unit must come from the reliable source (the phone-type login 'unit'), not userinfo.weightUnit, which is 0 on lb accounts."
+    },
+    {
+      "id": 36,
+      "title": "Evaluate GM Manager's features for inclusion (series): 2. Progress",
+      "summary": "Progress page: volume/calories/time trend cards with day/week/month/year buckets and drill-down tables; muscle focus (body map, per-muscle volume, push:pull and upper:lower ratios, muscles not trained in 30 days); per-exercise progress (sparklines, % change, top-set and volume charts, bests).",
+      "affects": "planning only",
+      "status": "done",
+      "notes": "2026-09-28: screens received. Evaluated; the user queued parts 1-3 (#37-#39), including our own body-map figure. Finding recorded: GM Manager's per-muscle totals give every touched muscle full volume, and its % change is last vs first even with 2 sessions."
+    },
+    {
+      "id": 37,
+      "title": "Progress page part 1: trend cards (gym vs phone-health) + per-exercise progress + drill-down on every chart",
+      "summary": "Volume/calories/time/sessions per day, week, month or year, with change vs the previous period; built from the session history so gym numbers are exact and phone-health activity is a separate band. Per-exercise list with sparklines and a clearly defined change (last session vs the average of the previous 4; no % from fewer than 3 sessions), plus detail charts (top-set weight, session volume) and bests. Every chart opens a total/average/peak + table view. Two-cable totals; avoided moves badged, not hidden.",
+      "affects": "web app: new /progress page + JSON routes; uses history + per-exercise stats",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 38,
+      "title": "Progress page part 2: muscle balance (per-muscle volume, push:pull, upper:lower, not trained in 30 days) + MCP get_muscle_balance",
+      "summary": "Per-muscle volume from each session's exercises, with the main muscle weighted 100% and assisting muscles 50% (stated on the page); push:pull and upper:lower ratio bars; muscles not trained in N days. The same numbers are exposed to claude.ai as a new MCP tool, get_muscle_balance(days).",
+      "affects": "web app progress page + speediance-mcp new tool",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
+    },
+    {
+      "id": 39,
+      "title": "Progress page part 3: our own body-map figure (front/back) coloured by muscle volume",
+      "summary": "An original SVG front/back body figure with per-muscle regions shaded by the part-2 muscle volumes. It must look visibly different from GM Manager's figure (our own artwork, style and palette).",
+      "affects": "web app progress page (SVG asset + rendering)",
+      "status": "queued",
+      "notes": "From the GM Manager Progress evaluation (#36). User queued all three parts 2026-09-28, including the figure."
     }
   ]
 }
