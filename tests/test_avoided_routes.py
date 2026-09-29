@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -151,6 +152,30 @@ class TestAvoidedRoutes(unittest.TestCase):
         self.assertNotIn("token", app.client.credentials)
         r = self.c.get("/api/avoided")
         self.assertEqual(r.status_code, 200)
+
+    # --- fix round 2, item 3: sqlite errors on write routes -> 503, not 500 ---
+
+    def test_post_sqlite_error_returns_503(self):
+        with mock.patch.object(avoided_store, "set_avoided",
+                               side_effect=sqlite3.OperationalError("database is locked")):
+            r = self.c.post("/api/avoided", json={"group_id": 1001, "name": "Bench Press"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.get_json(),
+                         {"error": "The avoided list is busy or unavailable — try again."})
+
+    def test_post_value_error_still_400_not_503(self):
+        # ValueError (e.g. reason too long) is a validation failure, not a store outage.
+        with mock.patch.object(avoided_store, "set_avoided", side_effect=ValueError("reason too long")):
+            r = self.c.post("/api/avoided", json={"group_id": 1001, "name": "Bench Press"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_sqlite_error_returns_503(self):
+        with mock.patch.object(avoided_store, "clear_avoided",
+                               side_effect=sqlite3.OperationalError("database is locked")):
+            r = self.c.delete("/api/avoided/1001")
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.get_json(),
+                         {"error": "The avoided list is busy or unavailable — try again."})
 
 
 if __name__ == "__main__":

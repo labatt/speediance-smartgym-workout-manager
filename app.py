@@ -7,6 +7,7 @@ import progression
 import coach
 import workout_gen
 import avoided_store
+import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
 import reconcile
 import session_detail
@@ -44,6 +45,9 @@ app.register_blueprint(init_debug(client))
 
 def _is_auth_error(error):
     return isinstance(error, SpeedianceAuthError) or str(error) == "Unauthorized"
+
+
+_AVOIDED_STORE_UNAVAILABLE_MSG = "The avoided list is busy or unavailable — try again."
 
 
 def _avoided_list_safe():
@@ -1487,13 +1491,20 @@ def api_avoided():
         avoided_store.set_avoided(path, group_id, name, reason)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except sqlite3.Error as e:
+        print(f"[avoided_store] set_avoided failed: {e}", file=sys.stderr)
+        return jsonify({"error": _AVOIDED_STORE_UNAVAILABLE_MSG}), 503
     return jsonify({"ok": True})
 
 
 @app.route('/api/avoided/<int:group_id>', methods=['DELETE'])
 def api_avoided_delete(group_id):
     path = avoided_store.db_path(client.credentials)
-    removed = avoided_store.clear_avoided(path, group_id)
+    try:
+        removed = avoided_store.clear_avoided(path, group_id)
+    except sqlite3.Error as e:
+        print(f"[avoided_store] clear_avoided failed: {e}", file=sys.stderr)
+        return jsonify({"error": _AVOIDED_STORE_UNAVAILABLE_MSG}), 503
     return jsonify({"ok": True, "removed": removed})
 
 
