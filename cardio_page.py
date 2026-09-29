@@ -180,19 +180,29 @@ def recovery_cards(recovery):
 
 
 def sleep_summary(sleep):
-    """`userHealth/sleep` -> slept vs target, plus whichever sub-scores are present."""
+    """`userHealth/sleep` -> slept vs target, plus whichever sub-scores are present.
+
+    MIND THE UNITS, they are mixed: `sleep` is SECONDS while `targetSleepMin` is
+    MINUTES. Reading both the same way turned 1h 48m of sleep into 108 hours.
+    """
     sleep = sleep or {}
-    minutes = _num(sleep.get("sleep"))
-    target = _num(sleep.get("targetSleepMin"))
+    slept_seconds = _num(sleep.get("sleep"))
+    target_seconds = (_num(sleep.get("targetSleepMin")) or 0) * 60 or None
+    score = _num(sleep.get("sleepScore"))
+    deep = _num((sleep.get("secondaryMetric") or {}).get("deepSleepDuration"))
     scores = []
+    if score is not None:
+        scores.append({"label": "Sleep score", "value": f"{score:g}"})
     for key, label in SLEEP_SCORES:
         value = _num(sleep.get(key))
         if value is not None:
             scores.append({"label": label, "value": f"{value:g}"})
+    if deep:
+        scores.append({"label": "Deep sleep", "value": _fmt_duration(int(deep))})
     return {
-        "available": bool(minutes) or bool(scores),
-        "slept": _fmt_duration(int(minutes * 60)) if minutes else None,
-        "target": _fmt_duration(int(target * 60)) if target else None,
-        "metTarget": bool(minutes and target and minutes >= target),
+        "available": bool(slept_seconds) or bool(scores),
+        "slept": _fmt_duration(int(slept_seconds)) if slept_seconds else None,
+        "target": _fmt_duration(int(target_seconds)) if target_seconds else None,
+        "metTarget": bool(slept_seconds and target_seconds and slept_seconds >= target_seconds),
         "scores": scores,
     }

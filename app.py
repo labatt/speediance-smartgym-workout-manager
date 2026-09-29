@@ -1826,6 +1826,8 @@ def _session_detail(training_id, kind):
 
 
 MUSCLE_BALANCE_SESSIONS = 40
+# Overnight health data can lag; a two-day window was too narrow and read as "no data".
+CARDIO_LOOKBACK_DAYS = 7
 
 
 @app.route('/connect-ai')
@@ -1882,10 +1884,14 @@ def cardio_page_view():
         except Exception:
             age = None
         cards = cardio_page.today_cards(client.get_health_score(), actual_age=age)
-        # Recovery and sleep are written overnight, so today may be empty while
-        # yesterday isn't. Try today, fall back once.
+        # Recovery and sleep are written overnight and can lag by several days — a
+        # gap of two was enough to make this page claim there was no data at all.
+        # Walk back until something is found.
         today = datetime.date.today()
-        for day in (today, today - datetime.timedelta(days=1)):
+        for back in range(CARDIO_LOOKBACK_DAYS):
+            day = today - datetime.timedelta(days=back)
+            if recovery and (sleep or {}).get("available"):
+                break
             stamp = day.isoformat()
             if not recovery:
                 recovery = cardio_page.recovery_cards(client.get_recovery(stamp))

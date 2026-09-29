@@ -92,7 +92,9 @@ RECOVERY = {"recoveryScoreResp": {"value": 72, "recoveryScoreAvg": 68},
             "nightHrvResp": {"nightHrv": 41.5, "nightHrvAvg": 39},
             "nightRestingHeartRateResp": {"nightRestHeartRate": 54, "nightRestHeartRateAvg": 56},
             "sleepResp": {"value": 81, "sleepScoreAvg": 77}}
-SLEEP = {"sleep": 415, "targetSleepMin": 432, "sleepQualityScore": 80, "sleepEfficiencyScore": 91}
+# Shape taken from a real response: `sleep` is SECONDS, `targetSleepMin` is MINUTES.
+SLEEP = {"sleep": 6480.0, "sleepScore": 39, "targetSleepMin": 432, "sleepQualityScore": 30,
+         "sleepRegularityScore": 3, "secondaryMetric": {"deepSleepDuration": 1800}}
 
 
 class TestRecoveryCards(unittest.TestCase):
@@ -119,15 +121,19 @@ class TestRecoveryCards(unittest.TestCase):
 
 
 class TestSleepSummary(unittest.TestCase):
-    def test_duration_against_target(self):
+    def test_duration_against_target_respects_the_mixed_units(self):
+        # `sleep` is seconds and `targetSleepMin` is minutes. Reading both the same
+        # way reported 1h 48m of sleep as 108 hours.
         got = sleep_summary(SLEEP)
         self.assertTrue(got["available"])
-        self.assertEqual((got["slept"], got["target"]), ("6h 55m", "7h 12m"))
+        self.assertEqual((got["slept"], got["target"]), ("1h 48m", "7h 12m"))
         self.assertFalse(got["metTarget"])
-        self.assertEqual([s["label"] for s in got["scores"]], ["Quality", "Efficiency"])
+        self.assertIn("Sleep score", [s["label"] for s in got["scores"]])
+        self.assertIn("Deep sleep", [s["label"] for s in got["scores"]])
 
     def test_meeting_the_target_is_flagged(self):
-        self.assertTrue(sleep_summary({"sleep": 480, "targetSleepMin": 432})["metTarget"])
+        self.assertTrue(sleep_summary({"sleep": 8 * 3600, "targetSleepMin": 432})["metTarget"])
+        self.assertFalse(sleep_summary({"sleep": 6 * 3600, "targetSleepMin": 432})["metTarget"])
 
     def test_a_target_with_no_sleep_logged_is_not_available(self):
         self.assertFalse(sleep_summary({"sleep": 0, "targetSleepMin": 432})["available"])
@@ -180,7 +186,7 @@ class TestCardioRoute(unittest.TestCase):
             html = self.client.get('/cardio').get_data(as_text=True)
         self.assertIn(">Overnight recovery</h2>", html)
         self.assertIn("41.5 ms", html)
-        self.assertIn("6h 55m", html)
+        self.assertIn("1h 48m", html)
         self.assertNotIn("Nothing is wrong with your setup", html)
 
     def test_an_empty_account_is_told_why_rather_than_shown_blanks(self):
@@ -194,8 +200,8 @@ class TestCardioRoute(unittest.TestCase):
         self.assertNotIn(">Overnight recovery</h2>", html)
         self.assertIn("Nothing is wrong with your setup", html)
 
-    def test_recovery_falls_back_to_yesterday(self):
-        # Written overnight, so today can legitimately be empty while yesterday is not.
+    def test_recovery_walks_back_until_it_finds_data(self):
+        # Overnight data can lag several days; a two-day window read as "no data at all".
         seen = []
         def by_date(stamp):
             seen.append(stamp)
