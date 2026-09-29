@@ -1455,6 +1455,8 @@ def library():
         
     owned_accessories = client.credentials.get('owned_accessories', [])
     owned_devices = client.credentials.get('owned_devices', [])
+    avoided = {row["group_id"]: row["reason"]
+               for row in avoided_store.list_avoided(avoided_store.db_path(client.credentials))}
     return render_template(
         'library.html',
         exercises=exercises,
@@ -1463,6 +1465,7 @@ def library():
         allow_monster_moves=client.allow_monster_moves,
         owned_accessories=owned_accessories,
         owned_devices=owned_devices,
+        avoided=avoided,
     )
 
 @app.route('/library/refresh')

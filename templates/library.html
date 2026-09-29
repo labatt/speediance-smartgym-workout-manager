@@ -50,7 +50,15 @@
         </div>
         {% endif %}
         
-        <div class="ml-auto pl-4 border-l border-gray-700 flex gap-2">
+        <div class="ml-auto pl-4 border-l border-gray-700 flex gap-2 items-center">
+            <label class="text-xs text-gray-400 flex items-center gap-1.5">
+                Show avoided:
+                <select id="avoided-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-xs rounded p-1.5">
+                    <option value="all">All</option>
+                    <option value="hide">Hide avoided</option>
+                    <option value="only">Only avoided</option>
+                </select>
+            </label>
             <a href="/library/refresh" class="px-3 py-2 rounded-full text-sm font-medium bg-gray-700 text-gray-300 hover:bg-gray-600 transition flex items-center justify-center" title="Refresh Library">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
             </a>
@@ -86,7 +94,7 @@
                 </thead>
                 <tbody class="bg-gray-800 divide-y divide-gray-700">
                     {% for ex in exercises %}
-                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}">
+                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}" data-avoided="{{ '1' if ex.id in avoided else '0' }}" data-group-id="{{ ex.id }}">
                         <td class="px-4 py-2 font-mono text-xs text-gray-500 align-top">{{ ex.id }}</td>
                         <td class="px-4 py-2 font-bold text-white align-top">
                             {{ ex.title }}
@@ -125,20 +133,29 @@
 
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" id="exercise-grid">
         {% for ex in exercises %}
-        <a href="/exercise/{{ ex.id }}" 
-           class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10"
+        <a href="/exercise/{{ ex.id }}"
+           class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10 relative"
            data-title="{{ ex.title | lower }}"
            data-muscle="{{ ex.trainingPartId2 }}"
            data-category="{{ ex.category_id }}"
            data-device="{{ ex.device_type_tag | default(ex.device_type) }}"
-           data-accessories="{{ ex.accessories }}">
+           data-accessories="{{ ex.accessories }}"
+           data-avoided="{{ '1' if ex.id in avoided else '0' }}">
 
             <div class="aspect-square bg-gray-900 overflow-hidden relative">
                 <img src="{{ ex.img | local_cache }}" alt="{{ ex.title }}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy">
-                
+
                 <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition flex items-center justify-center">
                     <svg class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition transform scale-75 group-hover:scale-100" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                 </div>
+
+                <button type="button"
+                        class="avoid-toggle-btn absolute top-1.5 right-1.5 z-20 w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold border shadow transition
+                               {% if ex.id in avoided %}bg-red-600/90 border-red-400 text-white{% else %}bg-gray-900/70 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}"
+                        data-group-id="{{ ex.id }}"
+                        data-name="{{ ex.title }}"
+                        title="{% if ex.id in avoided %}Avoided{% if avoided[ex.id] %}: {{ avoided[ex.id] }}{% endif %} — click to un-avoid{% else %}Mark as avoided{% endif %}"
+                        onclick="event.preventDefault(); event.stopPropagation(); onAvoidToggleClick(this);">⊘</button>
             </div>
 
             <div class="p-4">
@@ -189,6 +206,132 @@
         const required = String(accStr).split(',').map(s => s.trim()).filter(Boolean);
         if (required.length === 0) return true;
         return required.every(id => ownedAccessories.has(parseInt(id)));
+    }
+
+    function passesAvoidedFilter(isAvoidedAttr) {
+        if (currentAvoidedFilter === 'hide') return isAvoidedAttr !== '1';
+        if (currentAvoidedFilter === 'only') return isAvoidedAttr === '1';
+        return true;
+    }
+
+    // --- Avoided exercises: toggle, reason popover, and filter ---
+    // avoidedMap: { groupId(string) -> reason(string) }, seeded from the server render.
+    const avoidedMap = {{ avoided | tojson }};
+
+    function closeAnyOpenAvoidPopover() {
+        document.querySelectorAll('.avoid-popover').forEach(el => el.remove());
+    }
+
+    function setCardAvoidedState(groupId, avoided, reason) {
+        const btn = document.querySelector(`.avoid-toggle-btn[data-group-id="${groupId}"]`);
+        if (!btn) return;
+        const card = btn.closest('.exercise-card');
+        if (avoided) {
+            btn.classList.remove('bg-gray-900/70', 'border-gray-600', 'text-gray-300', 'hover:bg-gray-700', 'hover:text-white');
+            btn.classList.add('bg-red-600/90', 'border-red-400', 'text-white');
+            btn.title = reason ? `Avoided: ${reason} — click to un-avoid` : 'Avoided — click to un-avoid';
+            if (card) card.setAttribute('data-avoided', '1');
+        } else {
+            btn.classList.remove('bg-red-600/90', 'border-red-400', 'text-white');
+            btn.classList.add('bg-gray-900/70', 'border-gray-600', 'text-gray-300', 'hover:bg-gray-700', 'hover:text-white');
+            btn.title = 'Mark as avoided';
+            if (card) card.setAttribute('data-avoided', '0');
+        }
+        const row = document.querySelector(`.exercise-row[data-group-id="${groupId}"]`);
+        if (row) row.setAttribute('data-avoided', avoided ? '1' : '0');
+    }
+
+    function onAvoidToggleClick(btn) {
+        const groupId = btn.dataset.groupId;
+        const name = btn.dataset.name;
+        if (Object.prototype.hasOwnProperty.call(avoidedMap, groupId)) {
+            removeAvoided(groupId);
+        } else {
+            showAvoidReasonPopover(btn, groupId, name);
+        }
+    }
+
+    function showAvoidReasonPopover(anchorBtn, groupId, name) {
+        closeAnyOpenAvoidPopover();
+        const card = anchorBtn.closest('.exercise-card');
+        if (!card) return;
+
+        const pop = document.createElement('div');
+        pop.className = 'avoid-popover absolute inset-x-2 bottom-2 z-30 bg-gray-950/95 border border-gray-600 rounded p-2 shadow-lg';
+        pop.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+
+        const label = document.createElement('div');
+        label.className = 'text-[11px] text-gray-300 mb-1';
+        label.textContent = 'Avoid reason (optional):';   // textContent only — never innerHTML with data
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 200;
+        input.className = 'w-full text-xs px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white mb-2';
+        input.placeholder = 'e.g. shoulder pain';
+
+        const row = document.createElement('div');
+        row.className = 'flex gap-2';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.textContent = 'Save';
+        saveBtn.className = 'flex-1 bg-red-600 hover:bg-red-700 text-white text-xs py-1 rounded';
+        saveBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            setAvoided(groupId, name, input.value);
+            pop.remove();
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 rounded';
+        cancelBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            pop.remove();
+        });
+
+        row.appendChild(saveBtn);
+        row.appendChild(cancelBtn);
+        pop.appendChild(label);
+        pop.appendChild(input);
+        pop.appendChild(row);
+        card.appendChild(pop);
+        input.focus();
+    }
+
+    async function setAvoided(groupId, name, reason) {
+        try {
+            const res = await fetch('/api/avoided', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group_id: parseInt(groupId, 10), name: name, reason: reason || '' }),
+            });
+            if (!res.ok) return;
+            avoidedMap[groupId] = reason || '';
+            setCardAvoidedState(groupId, true, reason || '');
+            applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
+        } catch (e) { /* best effort */ }
+    }
+
+    async function removeAvoided(groupId) {
+        try {
+            const res = await fetch(`/api/avoided/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
+            if (!res.ok) return;
+            delete avoidedMap[groupId];
+            setCardAvoidedState(groupId, false, '');
+            applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
+        } catch (e) { /* best effort */ }
+    }
+
+    const avoidedFilterSelect = document.getElementById('avoided-filter');
+    let currentAvoidedFilter = 'all';
+    if (avoidedFilterSelect) {
+        avoidedFilterSelect.addEventListener('change', (e) => {
+            currentAvoidedFilter = e.target.value;
+            applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
+        });
     }
 
     // Simple Client-Side Filtering
@@ -273,8 +416,9 @@
             const matchesCategory = categoryMatch(cardCategory, catId);
             const matchesDevice = (deviceType === 'all') || cardDevice.includes(deviceType);
             const matchesAccessories = passesAccessoryFilter(cardAccessories, cardCategory);
+            const matchesAvoided = passesAvoidedFilter(card.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided) {
                 card.style.display = 'block';
                 visibleCount++;
             } else {
@@ -295,8 +439,9 @@
             const matchesCategory = categoryMatch(rowCategory, catId);
             const matchesDevice = (deviceType === 'all') || rowDevice.includes(deviceType);
             const matchesAccessories = passesAccessoryFilter(rowAccessories, rowCategory);
+            const matchesAvoided = passesAvoidedFilter(row.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided) {
                 row.style.display = 'table-row';
             } else {
                 row.style.display = 'none';
