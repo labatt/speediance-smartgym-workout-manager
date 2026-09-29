@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-white">Cardio</h1>
+    <p class="text-xs text-gray-500 mt-1 mb-5">Heart rate recorded during training, and today's health numbers.</p>
+
+    {% if store_error %}
+    <div class="bg-yellow-900/40 border border-yellow-700 text-yellow-200 text-sm rounded p-3 mb-4">{{ store_error }}</div>
+    {% endif %}
+
+    {% if cards %}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        {% for c in cards %}
+        <div class="bg-gray-900 rounded p-4">
+            <p class="text-xs text-gray-400">{{ c.label }}</p>
+            <p class="text-xl font-bold text-blue-400 mt-1">{{ c.value }}</p>
+            {% if c.hint %}<p class="text-[10px] text-gray-500 mt-0.5">{{ c.hint }}</p>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Heart-rate zones -->
+    <section class="bg-gray-900 rounded p-4 mb-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h2 class="text-sm font-semibold text-gray-200">Heart-rate zones</h2>
+            {% if zones.available %}
+            <p class="text-xs text-gray-400">
+                {{ zones.totalDuration }} recorded
+                {% if zones.maxHeartRate %} &middot; max {{ zones.maxHeartRate }} bpm{% endif %}
+                {% if zones.minHeartRate %} &middot; min {{ zones.minHeartRate }} bpm{% endif %}
+            </p>
+            {% endif %}
+        </div>
+
+        {% if not zones.available %}
+        <p class="text-sm text-gray-400">
+            No heart rate has been recorded yet. Speediance logs it when a watch is paired during a session.
+        </p>
+        {% else %}
+        <div class="flex h-4 rounded overflow-hidden bg-gray-800 mb-3">
+            {% for z in zones.zones %}
+            {% if z.percent > 0 %}
+            <div style="width: {{ z.percent }}%; background: {{ ['#3f6212','#4d7c0f','#ca8a04','#ea580c','#dc2626'][z.zone - 1] }}"
+                 title="Zone {{ z.zone }} ({{ z.range }} bpm): {{ z.duration }}"></div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <table class="w-full text-xs">
+            <thead><tr class="text-gray-400 text-left">
+                <th class="pb-2 font-medium">Zone</th>
+                <th class="pb-2 font-medium">Range</th>
+                <th class="pb-2 pr-3 font-medium text-right">Time</th>
+                <th class="pb-2 font-medium text-right">Share</th>
+            </tr></thead>
+            <tbody>
+            {% for z in zones.zones %}
+                <tr class="border-t border-gray-800">
+                    <td class="py-1.5">
+                        <span class="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle"
+                              style="background: {{ ['#3f6212','#4d7c0f','#ca8a04','#ea580c','#dc2626'][z.zone - 1] }}"></span>
+                        <span class="text-gray-300">Zone {{ z.zone }}</span>
+                    </td>
+                    <td class="py-1.5 text-gray-400">{{ z.range }} bpm</td>
+                    <td class="py-1.5 pr-3 text-right {{ 'text-gray-200' if z.seconds else 'text-gray-500' }}">{{ z.duration }}</td>
+                    <td class="py-1.5 text-right {{ 'text-gray-400' if z.seconds else 'text-gray-500' }}">{{ z.percent }}%</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-[10px] text-gray-600 mt-3">
+            Across every session Speediance has heart rate for. A zone showing no time means you never
+            reached it, which is why the empty ones are still listed.
+        </p>
+        {% endif %}
+    </section>
+
+    <section class="bg-gray-900 rounded p-4">
+        <h2 class="text-sm font-semibold text-gray-200 mb-2">What isn't here, and why</h2>
+        <p class="text-xs text-gray-400 leading-relaxed">
+            VO<sub>2</sub>max, cardiorespiratory fitness and resting heart rate need overnight
+            heart-rate-variability and resting readings from a paired wearable. Speediance returns
+            nothing for them on this account, so this page leaves them out rather than showing cards
+            that would never fill in. Daily heart-rate and blood-oxygen trends aren't available
+            either &mdash; Speediance's endpoints for them reject every request shape tried so far.
+            Per-session heart rate <em>is</em> recorded, and shows in a session's
+            <a href="/history" class="text-blue-400 hover:underline">history</a> detail.
+        </p>
+    </section>
+</div>
+{% endblock %}

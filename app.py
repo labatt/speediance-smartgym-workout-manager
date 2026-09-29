@@ -15,6 +15,7 @@ from accessories import dedupe_accessories
 from profile_view import profile_summary
 import equipment_store
 import facts_store
+import cardio_page
 import connections_store
 import reconcile
 import session_detail
@@ -1857,6 +1858,36 @@ def connect_ai_revoke():
           if revoked else "That client had nothing live to revoke.",
           "success" if revoked else "error")
     return redirect(url_for('connect_ai_page'))
+
+
+@app.route('/cardio')
+def cardio_page_view():
+    """Heart-rate zones and today's health cards.
+
+    Only what Speediance actually returns for this account: no placeholder VO2max or
+    resting-HR cards, which need a paired wearable and would sit permanently blank.
+    """
+    if not client.credentials.get("token"):
+        return redirect(url_for('settings'))
+    zones, cards, store_error = {"available": False, "zones": []}, [], None
+    try:
+        zones = cardio_page.heart_rate_zones(client.get_heart_rate_zones())
+        age = None
+        try:
+            age = profile_summary(client.get_profile(), client.credentials.get('unit', 0))
+            age = next((r["value"] for r in age["rows"] if r["label"] == "Birthday"), None)
+            age = int(str(age).split("(")[1].rstrip(")")) if age and "(" in str(age) else None
+        except Exception:
+            age = None
+        cards = cardio_page.today_cards(client.get_health_score(), actual_age=age)
+    except Exception as e:
+        if _is_auth_error(e):
+            client.logout()
+            flash("Session expired. Please login again.", "error")
+            return redirect(url_for('settings'))
+        print(f"Could not load cardio data: {e}")
+        store_error = "Speediance didn't return cardio data just now — try again."
+    return render_template('cardio.html', zones=zones, cards=cards, store_error=store_error)
 
 
 @app.route('/memory')

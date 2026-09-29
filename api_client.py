@@ -933,6 +933,36 @@ class SpeedianceClient:
             print(f"Error fetching profile: {e}")
             return {}
 
+    def get_heart_rate_zones(self):
+        """Time spent in each heart-rate zone across recorded sessions.
+        GET /api/app/userDataStat/heartRateStatIndex — takes no parameters.
+        """
+        url = f"{self.base_url}/api/app/userDataStat/heartRateStatIndex"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers())
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching heart-rate zones: {e}")
+            return {}
+
+    def get_health_score(self):
+        """Today's health cards: steps, nutrition, body age, wellness alerts.
+        GET /api/mobile/userHealth/newIndex/healthScore — takes no parameters.
+        """
+        url = f"{self.base_url}/api/mobile/userHealth/newIndex/healthScore"
+        try:
+            resp = self._request('GET', url, headers=self._get_headers())
+            if resp.status_code == 401:
+                raise Exception("Unauthorized")
+            return resp.json().get('data') or {}
+        except Exception as e:
+            if self._should_reraise(e): raise
+            print(f"Error fetching health score: {e}")
+            return {}
+
     def get_rowing_graph(self, uuid):
         """Per-point rowing/ski telemetry for one session.
         GET /api/app/boatingSkiDataGraph/{uuid}
