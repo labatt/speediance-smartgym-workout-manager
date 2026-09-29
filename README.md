@@ -194,6 +194,28 @@ were shown as failed rep targets, in red:
   earlier one or reverts manual edits made in between. Works with whichever of the five providers
   is picked for the generator.
 
+### Avoided exercises
+
+- **Mark any exercise "avoided," with an optional reason** — a ⊘ toggle on every Library
+  card lets you avoid (or un-avoid) a movement in place, with an inline reason field (e.g.
+  "shoulder pain") instead of a browser prompt. A "Show avoided: all / hide / only" filter
+  on the Library, and an **Avoided exercises** card on Settings (name + reason + Remove),
+  cover the two other places you'd want to see or clear the list.
+- **The AI generator and refiner never suggest an avoided exercise** — both
+  `/api/workout/generate` and `/api/workout/refine` drop avoided ids from the exercise
+  catalog and from the candidate pool before the model ever sees them, and the system
+  prompt gets an explicit "Never include these exercises: ..." line as a second guard.
+- **The adaptive planner (`adaptive_training.py`) skips them too** — its movement
+  selection unions a caller-supplied avoided-ids set with the static `BLACKLIST`.
+- **Never blocks manual building** — adding an avoided exercise to the workout builder by
+  hand (search/pick or import) still works; it just shows a "⊘ Marked avoided: &lt;reason&gt;"
+  warning badge on that exercise's card.
+- **Storage** — a small SQLite file at `~/.config/speediance-mcp/speediance-mcp.db`
+  (table `exercise_marks`), shared with the speediance-mcp project: both apps read and
+  write the same "avoided"/"preferred" marks, so a movement avoided here is avoided
+  there too. Override the path with the `avoided_db_path` key in `config.json` if you'd
+  rather point it elsewhere.
+
 ### Adaptive planner
 
 - **Readiness-aware plan generation** (`adaptive_training.py`) — builds plans from normalised
