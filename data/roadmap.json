@@ -240,6 +240,14 @@
       "affects": "templates/settings.html + app.py /settings/accessories",
       "status": "queued",
       "notes": "Raised 2026-09-28."
+    },
+    {
+      "id": 30,
+      "title": "Curated fact store for the Speediance MCP server",
+      "summary": "Replace the free-form fact layer with typed, validated facts: kind (constraint/preference/observation/goal), severity (hard/soft), category enum, scope, supersedes chains, 600-char hard limit (no truncation), near-duplicate rejection (~0.85), import_facts with dry run, archive-not-delete, list_facts audit, grouped reads with hard constraints in their own block, and read-time conflict detection.",
+      "affects": "speediance-mcp: memory.py, tools/memory_tools.py, tools/coaching.py, server.py, README, tests",
+      "status": "working",
+      "notes": "Logged before starting. The MCP server already has free-form coaching facts (remember_fact/forget_fact, with categories and expiry); clarifying what 'curated' should add. 2026-09-28: user chose 'facts about you, curated' and supplied the full spec (from a predecessor system's 59-fact failure). Spec in the repo: docs/specs/2026-09-28-curated-facts.md (97eb4ff). The live store has 11 legacy facts (one is 736 chars) → migrated as archived legacy rows (kept whole), surfaced as legacyToReview for curation via import_facts/supersedes."
     }
   ]
 }
