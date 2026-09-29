@@ -245,17 +245,26 @@
         {% if accessories %}
         <form action="/settings/accessories" method="POST" class="pt-5 border-t border-gray-700">
             <label class="block text-sm font-bold mb-1 text-gray-300">Owned Accessories</label>
-            <p class="text-xs text-gray-500 mb-3">Workouts and exercises needing unchecked accessories are hidden everywhere.</p>
+            <p class="text-xs text-gray-500 mb-3">Workouts and exercises needing unchecked accessories are hidden everywhere.
+                Tick <span class="text-yellow-400">can't use</span> for gear you own but must not be given
+                &mdash; those movements are hidden too, here and in Claude.</p>
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
                 {% for acc in accessories %}
-                <label class="flex items-center gap-2 p-2 bg-gray-700 rounded border border-gray-600 cursor-pointer hover:bg-gray-600 transition">
-                    <input type="checkbox" name="accessories" value="{{ acc.ids|join(',') }}" class="h-4 w-4 flex-shrink-0"
-                        {% if acc.owned %}checked{% endif %}>
-                    {% if acc.img %}
-                    <img src="{{ acc.img }}" alt="" class="w-8 h-8 object-contain flex-shrink-0">
-                    {% endif %}
-                    <span class="text-sm text-gray-200 truncate">{{ acc.name }}</span>
-                </label>
+                <div class="p-2 bg-gray-700 rounded border border-gray-600">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="accessories" value="{{ acc.name }}" class="h-4 w-4 flex-shrink-0"
+                            {% if acc.owned %}checked{% endif %}>
+                        {% if acc.img %}
+                        <img src="{{ acc.img }}" alt="" class="w-8 h-8 object-contain flex-shrink-0">
+                        {% endif %}
+                        <span class="text-sm text-gray-200 truncate">{{ acc.name }}</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 mt-1 pl-1 cursor-pointer">
+                        <input type="checkbox" name="unusable" value="{{ acc.name }}" class="h-3 w-3 flex-shrink-0"
+                            {% if acc.unusable %}checked{% endif %}>
+                        <span class="text-[11px] text-yellow-400/80">can't use</span>
+                    </label>
+                </div>
                 {% endfor %}
             </div>
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Save Accessories</button>

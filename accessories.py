@@ -29,27 +29,3 @@ def dedupe_accessories(catalog):
         if not entry["img"] and item.get("img"):
             entry["img"] = item.get("img")
     return sorted(by_name.values(), key=lambda e: e["name"].lower())
-
-
-def is_owned(entry, owned_ids):
-    """Owned if ANY id behind the name is owned — a tick on either duplicate counts."""
-    owned = set(owned_ids or [])
-    return any(i in owned for i in entry["ids"])
-
-
-def parse_selected_ids(values):
-    """Form values -> a flat list of ids.
-
-    Each checkbox submits every id behind its name as a comma-separated value, so one
-    tick owns all the duplicates of that accessory. Unparseable values are dropped
-    rather than failing the save.
-    """
-    out = []
-    for value in values or []:
-        for part in str(value).split(","):
-            part = part.strip()
-            if part.lstrip("-").isdigit():
-                number = int(part)
-                if number not in out:
-                    out.append(number)
-    return out

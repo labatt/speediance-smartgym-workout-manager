@@ -222,16 +222,16 @@
       "title": "Owned is not usable: Flat Bench is owned but the user can't lie flat, and the owned-equipment filter still surfaces supine flat-bench moves",
       "summary": "Owned equipment and usable movements need separate states (or the equipment filter and the avoid list must resolve against each other) before anything reaches a workout builder.",
       "affects": "web app + speediance-mcp (equipment filter, avoided exercises)",
-      "status": "future",
-      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)? 2026-09-28 user: for now it's the flat bench specifically, but it must work generically for other users -> a per-item 'own it, can't use it' equipment state. The MCP server is the source of truth."
+      "status": "done",
+      "notes": "Raised 2026-09-28. Open question for the user: is the restriction the flat bench specifically, or lying flat/supine in general (floor moves too)? 2026-09-28 user: for now it's the flat bench specifically, but it must work generically for other users -> a per-item 'own it, can't use it' equipment state. The MCP server is the source of truth. DONE 2026-09-29 together with #28. MCP: preferences.unusable_equipment (list of names) + set_preferences(unusable_equipment=[...]); filter_exercises hides movements needing unusable gear ALWAYS, not only under owned_only — the list answers what can be done, not what was bought; list_accessories flags `usable` beside `owned`. Web: a 'can't use' toggle per accessory tile. Generic per-item state as the user asked, not a Flat Bench special case. Live data set: owned 7 names, unusable ['Flat Bench'], so 6 usable."
     },
     {
       "id": 28,
       "title": "Split-brain owned equipment: the web app's config.json vs speediance-mcp's own preferences",
       "summary": "The web app keeps owned accessories only in config.json (ids 4,5,2,3,9,8, no Flat Bench); the MCP server keeps a separate owned_equipment list (7 names including Flat Bench, written by Claude). Neither syncs to Speediance. Tools and the UI read different stores.",
       "affects": "web app settings/filters + speediance-mcp preferences",
-      "status": "queued",
-      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7. 2026-09-28 user decision: the MCP server is the source of truth for shared data (equipment, avoided, and later locations); the web app reads and writes the MCP DB."
+      "status": "done",
+      "notes": "Found 2026-09-28 while checking claude.ai's report. Fix: one shared store, like avoided exercises (the MCP DB's preferences.owned_equipment by name), with the web app reading and writing it; reconcile the current 6 vs 7. 2026-09-28 user decision: the MCP server is the source of truth for shared data (equipment, avoided, and later locations); the web app reads and writes the MCP DB. DONE 2026-09-29: equipment_store.py reads and writes the MCP DB's preferences.owned_equipment/unusable_equipment BY NAME (same file and path rule as avoided_store), and Settings tiles now submit names. config.json's owned_accessories is demoted to a derived cache of the USABLE ids, rebuilt on save, so the id-based library/browse filters keep working. Reconciled: the 6-vs-7 gap was Flat Bench alone — owned but unusable, which is exactly what #27 added. INCIDENT while building this: running a single test file with pytest (pytest tests/test_accessories.py) bypassed tests/test_00_avoided_env_bootstrap.py, which only arms AVOIDED_DB_PATH under full `unittest discover`. A /settings POST test then wrote the REAL shared store, replacing owned_equipment with form values ['5,15,25']. Restored from backup-20260928-221853. Fixed with a rootdir conftest.py that imports the same bootstrap (pytest always loads conftest, whatever subset runs), plus tests/test_shared_store_isolation.py as a loud regression guard."
     },
     {
       "id": 29,

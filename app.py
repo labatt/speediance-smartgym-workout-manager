@@ -11,8 +11,9 @@ import sqlite3
 from cardio_stats import is_cardio_record, derive_cardio_stats
 from rowing_stats import derive_rowing_blocks
 from muscle_balance import muscle_index, attribute, ratios, untrained
-from accessories import dedupe_accessories, is_owned, parse_selected_ids
+from accessories import dedupe_accessories
 from profile_view import profile_summary
+import equipment_store
 import reconcile
 import session_detail
 import datetime
@@ -223,9 +224,18 @@ def settings():
             accessories = dedupe_accessories(client.get_accessories())
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
-    owned_ids = creds.get('owned_accessories', [])
+    # The shared MCP store owns equipment BY NAME (roadmap #28); config.json's id list is
+    # only a derived cache for the id-based library/browse filters.
+    try:
+        equipment = equipment_store.get_equipment(creds)
+    except Exception as e:
+        print(f"Could not read the shared equipment store: {e}")
+        equipment = {"owned": [], "unusable": []}
+    owned_names = {n.lower() for n in equipment['owned']}
+    unusable_names = {n.lower() for n in equipment['unusable']}
     for entry in accessories:
-        entry['owned'] = is_owned(entry, owned_ids)
+        entry['owned'] = entry['name'].lower() in owned_names
+        entry['unusable'] = entry['name'].lower() in unusable_names
     profile = None
     if creds.get('token'):
         try:
@@ -271,9 +281,21 @@ def update_unit():
 
 @app.route('/settings/accessories', methods=['POST'])
 def update_accessories():
-    # Each tile submits every id behind its name, so ticking one owns all its duplicates.
-    owned = parse_selected_ids(request.form.getlist('accessories'))
+    # Equipment is saved by NAME to the shared MCP store; the id list in config.json is
+    # then rebuilt from the USABLE names for the id-based filters.
+    owned = request.form.getlist('accessories')
+    unusable = [n for n in request.form.getlist('unusable') if n in owned]
     creds = client.credentials
+    try:
+        equipment = equipment_store.set_equipment(owned=owned, unusable=unusable, config=creds)
+    except Exception as e:
+        flash(f"Could not save equipment: {e}", "error")
+        return redirect(url_for('settings'))
+    try:
+        entries = dedupe_accessories(client.get_accessories())
+    except Exception:
+        entries = []
+    owned = equipment_store.owned_ids(equipment, entries)
     client.save_config(
         creds.get('user_id'),
         creds.get('token'),
