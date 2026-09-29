@@ -203,8 +203,9 @@ def settings():
             accessories = client.get_accessories()
         except Exception as e:
             flash(f"Error loading accessories: {e}", "error")
+    avoided = avoided_store.list_avoided(avoided_store.db_path(client.credentials))
     return render_template('settings.html', creds=creds, accessories=accessories,
-                           wp_connected=wellness.is_connected())
+                           wp_connected=wellness.is_connected(), avoided=avoided)
 
 @app.route('/settings/custom_instruction', methods=['POST'])
 def update_custom_instruction():
