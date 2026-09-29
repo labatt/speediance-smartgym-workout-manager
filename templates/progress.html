@@ -55,7 +55,7 @@
                     <span class="inline-block w-24 h-2 rounded" style="background:linear-gradient(90deg,#5a6478,#8e367a,#d6446c,#f68a48,#ffe28a)"></span>
                     <span>most worked</span>
                 </div>
-                <p class="text-[10px] text-gray-600 text-center mt-1">Hover a muscle for its volume and status.</p>
+                <p class="text-[10px] text-gray-600 text-center mt-1">Hover a muscle for its volume and status; click it for exercises that work it.</p>
             </div>
 
             <!-- Table -->
@@ -220,6 +220,7 @@ function drawFigure(svg, regions, volumes, peak, unit) {
         path.addEventListener('mouseenter', () => { setHighlight(muscle, true); showTip(label, volume, share, unit); });
         path.addEventListener('mousemove', moveTip);
         path.addEventListener('mouseleave', () => { setHighlight(muscle, false); hideTip(); });
+        path.addEventListener('click', () => openMuscle(muscle));
         svg.appendChild(path);
     });
     if (regions === FRONT) {
@@ -244,6 +245,10 @@ function tip() {
 // A muscle appears once per view (twice when it is symmetric) and once in the table.
 // Highlighting keys on the name, so every appearance responds together — which is also
 // how you find a muscle you cannot spot on the figure.
+function openMuscle(muscle) {
+    window.location.href = '/library?muscle=' + encodeURIComponent(muscle);
+}
+
 function setHighlight(muscle, on) {
     const sel = `path[data-muscle="${CSS.escape(muscle)}"]`;
     document.querySelectorAll('#figFront ' + sel + ', #figBack ' + sel).forEach(p => {
@@ -259,7 +264,8 @@ function showTip(label, volume, share, unit) {
     const vol = volume > 0 ? `${Math.round(volume).toLocaleString()} ${unit}` : 'no volume';
     node.innerHTML = `<span class="font-semibold">${label}</span><br>`
         + `<span class="text-gray-300">${vol}</span><br>`
-        + `<span class="text-gray-400">${statusWord(volume, share, unit)}</span>`;
+        + `<span class="text-gray-400">${statusWord(volume, share, unit)}</span><br>`
+        + `<span class="text-gray-500">click for exercises</span>`;
     node.classList.remove('hidden');
 }
 function moveTip(e) {
@@ -326,7 +332,7 @@ async function load(days) {
         : `${fmt(r.upper)} vs ${fmt(r.lower)} ${data.unit} — ratio ${r.upperLower.toFixed(2)} (1.00 is even).`;
 
     document.getElementById('muscleRows').innerHTML = data.byMuscle.map(row => `
-        <tr class="border-t border-gray-800 cursor-default" data-muscle="${row.muscle}">
+        <tr class="border-t border-gray-800 cursor-pointer" data-muscle="${row.muscle}" title="Show exercises that work ${row.muscle}">
             <td class="py-1.5 text-gray-300">${row.muscle}</td>
             <td class="py-1.5 pr-3 text-right text-gray-200 whitespace-nowrap">${fmt(row.volume)}</td>
             <td class="py-1.5 pl-2">
@@ -338,6 +344,7 @@ async function load(days) {
         const muscle = row.dataset.muscle;
         row.addEventListener('mouseenter', () => setHighlight(muscle, true));
         row.addEventListener('mouseleave', () => setHighlight(muscle, false));
+        row.addEventListener('click', () => openMuscle(muscle));
     });
 
     const nt = document.getElementById('notTrained');

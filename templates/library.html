@@ -26,7 +26,14 @@
         <a href="/settings" class="text-blue-400 hover:text-blue-300 underline ml-2 flex-shrink-0">Change in Settings</a>
     </div>
 
-    <div class="flex flex-wrap gap-2 mb-4 justify-center md:justify-start">
+        <div id="muscleBanner" class="hidden mb-4 flex items-center justify-between gap-3 rounded border border-green-700 bg-green-900/30 px-4 py-2">
+        <p class="text-sm text-green-200">
+            Showing exercises that work <span id="muscleBannerName" class="font-semibold"></span>.
+        </p>
+        <a href="#" id="muscleBannerClear" class="text-xs px-2 py-1 rounded border border-green-700 text-green-200 hover:bg-green-800/40 flex-shrink-0">Show all</a>
+    </div>
+
+<div class="flex flex-wrap gap-2 mb-4 justify-center md:justify-start">
         <button onclick="filterByCategory('all', this)" class="cat-btn active px-4 py-2 rounded-full text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition">All Categories</button>
         {% for cat in categories %}
         <button onclick="filterByCategory('{{ cat.filter_ids | default(cat.id) }}', this)" class="cat-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 transition">{{ cat.name }}</button>
@@ -94,7 +101,7 @@
                 </thead>
                 <tbody class="bg-gray-800 divide-y divide-gray-700">
                     {% for ex in exercises %}
-                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}" data-avoided="{{ '1' if ex.id in avoided else '0' }}" data-group-id="{{ ex.id }}">
+                    <tr class="hover:bg-gray-700/50 exercise-row cursor-pointer" onclick="window.location.href='/exercise/{{ ex.id }}'" data-title="{{ ex.title | lower }}" data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}" data-category="{{ ex.category_id }}" data-device="{{ ex.device_type_tag | default(ex.device_type) }}" data-accessories="{{ ex.accessories }}" data-avoided="{{ '1' if ex.id in avoided else '0' }}" data-group-id="{{ ex.id }}">
                         <td class="px-4 py-2 font-mono text-xs text-gray-500 align-top">{{ ex.id }}</td>
                         <td class="px-4 py-2 font-bold text-white align-top">
                             {{ ex.title }}
@@ -135,7 +142,7 @@
         {% for ex in exercises %}
         <div class="exercise-card group block bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-green-500 transition shadow-lg hover:shadow-green-500/10 relative"
            data-title="{{ ex.title | lower }}"
-           data-muscle="{{ ex.trainingPartId2 }}"
+           data-muscle="{{ ex.trainingPartId2 }}" data-muscles="{{ ((ex.mainMuscleGroupName or '') ~ ',' ~ (ex.auxiliaryMuscleGroupList | map(attribute='muscleGroupName') | join(','))) | lower }}"
            data-category="{{ ex.category_id }}"
            data-device="{{ ex.device_type_tag | default(ex.device_type) }}"
            data-accessories="{{ ex.accessories }}"
@@ -442,6 +449,19 @@
         return ids.includes(itemCat);
     }
 
+    // Set from ?muscle=<name> (the Progress body map links here). Matches the exercise's
+    // own main/assisting muscle names, which is finer than the body-part buttons.
+    let namedMuscle = '';
+
+    function runFilters() {
+        applyFilters(searchInput.value.toLowerCase(), currentFilter, currentCategory, currentDevice);
+    }
+
+    function matchesNamedMuscle(el) {
+        if (!namedMuscle) return true;
+        return (el.getAttribute('data-muscles') || '').split(',').includes(namedMuscle);
+    }
+
     function applyFilters(searchTerm, muscleId, catId, deviceType) {
         let visibleCount = 0;
 
@@ -460,7 +480,7 @@
             const matchesAccessories = passesAccessoryFilter(cardAccessories, cardCategory);
             const matchesAvoided = passesAvoidedFilter(card.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(card)) {
                 card.style.display = 'block';
                 visibleCount++;
             } else {
@@ -483,7 +503,7 @@
             const matchesAccessories = passesAccessoryFilter(rowAccessories, rowCategory);
             const matchesAvoided = passesAvoidedFilter(row.getAttribute('data-avoided'));
 
-            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided) {
+            if (matchesSearch && matchesMuscle && matchesCategory && matchesDevice && matchesAccessories && matchesAvoided && matchesNamedMuscle(row)) {
                 row.style.display = 'table-row';
             } else {
                 row.style.display = 'none';
@@ -496,6 +516,26 @@
             noResults.classList.add('hidden');
         }
     }
+
+    // ?muscle=Lats -> filter to exercises working that muscle, with a way back out.
+    (function initNamedMuscle() {
+        const wanted = new URLSearchParams(location.search).get('muscle');
+        if (!wanted) return;
+        namedMuscle = wanted.trim().toLowerCase();
+        const banner = document.getElementById('muscleBanner');
+        if (banner) {
+            document.getElementById('muscleBannerName').textContent = wanted;
+            banner.classList.remove('hidden');
+            document.getElementById('muscleBannerClear').addEventListener('click', e => {
+                e.preventDefault();
+                namedMuscle = '';
+                banner.classList.add('hidden');
+                history.replaceState({}, '', location.pathname);
+                runFilters();
+            });
+        }
+        runFilters();
+    })();
 
     function toggleView() {
         const grid = document.getElementById('exercise-grid');
