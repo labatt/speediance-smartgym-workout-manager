@@ -62,6 +62,9 @@ def _set_detail(row):
     reps = int(row.get("reps") or 0)
     return {
         "finishedCount": reps,
+        # Per-set volume, which the session-detail view renders directly. Without it the
+        # table showed a blank where every machine set shows a number.
+        "capacity": round(reps * weight, 1),
         # Nothing prescribed these reps, so what was done is also what was targeted —
         # the same convention free_training_to_detail uses for Free Lift.
         "targetCount": reps,
@@ -83,12 +86,19 @@ def as_exercises(sets):
     out = []
     for (group_id, _), rows in _by_exercise(sets).items():
         ordered = sorted(rows, key=lambda r: (r.get("setIndex") or 0, r.get("id") or 0))
+        set_rows = [_set_detail(r) for r in ordered]   # not `sets`: that is the parameter
+        # The detail view only reads leftWeights/rightWeights when the EXERCISE is flagged
+        # unilateral; without this flag a single-arm set's load fell through to the empty
+        # `weights` array and rendered as "-".
+        unilateral = any(st["leftRight"] in (1, 2) for st in set_rows)
         out.append({
             "actionLibraryName": ordered[0].get("name"),
             "actionLibraryGroupId": group_id,
             "completionMethod": None,
             "trainingPartId2": None,
-            "finishedReps": [_set_detail(r) for r in ordered],
+            "isLeftRight": 1 if unilateral else 0,
+            "totalCapacity": round(sum(st["capacity"] for st in set_rows), 1),
+            "finishedReps": set_rows,
             "source": SOURCE,
             "location": ordered[0].get("location") or "",
             "notes": [r["note"] for r in ordered if r.get("note")],

@@ -21,6 +21,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import offmachine_store  # noqa: E402
+import session_stats_store  # noqa: E402
 
 MCP_CANDIDATES = (
     "/srv/speediance-mcp/src/speediance_mcp/memory.py",
@@ -61,6 +62,22 @@ class SharedSchemaTest(unittest.TestCase):
                          "offmachine_sets has drifted between the web app and the MCP server. "
                          "They share one SQLite file, so both declarations must match exactly — "
                          "change them together.")
+
+    def test_both_projects_declare_the_same_session_stats_tables(self):
+        """The personal-best cache is shared too, and drifts the same way if untended."""
+        mcp_source = self._mcp_source()
+        if mcp_source is None:
+            self.skipTest("speediance-mcp source not present on this machine")
+        for table in ("session_exercise_stats", "session_stats_scanned"):
+            with self.subTest(table=table):
+                ours = _create_table(session_stats_store._DDL, table)
+                theirs = _create_table(mcp_source, table)
+                self.assertIsNotNone(ours, f"the web app no longer declares {table}")
+                self.assertIsNotNone(theirs, f"the MCP no longer declares {table}")
+                self.assertEqual(ours, theirs,
+                                 f"{table} has drifted between the web app and the MCP server. "
+                                 "They share one SQLite file, so both declarations must match "
+                                 "exactly — change them together.")
 
     def test_the_side_vocabulary_matches_too(self):
         """Both sides map 'left'/'right'/'both' to the machine's own leftRight codes."""

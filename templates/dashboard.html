@@ -21,14 +21,12 @@
             </div>
             <div class="hidden" id="prNote"></div>
             <div class="mb-2">
-                {# The two kinds have different baselines and it would be dishonest to imply
-                   otherwise: a heaviest-weight claim is checked against the movement's whole
-                   history (a weekly bucket's max weight is still a real max), while day volume
-                   can only be compared within the window, because Speediance's stat feed buckets
-                   volume by WEEK and cannot answer what a single day held. #}
-                <p class="text-[10px] text-gray-600">Heaviest weight is checked against this
-                    movement's whole history. Day volume is computed from each session, so it is
-                    the best day in the window shown.</p>
+                {# Both kinds now share one basis: the local session-stats cache, which holds
+                   every session's per-exercise numbers day by day. Speediance's own stat feed
+                   buckets by WEEK and cannot answer what a single day held, which is exactly
+                   why the cache exists — see docs/session-stats-cron.md. #}
+                <p class="text-[10px] text-gray-600" id="prBasis">Computed from every session,
+                    day by day, over your whole history.</p>
             </div>
             <div id="prList" class="flex flex-wrap gap-3"></div>
         </section>
@@ -285,14 +283,12 @@ const whenLabel = d => d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
 function renderRecords(records) {
     const cards = [];
     records.forEach(r => (r.kinds || []).forEach(k =>
-        cards.push({ exercise: r.exercise, groupId: r.groupId, windowDays: r.windowDays, ...k })));
+        cards.push({ exercise: r.exercise, groupId: r.groupId, ...k })));
     if (!cards.length) return;
     cards.sort((a, b) => a.daysAgo - b.daysAgo);
 
     document.getElementById('prCard').classList.remove('hidden');
-    const window = cards.find(c => c.windowDays)?.windowDays;
-    document.getElementById('prCount').textContent =
-        `${cards.length} in the last 2 weeks` + (window ? ` · volume vs the last ${window} days` : '');
+    document.getElementById('prCount').textContent = `${cards.length} in the last 2 weeks`;
     document.getElementById('prList').innerHTML = cards.slice(0, 12).map(c => {
         const style = PR_STYLE[c.kind] || PR_STYLE['Best day volume'];
         const value = c.kind === 'Heaviest weight'

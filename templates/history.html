@@ -453,7 +453,9 @@
 
             const date = fmtDateTime(rec.startTimestamp);
             const name = rec.title || 'Workout';
-            const duration = fmtSeconds(rec.trainingTime);
+            // null means genuinely unknown (an off-machine day Speediance never saw); 0s would
+            // look like a measured zero.
+            const duration = rec.trainingTime == null ? '-' : fmtSeconds(rec.trainingTime);
             const calories = rec.calorie ? `${Math.round(rec.calorie)} kcal` : '-';
             const volume = rec.totalCapacity ? `${Math.round(rec.totalCapacity).toLocaleString()} ${unitLabel}` : '-';
 
@@ -491,7 +493,13 @@
         const apiType = typeInfo.detailType || 'custom';
 
         try {
-            const resp = await fetch(`/api/history/detail/${rec.trainingId}?type=${apiType}`);
+            /* A day logged only in our own off-machine store has no Speediance session id,
+               so it is fetched by date. Days the user also entered in the Speediance app
+               keep their trainingId and take the normal path. */
+            const url = rec.offMachineDay
+                ? `/api/offmachine/detail/${encodeURIComponent(rec.offMachineDay)}`
+                : `/api/history/detail/${rec.trainingId}?type=${apiType}`;
+            const resp = await fetch(url);
             const data = await resp.json();
             currentDetailPayload = { summary: rec, detail: data };
             document.getElementById('detailFooter').classList.remove('hidden');

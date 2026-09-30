@@ -17,6 +17,8 @@ import equipment_store
 import facts_store
 import offmachine
 import offmachine_store
+import session_stats
+import session_stats_store
 import cardio_page
 import dashboard as dashboard_calc
 import connections_store
@@ -212,9 +214,25 @@ def api_dashboard():
             return jsonify({"error": str(e)}), 401
         records = []
 
-    out["streak"] = dashboard_calc.streak(records, today)
-    out["activity"] = dashboard_calc.activity_strip(records, today, days=14)
-    out["week"] = dashboard_calc.week_comparison(records, today)
+    # Off-machine days are training days. Speediance knows nothing about them unless the
+    # user also added a manual entry in its app, so without this a hotel workout silently
+    # breaks the streak — the exact failure the off-machine log exists to prevent.
+    try:
+        off_sets = offmachine_store.list_sets(client.credentials,
+                                              (today - datetime.timedelta(days=90)).isoformat(),
+                                              today.isoformat())
+        off_days = {s["day"]: round(sum(
+            float(r.get("weight") or 0) * int(r.get("reps") or 0)
+            for r in off_sets if r["day"] == s["day"]), 1) for s in off_sets}
+    except Exception as e:
+        print(f"Dashboard: off-machine days unavailable ({e})")
+        off_days = {}
+
+    out["streak"] = dashboard_calc.streak(records, today, other_days=off_days)
+    out["activity"] = dashboard_calc.activity_strip(records, today, days=14,
+                                                    offmachine_days=off_days)
+    out["week"] = dashboard_calc.week_comparison(records, today, offmachine=off_days)
+    out["offMachineDays"] = len(off_days)
     out["recent"] = [{
         "trainingId": r.get("trainingId"),
         "title": r.get("title") or ("Phone health" if r.get("belongUserHealth") else "Workout"),
@@ -255,98 +273,61 @@ def api_dashboard():
     return jsonify(out)
 
 
-# Bounds on the personal-records scan. It now reads per-session detail (one call per
-# session) to get true DAILY numbers, plus one stats call per movement that produced a
-# heaviest-weight candidate, to check the claim against the movement's whole history.
-# 30 days is ~13 sessions on this account — enough to see a week-over-week best without
-# making the card an expensive scan.
-PR_WINDOW_DAYS = 30
-PR_SESSIONS_SCANNED = 20
-PR_MAX_EXERCISES = 12
+# Personal bests read the local session-stats cache, so they cover ALL of history rather
+# than a window we were willing to pay for on each load.
+#
+# On every load the cache is topped up for the last few days only: that catches a session
+# finished minutes ago at a cost of roughly one call when nothing is new, while the full
+# sweep — which is what notices a session deleted in the app — runs weekly from cron.
+RECORDS_FRESH_DAYS = 10
+RECORDS_FRESH_FETCH = 5
+# The weekly reconcile's default window. Speediance has served this account since April
+# 2026; 400 days covers everything and costs nothing once the cache is warm.
+RECONCILE_DAYS = 400
+
+# Speediance's session type for a manual/off-machine entry made in its own app. Our own
+# synthetic history rows reuse it so they label identically.
+OFFMACHINE_SESSION_TYPE = 10
 
 
 @app.route('/api/dashboard/records')
 def api_dashboard_records():
-    """Recent personal bests, fetched separately so a slow scan never delays the page.
+    """Personal bests, served from the local session-stats cache.
 
-    Built from PER-SESSION detail, not from Speediance's per-movement stat feed. That
-    feed (`userActionStatPage`) returns one row per WEEK, every dayStr a Monday — so
-    using it here reported a week's total as a single day's, summed two sessions in the
-    same week, and dated the result to the bucket's Monday. Session detail is the only
-    true daily source; there is no daily variant of the stat route.
+    The numbers come from each session's own detail, because Speediance's per-movement
+    stat feed buckets by WEEK (every dayStr a Monday) and so cannot say what one day held.
+    Deriving that on every load cost ~15 API calls and about three seconds, and bounded
+    records to whatever window we were willing to pay for. The derivation is now cached,
+    so this is one call — and volume records are ALL-TIME rather than "best in 30 days".
 
-    The weekly feed is still used, for the one thing it is valid for: a max weight is a
-    max whatever window it covers, so it provides the long-run baseline that stops a
-    "heaviest ever" claim being made against only the days in this window.
+    Off-machine work is merged in at read time. The cache stays a pure derivation of
+    Speediance; the off-machine log is its own source of truth and is never copied in.
     """
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
     today = datetime.date.today()
     try:
-        start_day = today - datetime.timedelta(days=PR_WINDOW_DAYS - 1)
-        records = client.get_training_records(start_day.isoformat(), today.isoformat()) or []
-        sessions = [r for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)
-                    if dashboard_calc.is_gym_session(r) and r.get("trainingId")][:PR_SESSIONS_SCANNED]
+        # Keep the cache current for the recent window on every load: cheap when there is
+        # nothing new, and it means a session finished minutes ago still counts.
+        fresh = _reconcile_session_stats((today - datetime.timedelta(days=RECORDS_FRESH_DAYS)).isoformat(),
+                                         today.isoformat(), max_fetch=RECORDS_FRESH_FETCH)
 
-        day_exercises, movements = [], {}
-        for rec in sessions:
-            kind = session_detail.detail_kind(rec.get('type'))
-            try:
-                detail = _session_detail(rec['trainingId'], kind) or []
-            except Exception as se:
-                if _is_auth_error(se):
-                    raise
-                continue          # one unreadable session must not empty the whole card
-            day_exercises.append((str(rec.get("startTime", ""))[:10], detail))
-            for exercise in detail:
-                gid, name = exercise.get('actionLibraryGroupId'), exercise.get('actionLibraryName')
-                if gid is not None and name:
-                    movements.setdefault(name, gid)
+        stats = session_stats_store.daily_rows(client.credentials)
+        movements = session_stats_store.group_ids(client.credentials)
 
-        stats = dashboard_calc.daily_exercise_stats(day_exercises, source="machine")
-
-        # Off-machine sets are already per-day, so the two sources now share a unit and
-        # merge cleanly. A day trained both on and off the machine becomes ONE row, or
-        # the scan would see that day twice and report half of it as beating the other half.
-        off_sets = offmachine_store.list_sets(client.credentials, start_day.isoformat(),
-                                              today.isoformat())
+        off_sets = offmachine_store.list_sets(client.credentials, "2000-01-01", today.isoformat())
         off_stats = offmachine.stat_rows(off_sets)
-        for name, gid in offmachine.group_ids(off_sets).items():
-            movements.setdefault(name, gid)
+        movements.update(offmachine.group_ids(off_sets))
         stats = offmachine.merge_stats(stats, off_stats)
 
         found = dashboard_calc.personal_records(stats, today=today)
-
-        # A "heaviest weight" claim must beat the movement's whole history, not just this
-        # window. The weekly feed is the only long baseline available, and a weekly max IS
-        # a real max, so it is sound for exactly this check even though its volumes are not.
-        verified = []
         for row in found:
-            gid = movements.get(row["exercise"])
-            row["groupId"] = gid
-            kinds = []
-            for kind in row["kinds"]:
-                if kind["kind"] == "Heaviest weight" and gid is not None:
-                    prior = _historic_max_weight(gid, before=kind["date"])
-                    if prior is not None and kind["value"] <= prior:
-                        continue      # not a record: the movement has been heavier before
-                    if prior is not None and (kind["previous"] is None or prior > kind["previous"]):
-                        kind["previous"] = round(prior, 1)
-                        kind["gain"] = round(kind["value"] - prior, 1)
-                        kind["gainPercent"] = round(100.0 * (kind["value"] - prior) / prior) if prior else None
-                kinds.append(kind)
-            if not kinds:
-                continue
-            row["kinds"] = kinds
-            row["daysAgo"] = min(k["daysAgo"] for k in kinds)
-            row["date"] = min(k["date"] for k in kinds)
-            # Where the record's own day came from, set per kind by personal_records —
-            # NOT whether this movement has ever been trained off the machine.
-            row["offMachine"] = any(k.get("source") in ("offmachine", "mixed") for k in kinds)
-            row["windowDays"] = PR_WINDOW_DAYS
-            verified.append(row)
-        verified.sort(key=lambda r: r["daysAgo"])
-        return jsonify({"records": verified, "windowDays": PR_WINDOW_DAYS})
+            row["groupId"] = movements.get(row["exercise"])
+            # Where the record's own day came from — set per kind by personal_records.
+            row["offMachine"] = any(k.get("source") in ("offmachine", "mixed")
+                                    for k in row["kinds"])
+        return jsonify({"records": found, "allTime": True,
+                        "cache": fresh.get("cache") if isinstance(fresh, dict) else None})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
@@ -354,36 +335,54 @@ def api_dashboard_records():
         return jsonify({"records": []})
 
 
-def _historic_max_weight(group_id, before):
-    """The heaviest this movement went before `before` (YYYY-MM-DD), from the weekly feed.
+def _session_stats_detail(record):
+    """Session detail for the cache, in the shape reduce_exercises reads."""
+    return _session_detail(record['trainingId'], session_detail.detail_kind(record.get('type'))) or []
 
-    Weekly buckets cannot give volume for a day, but a bucket's maxWeight is a genuine
-    max, so this is the one thing the feed can answer that session detail (limited to the
-    recent window) cannot. A bucket is counted only when its whole week ends before
-    `before`, so the record's own week can never be its own baseline.
+
+def _reconcile_session_stats(start, end, max_fetch):
+    """Bring the session-stats cache in line with Speediance for one window."""
+    return session_stats.reconcile(client, session_stats_store, client.credentials,
+                                   start, end, _session_stats_detail, max_fetch=max_fetch)
+
+
+@app.route('/api/session-stats', methods=['GET'])
+def api_session_stats():
+    """What the personal-best cache currently holds."""
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(session_stats_store.summary(client.credentials))
+
+
+@app.route('/api/session-stats/reconcile', methods=['POST'])
+def api_session_stats_reconcile():
+    """Rebuild/extend the personal-best cache. Run weekly by cron; safe to run any time.
+
+    `days` bounds the window (default: the whole history Speediance will report). Deletes
+    are honoured only inside that window, because a session outside it is absent from the
+    response because it was not asked for, not because it is gone.
     """
+    if not client.credentials.get("token"):
+        return jsonify({"error": "Unauthorized"}), 401
+    today = datetime.date.today()
     try:
-        payload = client.get_user_action_stats(group_id) or {}
-        rows = payload.get('data')
-        if not isinstance(rows, list):
-            return None
-        cutoff = datetime.date.fromisoformat(before)
-        best = None
-        for row in rows:
-            try:
-                bucket = datetime.date.fromisoformat(str(row.get('dayStr'))[:10])
-            except (TypeError, ValueError):
-                continue
-            if bucket + datetime.timedelta(days=6) >= cutoff:
-                continue
-            weight = _num_or(row.get('maxWeight'), 0)
-            if weight and (best is None or weight > best):
-                best = weight
-        return best
+        days = max(1, min(int(request.args.get('days', RECONCILE_DAYS)), 1000))
+    except (TypeError, ValueError):
+        days = RECONCILE_DAYS
+    try:
+        max_fetch = max(1, min(int(request.args.get('max', session_stats.DEFAULT_MAX_FETCH)), 200))
+    except (TypeError, ValueError):
+        max_fetch = session_stats.DEFAULT_MAX_FETCH
+    try:
+        report = _reconcile_session_stats((today - datetime.timedelta(days=days - 1)).isoformat(),
+                                          today.isoformat(), max_fetch=max_fetch)
+        report["mode"] = request.args.get('mode', 'manual')
+        return jsonify(report)
     except Exception as e:
         if _is_auth_error(e):
-            raise
-        return None
+            return jsonify({"error": str(e), "connect_required": True}), 401
+        print(f"Session-stats reconcile failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 def _num_or(value, default=0.0):
@@ -2074,13 +2073,91 @@ def api_history():
     if not start or not end:
         return jsonify({"error": "Missing start/end parameters"}), 400
     try:
-        records = client.get_training_records(start, end)
+        records = client.get_training_records(start, end) or []
         stats = client.get_training_stats(start, end)
+        records = _with_offmachine_days(records, start, end)
         return jsonify({"records": records, "stats": stats})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
+
+def _with_offmachine_days(records, start, end):
+    """Add off-machine days that Speediance does not know about.
+
+    A hotel workout reaches Speediance only if the user ALSO added a manual entry in its
+    app. When they did (session type 10), that record is already here and our sets are its
+    detail — so the day must not be listed twice. When they did not, the day is invisible
+    in history despite being a real training day, which is exactly what the off-machine
+    log exists to prevent.
+
+    Synthetic rows carry offMachineDay and trainingId 0: they have no Speediance id, so the
+    detail view fetches them by day instead.
+    """
+    try:
+        off_sets = offmachine_store.list_sets(client.credentials, start, end)
+    except Exception as e:                       # history must survive a store problem
+        print(f"History: off-machine days unavailable ({e})")
+        return records
+    if not off_sets:
+        return records
+
+    # A day is already represented if a Speediance record shares it, or if our sets name
+    # that record explicitly.
+    linked = {r.get("trainingId") for r in off_sets if r.get("trainingId")}
+    represented = {str(r.get("startTime", ""))[:10] for r in records
+                   if r.get("type") == OFFMACHINE_SESSION_TYPE or r.get("trainingId") in linked}
+
+    out = list(records)
+    for session in offmachine.sessions(off_sets):
+        if session["day"] in represented:
+            continue
+        label = f"Off-machine{(' — ' + session['location']) if session['location'] else ''}"
+        # The history table sorts AND renders its date from startTimestamp (unix seconds,
+        # local), so a null there sorts the row to the bottom and prints "-". Midday keeps
+        # the row on its own date under any nearby timezone handling.
+        try:
+            stamp = int(datetime.datetime.combine(
+                datetime.date.fromisoformat(session["day"]),
+                datetime.time(12, 0)).timestamp())
+        except ValueError:
+            continue
+        out.append({
+            "trainingId": 0,
+            "offMachineDay": session["day"],
+            "type": OFFMACHINE_SESSION_TYPE,
+            "title": label,
+            "startTime": f"{session['day']} 12:00:00",
+            "startTimestamp": stamp,
+            # Duration and calories are genuinely unknown for a day Speediance never saw —
+            # None renders as "-", where 0 would render as a confident "0s"/"0 kcal".
+            "trainingTime": None,
+            "calorie": None,
+            "totalCapacity": session["volume"],
+            "isFinish": 1,
+            "source": "offmachine",
+        })
+    out.sort(key=lambda r: str(r.get("startTime", "")), reverse=True)
+    return out
+
+
+@app.route('/api/offmachine/detail/<day>')
+def api_offmachine_detail(day):
+    """One off-machine day's exercises, for a history row that has no Speediance id."""
+    try:
+        sets = offmachine_store.list_sets(client.credentials, day, day)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"detail": offmachine.as_exercises(sets),
+                    "session": {"trainingTime": 0, "calorie": 0,
+                                "totalCapacity": round(sum(
+                                    float(r.get("weight") or 0) * int(r.get("reps") or 0)
+                                    for r in sets), 1)},
+                    "source": "offmachine" if sets else "none",
+                    "note": ("Logged off the machine. Speediance holds no record of this day, so "
+                             "everything here comes from your own off-machine log.") if sets else
+                            "Nothing logged for this day."})
+
 
 def _session_detail(training_id, kind):
     """A completed session's exercises in the list shape progression/reconcile/history.html

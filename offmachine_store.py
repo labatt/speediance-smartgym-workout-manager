@@ -181,9 +181,13 @@ def list_sets(config, start, end, path=None):
     conn = _connect(path or db_path(config))
     conn.row_factory = sqlite3.Row
     try:
+        # Ordered by id, which is INSERTION order and therefore the order the exercises
+        # were actually performed. Ordering by name instead sorted a session alphabetically
+        # and silently rewrote the workout: a chest press done first appeared after a
+        # biceps curl. set_index already orders the sets within one movement.
         rows = conn.execute(
             "SELECT * FROM offmachine_sets WHERE day >= ? AND day <= ? "
-            "ORDER BY day, name, set_index, id", (start, end)).fetchall()
+            "ORDER BY day, id", (start, end)).fetchall()
         return [_row(r) for r in rows]
     finally:
         conn.close()
@@ -208,14 +212,14 @@ def list_for_session(config, training_id=None, day=None, path=None):
     try:
         if training_id not in (None, ""):
             rows = conn.execute(
-                "SELECT * FROM offmachine_sets WHERE training_id = ? "
-                "ORDER BY name, set_index, id", (int(training_id),)).fetchall()
+                "SELECT * FROM offmachine_sets WHERE training_id = ? ORDER BY id",
+                (int(training_id),)).fetchall()
             if rows:
                 return [_row(r) for r in rows]
         if day in (None, ""):
             return []
         rows = conn.execute(
-            "SELECT * FROM offmachine_sets WHERE day = ? ORDER BY name, set_index, id",
+            "SELECT * FROM offmachine_sets WHERE day = ? ORDER BY id",
             (_day(day),)).fetchall()
         return [_row(r) for r in rows]
     finally:

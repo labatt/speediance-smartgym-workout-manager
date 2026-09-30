@@ -233,3 +233,44 @@ class GroupIdsTest(unittest.TestCase):
                 {"name": "Dumbbell Bench Press", "groupId": 11},
                 {"name": "Hotel Stairwell Carry", "groupId": None}]
         self.assertEqual(offmachine.group_ids(sets), {"Dumbbell Bench Press": 11})
+
+
+class DisplayFidelityTest(unittest.TestCase):
+    """What the session-detail view needs to render an off-machine day faithfully.
+
+    All three of these were wrong on the first real session logged (2026-09-29): the
+    exercises came back alphabetised rather than in the order performed, single-arm sets
+    showed "-" instead of their weight, and every volume figure was blank.
+    """
+
+    def rows(self):
+        """One real session's shape: single-arm press first, then two-handed movements."""
+        return [
+            {"id": 109, "day": "2026-09-29", "groupId": 372728100683777, "trainingId": None,
+             "name": "Standing Single-Arm Chest Press", "setIndex": 1, "reps": 12,
+             "weight": 55.0, "side": "left", "location": "hotel", "note": ""},
+            {"id": 110, "day": "2026-09-29", "groupId": 372728100683777, "trainingId": None,
+             "name": "Standing Single-Arm Chest Press", "setIndex": 2, "reps": 12,
+             "weight": 55.0, "side": "right", "location": "hotel", "note": ""},
+            {"id": 121, "day": "2026-09-29", "groupId": 294, "trainingId": None,
+             "name": "Standing Barbell Biceps Curl", "setIndex": 1, "reps": 12,
+             "weight": 25.0, "side": "both", "location": "hotel", "note": ""},
+        ]
+
+    def test_exercises_keep_the_order_they_were_performed_in(self):
+        """Alphabetising a session rewrites the workout."""
+        names = [ex["actionLibraryName"] for ex in offmachine.as_exercises(self.rows())]
+        self.assertEqual(names, ["Standing Single-Arm Chest Press", "Standing Barbell Biceps Curl"])
+
+    def test_a_unilateral_exercise_is_flagged_so_its_weight_renders(self):
+        """The detail view reads leftWeights only when the exercise says it is unilateral."""
+        press, curl = offmachine.as_exercises(self.rows())
+        self.assertEqual(press["isLeftRight"], 1)
+        self.assertEqual(press["finishedReps"][0]["trainingInfoDetail"]["leftWeights"], [55.0])
+        self.assertEqual(curl["isLeftRight"], 0, "a two-handed movement is not unilateral")
+
+    def test_volume_is_present_per_set_and_per_exercise(self):
+        press, curl = offmachine.as_exercises(self.rows())
+        self.assertEqual([st["capacity"] for st in press["finishedReps"]], [660.0, 660.0])
+        self.assertEqual(press["totalCapacity"], 1320.0)
+        self.assertEqual(curl["totalCapacity"], 300.0)

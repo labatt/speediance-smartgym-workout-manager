@@ -53,13 +53,30 @@ def is_gym_session(record):
     return not record.get("belongUserHealth")
 
 
-def streak(records, today):
-    """Consecutive days up to today with at least one gym session.
+def _iso_days(values):
+    """A set of dates from ISO strings, ignoring anything unparseable."""
+    out = set()
+    for value in values or []:
+        try:
+            out.add(datetime.date.fromisoformat(str(value)[:10]))
+        except ValueError:
+            continue
+    return out
+
+
+def streak(records, today, other_days=None):
+    """Consecutive days up to today with at least one training session.
 
     Today not being trained yet does not break a streak — it hasn't finished. The count
     therefore starts at yesterday unless today already has a session.
+
+    `other_days` carries training Speediance does not know about: off-machine days logged
+    in our own store. Without them a hotel workout breaks the streak, which is the exact
+    thing the off-machine log exists to prevent. Speediance's own manual entry (type 10)
+    already arrives as a record, so a day logged BOTH ways counts once either way.
     """
     days = {d for d in (_date_of(r) for r in records if is_gym_session(r)) if d}
+    days |= _iso_days(other_days)
     if not days:
         return 0
     start = today if today in days else today - datetime.timedelta(days=1)
@@ -70,11 +87,30 @@ def streak(records, today):
     return count
 
 
-def _window_totals(records, start, end):
+def _window_totals(records, start, end, offmachine=None):
+    """Totals for one window. `offmachine` maps ISO day -> that day's off-machine volume.
+
+    An off-machine day counts as a session and contributes its volume: it is training,
+    and leaving it out would make "2 sessions this week" contradict a 3-day streak. It
+    adds no seconds or calories — Speediance's own manual entry holds those when the user
+    made one, and inventing a second figure would put two numbers on one workout.
+    """
     rows = [r for r in records if is_gym_session(r) and (d := _date_of(r)) and start <= d <= end]
+    machine_days = {d for r in rows if (d := _date_of(r))}
+    extra_sessions, extra_volume = 0, 0.0
+    for day, volume in (offmachine or {}).items():
+        try:
+            parsed = datetime.date.fromisoformat(str(day)[:10])
+        except ValueError:
+            continue
+        if not (start <= parsed <= end):
+            continue
+        extra_volume += float(volume or 0)
+        if parsed not in machine_days:
+            extra_sessions += 1      # a day trained both ways is still one training day
     return {
-        "sessions": len(rows),
-        "volume": round(sum(_num(r.get("totalCapacity")) or 0 for r in rows), 1),
+        "sessions": len(rows) + extra_sessions,
+        "volume": round(sum(_num(r.get("totalCapacity")) or 0 for r in rows) + extra_volume, 1),
         "seconds": int(sum(_num(r.get("trainingTime")) or 0 for r in rows)),
         "calories": int(sum(_num(r.get("calorie")) or 0 for r in rows)),
     }
@@ -91,13 +127,17 @@ def _delta(now, before):
     return round(100.0 * (now - before) / before)
 
 
-def week_comparison(records, today):
-    """This week against the previous seven days, with the deltas that have a baseline."""
+def week_comparison(records, today, offmachine=None):
+    """This week against the previous seven days, with the deltas that have a baseline.
+
+    `offmachine` maps ISO day -> off-machine volume; both windows see it, so a week with
+    hotel training is not compared against one where it was ignored.
+    """
     this_start = today - datetime.timedelta(days=6)
     last_end = this_start - datetime.timedelta(days=1)
     last_start = last_end - datetime.timedelta(days=6)
-    now = _window_totals(records, this_start, today)
-    before = _window_totals(records, last_start, last_end)
+    now = _window_totals(records, this_start, today, offmachine)
+    before = _window_totals(records, last_start, last_end, offmachine)
     return {
         "sessions": now["sessions"], "sessionsDelta": _delta(now["sessions"], before["sessions"]),
         "volume": now["volume"], "volumeDelta": _delta(now["volume"], before["volume"]),
@@ -152,12 +192,15 @@ def muscle_recovery(fatigue_rows, last_trained, now):
     }
 
 
-def activity_strip(records, today, days=14):
+def activity_strip(records, today, days=14, offmachine_days=None):
     """One entry per day for the last `days`, newest last.
 
     A rest day is not an absence of data — it is part of the pattern — so every day in
     the window appears, with `trained` saying which kind of day it was. Phone-health
     activity is marked separately: it is movement, but not a training day.
+
+    `offmachine_days` maps an ISO day to that day's off-machine volume. Those days are
+    trained days and must show as such, or the strip contradicts the streak.
     """
     by_day = {}
     for record in records or []:
@@ -172,6 +215,19 @@ def activity_strip(records, today, days=14):
         else:
             entry["health"] = True
             entry["seconds"] += int(_num(record.get("trainingTime")) or 0)
+
+    for day, volume in (offmachine_days or {}).items():
+        try:
+            parsed = datetime.date.fromisoformat(str(day)[:10])
+        except ValueError:
+            continue
+        if parsed > today or (today - parsed).days >= days:
+            continue
+        entry = by_day.setdefault(parsed, {"volume": 0.0, "seconds": 0, "gym": False,
+                                           "health": False})
+        entry["gym"] = True                 # trained is trained, machine or not
+        entry["offMachine"] = True
+        entry["volume"] += float(volume or 0)
 
     peak = max((e["volume"] for e in by_day.values()), default=0)
     out = []
@@ -192,6 +248,7 @@ def activity_strip(records, today, days=14):
             # Height as a share of the window's biggest day, so the strip is readable
             # regardless of whether someone lifts hundreds or thousands of pounds.
             "share": round(entry["volume"] / peak, 3) if entry and peak else 0.0,
+            "offMachine": bool(entry and entry.get("offMachine")),
             "isToday": day == today,
         })
     return out
