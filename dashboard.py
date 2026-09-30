@@ -197,11 +197,86 @@ def activity_strip(records, today, days=14):
     return out
 
 
+def daily_exercise_stats(day_exercises, source="machine"):
+    """Per-exercise, per-DAY rows from parsed session detail.
+
+    `day_exercises` is a list of (day, exercises) — one entry per session, exercises in
+    the session-detail shape. Returns {name: [{dayStr, maxWeight, totalCapacity, source}]},
+    the same shape personal_records reads.
+
+    This exists because Speediance's own per-movement stat feed
+    (`userActionStatPage`) is NOT daily: every row it returns is keyed to a MONDAY, so a
+    row is a whole week's bucket. Feeding that to personal_records made a week's total
+    read as one day's — two sessions in the same week summed into a single number and
+    reported as "yesterday". Session detail is the only true daily source; there is no
+    daily variant of the stat route.
+
+    Two sessions on the same day are combined into one row, because a day's volume is a
+    day's volume regardless of how many times the machine was switched on.
+    """
+    by_name = {}
+    for day, exercises in day_exercises or []:
+        stamp = str(day or "")[:10]
+        try:
+            datetime.date.fromisoformat(stamp)
+        except ValueError:
+            continue
+        for exercise in exercises or []:
+            name = exercise.get("actionLibraryName")
+            if not name:
+                continue
+            volume, top = 0.0, None
+            for st in exercise.get("finishedReps") or []:
+                reps = st.get("finishedCount") or 0
+                load = _set_load(st.get("trainingInfoDetail") or {}, st.get("leftRight") or None)
+                if load is not None and (top is None or load > top):
+                    top = load
+                if reps and load:
+                    volume += float(reps) * float(load)
+            rows = by_name.setdefault(name, {})
+            row = rows.setdefault(stamp, {"dayStr": stamp, "maxWeight": 0.0,
+                                          "totalCapacity": 0.0, "source": source})
+            row["totalCapacity"] = round(row["totalCapacity"] + volume, 1)
+            if top is not None:
+                row["maxWeight"] = max(row["maxWeight"], round(float(top), 2))
+    return {name: sorted(rows.values(), key=lambda r: r["dayStr"])
+            for name, rows in by_name.items()}
+
+
+def _set_load(detail, side):
+    """One set's resistance. Mirrors muscle_balance.set_load — see its note: a pinned
+    side is that side alone, two populated sides BOTH carry load and sum, and `weights`
+    is only a fallback (on dual-cable movements it is derived force telemetry, not the
+    resistance setting)."""
+    def nums(value):
+        out = []
+        for item in value or []:
+            try:
+                out.append(float(item))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    left, right = nums(detail.get("leftWeights")), nums(detail.get("rightWeights"))
+    if side == 1 and left:
+        return max(left)
+    if side == 2 and right:
+        return max(right)
+    if left and right:
+        return max(left) + max(right)
+    if left or right:
+        return max(left or right)
+    weights = nums(detail.get("weights"))
+    return max(weights) if weights else None
+
+
 def personal_records(exercise_stats, within_days=14, today=None):
     """Recent bests, with the number that made each one a record and what it beat.
 
-    `exercise_stats` maps an exercise name to its dated rows (userActionStatPage shape:
-    `dayStr`, `maxWeight`, `totalCapacity`). A record is reported for the LATEST day that
+    `exercise_stats` maps an exercise name to DAILY rows (`dayStr`, `maxWeight`,
+    `totalCapacity`, optional `source`). They must be one row per DAY — see
+    daily_exercise_stats: Speediance's own stat feed buckets by week, and feeding those
+    rows here makes a week's total read as a single day's. A record is reported for the LATEST day that
     achieved the best, so repeating a best reads as today's news rather than the first
     time it happened. `previous` is the best before that day, which is what makes the
     record meaningful — "1,210 lbs" alone says nothing about whether it was hard-won.
@@ -218,7 +293,8 @@ def personal_records(exercise_stats, within_days=14, today=None):
                 day = datetime.date.fromisoformat(stamp)
             except ValueError:
                 continue
-            dated.append((day, _num(row.get("maxWeight")) or 0, _num(row.get("totalCapacity")) or 0))
+            dated.append((day, _num(row.get("maxWeight")) or 0, _num(row.get("totalCapacity")) or 0,
+                          row.get("source") or "machine"))
         if len(dated) < 2:
             continue                      # a first-ever entry is not a record
         dated.sort()
@@ -231,6 +307,10 @@ def personal_records(exercise_stats, within_days=14, today=None):
                 continue
             # The most recent day that reached the best, so a repeat counts as news.
             day = max(d[0] for d in dated if d[index] >= best)
+            # Where THAT day's work came from — not whether this movement has ever been
+            # done off the machine, which would mislabel a machine PR on any movement
+            # that also appears in the off-machine log.
+            source = next((d[3] for d in dated if d[0] == day), "machine")
             if day < cutoff:
                 continue
             # A zero is a day the movement carried no weight (bodyweight or timed), not a
@@ -248,6 +328,7 @@ def personal_records(exercise_stats, within_days=14, today=None):
                                 if previous else None),
                 "date": day.isoformat(),
                 "daysAgo": (today - day).days,
+                "source": source,
             })
         if kinds:
             newest = min(k["daysAgo"] for k in kinds)

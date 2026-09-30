@@ -21,8 +21,14 @@
             </div>
             <div class="hidden" id="prNote"></div>
             <div class="mb-2">
-                <p class="text-[10px] text-gray-600">Compared against every session Speediance keeps
-                    stats for on that movement &mdash; not just this window.</p>
+                {# The two kinds have different baselines and it would be dishonest to imply
+                   otherwise: a heaviest-weight claim is checked against the movement's whole
+                   history (a weekly bucket's max weight is still a real max), while day volume
+                   can only be compared within the window, because Speediance's stat feed buckets
+                   volume by WEEK and cannot answer what a single day held. #}
+                <p class="text-[10px] text-gray-600">Heaviest weight is checked against this
+                    movement's whole history. Day volume is computed from each session, so it is
+                    the best day in the window shown.</p>
             </div>
             <div id="prList" class="flex flex-wrap gap-3"></div>
         </section>
@@ -262,7 +268,7 @@ const ICON = (d, cls) => `<svg class="h-5 w-5 ${cls}" fill="none" viewBox="0 0 2
 const PR_STYLE = {
     'Heaviest weight': {
         ring: 'from-amber-500/25 to-amber-700/10 border-amber-600/50',
-        chip: 'bg-amber-500/20 text-amber-200', short: 'Heaviest',
+        chip: 'bg-amber-500/20 text-amber-200', short: 'Heaviest ever',
         icon: ICON('M13 10V3L4 14h7v7l9-11h-7z', 'text-amber-300'),
     },
     'Best day volume': {
@@ -279,12 +285,14 @@ const whenLabel = d => d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
 function renderRecords(records) {
     const cards = [];
     records.forEach(r => (r.kinds || []).forEach(k =>
-        cards.push({ exercise: r.exercise, groupId: r.groupId, offMachine: r.offMachine, ...k })));
+        cards.push({ exercise: r.exercise, groupId: r.groupId, windowDays: r.windowDays, ...k })));
     if (!cards.length) return;
     cards.sort((a, b) => a.daysAgo - b.daysAgo);
 
     document.getElementById('prCard').classList.remove('hidden');
-    document.getElementById('prCount').textContent = `${cards.length} in the last 2 weeks`;
+    const window = cards.find(c => c.windowDays)?.windowDays;
+    document.getElementById('prCount').textContent =
+        `${cards.length} in the last 2 weeks` + (window ? ` · volume vs the last ${window} days` : '');
     document.getElementById('prList').innerHTML = cards.slice(0, 12).map(c => {
         const style = PR_STYLE[c.kind] || PR_STYLE['Best day volume'];
         const value = c.kind === 'Heaviest weight'
@@ -304,7 +312,8 @@ function renderRecords(records) {
                 <span class="text-[10px] px-1.5 py-0.5 rounded ${style.chip}">${esc(style.short)}</span>
             </div>
             <p class="text-xs font-semibold text-white leading-snug line-clamp-2">${esc(c.exercise)}</p>
-            ${c.offMachine ? '<p class="text-[9px] text-cyan-400 -mt-1">off-machine</p>' : ''}
+            ${c.source === 'offmachine' ? '<p class="text-[9px] text-cyan-400 -mt-1">off-machine</p>'
+              : c.source === 'mixed' ? '<p class="text-[9px] text-cyan-400 -mt-1">machine + off-machine</p>' : ''}
             <div class="mt-auto">
                 <p class="text-lg font-bold text-white leading-none tabular-nums">${esc(value)}</p>
                 ${beat}

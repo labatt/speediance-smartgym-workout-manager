@@ -255,71 +255,135 @@ def api_dashboard():
     return jsonify(out)
 
 
-# Bounds on the personal-records scan: each exercise costs one stats call, so this
-# looks at the movements from the most recent sessions rather than the whole catalog.
-PR_SESSIONS_SCANNED = 3
+# Bounds on the personal-records scan. It now reads per-session detail (one call per
+# session) to get true DAILY numbers, plus one stats call per movement that produced a
+# heaviest-weight candidate, to check the claim against the movement's whole history.
+# 30 days is ~13 sessions on this account — enough to see a week-over-week best without
+# making the card an expensive scan.
+PR_WINDOW_DAYS = 30
+PR_SESSIONS_SCANNED = 20
 PR_MAX_EXERCISES = 12
 
 
 @app.route('/api/dashboard/records')
 def api_dashboard_records():
-    """Recent personal bests, fetched separately so a slow scan never delays the page."""
+    """Recent personal bests, fetched separately so a slow scan never delays the page.
+
+    Built from PER-SESSION detail, not from Speediance's per-movement stat feed. That
+    feed (`userActionStatPage`) returns one row per WEEK, every dayStr a Monday — so
+    using it here reported a week's total as a single day's, summed two sessions in the
+    same week, and dated the result to the bucket's Monday. Session detail is the only
+    true daily source; there is no daily variant of the stat route.
+
+    The weekly feed is still used, for the one thing it is valid for: a max weight is a
+    max whatever window it covers, so it provides the long-run baseline that stops a
+    "heaviest ever" claim being made against only the days in this window.
+    """
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
     today = datetime.date.today()
     try:
-        records = client.get_training_records((today - datetime.timedelta(days=21)).isoformat(),
-                                              today.isoformat()) or []
-        recent = [r for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)
-                  if dashboard_calc.is_gym_session(r) and r.get("trainingId")][:PR_SESSIONS_SCANNED]
-        movements = {}
-        for rec in recent:
+        start_day = today - datetime.timedelta(days=PR_WINDOW_DAYS - 1)
+        records = client.get_training_records(start_day.isoformat(), today.isoformat()) or []
+        sessions = [r for r in sorted(records, key=lambda r: str(r.get("startTime", "")), reverse=True)
+                    if dashboard_calc.is_gym_session(r) and r.get("trainingId")][:PR_SESSIONS_SCANNED]
+
+        day_exercises, movements = [], {}
+        for rec in sessions:
             kind = session_detail.detail_kind(rec.get('type'))
-            for exercise in (_session_detail(rec['trainingId'], kind) or []):
+            try:
+                detail = _session_detail(rec['trainingId'], kind) or []
+            except Exception as se:
+                if _is_auth_error(se):
+                    raise
+                continue          # one unreadable session must not empty the whole card
+            day_exercises.append((str(rec.get("startTime", ""))[:10], detail))
+            for exercise in detail:
                 gid, name = exercise.get('actionLibraryGroupId'), exercise.get('actionLibraryName')
-                if gid is not None and name and name not in movements:
-                    movements[name] = gid
-                if len(movements) >= PR_MAX_EXERCISES:
-                    break
-        stats = {}
-        for name, gid in movements.items():
-            payload = client.get_user_action_stats(gid) or {}
-            rows = payload.get('data')
-            if isinstance(rows, list) and rows:
-                stats[name] = rows
-        # Off-machine work can set a personal best too, so its stats rows are merged in
-        # before the scan rather than after: a day trained both on and off the machine
-        # has to become ONE row, or the scan sees the same day twice and reports half of
-        # it as the record and half as what it beat.
-        off_sets = offmachine_store.list_sets(client.credentials,
-                                              (today - datetime.timedelta(days=365)).isoformat(),
+                if gid is not None and name:
+                    movements.setdefault(name, gid)
+
+        stats = dashboard_calc.daily_exercise_stats(day_exercises, source="machine")
+
+        # Off-machine sets are already per-day, so the two sources now share a unit and
+        # merge cleanly. A day trained both on and off the machine becomes ONE row, or
+        # the scan would see that day twice and report half of it as beating the other half.
+        off_sets = offmachine_store.list_sets(client.credentials, start_day.isoformat(),
                                               today.isoformat())
         off_stats = offmachine.stat_rows(off_sets)
-        # A movement done off the machine may have machine history that this scan has not
-        # fetched, because `movements` only covers the last few sessions. Merging without
-        # it would compare an off-machine best against a partial baseline and announce a
-        # record the machine history disproves. So pull the real history for exactly the
-        # off-machine movements we are about to merge, by the group id the set carries.
         for name, gid in offmachine.group_ids(off_sets).items():
-            if name in stats or gid is None or len(stats) >= PR_MAX_EXERCISES * 2:
-                continue
-            payload = client.get_user_action_stats(gid) or {}
-            rows = payload.get('data')
-            if isinstance(rows, list) and rows:
-                stats[name] = rows
+            movements.setdefault(name, gid)
         stats = offmachine.merge_stats(stats, off_stats)
+
         found = dashboard_calc.personal_records(stats, today=today)
+
+        # A "heaviest weight" claim must beat the movement's whole history, not just this
+        # window. The weekly feed is the only long baseline available, and a weekly max IS
+        # a real max, so it is sound for exactly this check even though its volumes are not.
+        verified = []
         for row in found:
-            row["groupId"] = movements.get(row["exercise"])
-            # Name the source so a hotel best is never shown as machine data.
-            sources = {k.get("source") for k in off_stats.get(row["exercise"], [])}
-            row["offMachine"] = bool(sources)
-        return jsonify({"records": found})
+            gid = movements.get(row["exercise"])
+            row["groupId"] = gid
+            kinds = []
+            for kind in row["kinds"]:
+                if kind["kind"] == "Heaviest weight" and gid is not None:
+                    prior = _historic_max_weight(gid, before=kind["date"])
+                    if prior is not None and kind["value"] <= prior:
+                        continue      # not a record: the movement has been heavier before
+                    if prior is not None and (kind["previous"] is None or prior > kind["previous"]):
+                        kind["previous"] = round(prior, 1)
+                        kind["gain"] = round(kind["value"] - prior, 1)
+                        kind["gainPercent"] = round(100.0 * (kind["value"] - prior) / prior) if prior else None
+                kinds.append(kind)
+            if not kinds:
+                continue
+            row["kinds"] = kinds
+            row["daysAgo"] = min(k["daysAgo"] for k in kinds)
+            row["date"] = min(k["date"] for k in kinds)
+            # Where the record's own day came from, set per kind by personal_records —
+            # NOT whether this movement has ever been trained off the machine.
+            row["offMachine"] = any(k.get("source") in ("offmachine", "mixed") for k in kinds)
+            row["windowDays"] = PR_WINDOW_DAYS
+            verified.append(row)
+        verified.sort(key=lambda r: r["daysAgo"])
+        return jsonify({"records": verified, "windowDays": PR_WINDOW_DAYS})
     except Exception as e:
         if _is_auth_error(e):
             return jsonify({"error": str(e)}), 401
         print(f"Dashboard records failed: {e}")
         return jsonify({"records": []})
+
+
+def _historic_max_weight(group_id, before):
+    """The heaviest this movement went before `before` (YYYY-MM-DD), from the weekly feed.
+
+    Weekly buckets cannot give volume for a day, but a bucket's maxWeight is a genuine
+    max, so this is the one thing the feed can answer that session detail (limited to the
+    recent window) cannot. A bucket is counted only when its whole week ends before
+    `before`, so the record's own week can never be its own baseline.
+    """
+    try:
+        payload = client.get_user_action_stats(group_id) or {}
+        rows = payload.get('data')
+        if not isinstance(rows, list):
+            return None
+        cutoff = datetime.date.fromisoformat(before)
+        best = None
+        for row in rows:
+            try:
+                bucket = datetime.date.fromisoformat(str(row.get('dayStr'))[:10])
+            except (TypeError, ValueError):
+                continue
+            if bucket + datetime.timedelta(days=6) >= cutoff:
+                continue
+            weight = _num_or(row.get('maxWeight'), 0)
+            if weight and (best is None or weight > best):
+                best = weight
+        return best
+    except Exception as e:
+        if _is_auth_error(e):
+            raise
+        return None
 
 
 def _num_or(value, default=0.0):
