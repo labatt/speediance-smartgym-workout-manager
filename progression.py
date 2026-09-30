@@ -165,17 +165,33 @@ def analyze_exercise(ex):
     if len(roms) >= 2 and roms[0]:
         rom_change_pct = round((roms[-1] - roms[0]) / roms[0] * 100, 1)
 
+    # Does this movement use the cables? 361 of the 1040 library exercises don't
+    # (Bodyweight, Stretch, Pilates-Mat, Warmup, HIIT), and for those the machine records
+    # nothing at all — no reps, no telemetry, no form scores. Treating that silence as
+    # "missed reps" is simply false: there was nothing for it to count. The flag is joined
+    # in from the library upstream; when it is absent we assume the cables WERE used, which
+    # is the safe default (a real missed rep still gets reported).
+    uses_device = ex.get("isUseDevice") is None or bool(ex.get("isUseDevice"))
+    # "Recorded" means the machine actually captured work. A cable exercise sitting in the
+    # session with every set at zero was planned and not performed — different from a
+    # bodyweight movement it cannot measure, and worth saying differently.
+    recorded = bool(worked)
+
     return {
         "name": ex.get("actionLibraryName"),
         "group": ex.get("actionLibraryGroupId"),
+        "uses_device": uses_device,
+        "recorded": recorded,
         "region": REGION_NAMES.get(ex.get("trainingPartId2"), "Other"),
         "muscle": ex.get("mainMuscleGroupName"),  # filled by a library join upstream if present
         "kind": kind,
         "sets": sets,
         "sets_done": len(worked),
         "sets_total": len(sets),
-        "all_complete": bool(worked) and all(s["complete"] for s in worked),
-        "any_missed": any(not s["complete"] for s in worked),
+        # A movement the cables cannot measure is never "incomplete" — there was nothing
+        # to measure. Absent data is not a failed rep.
+        "all_complete": (bool(worked) and all(s["complete"] for s in worked)) or not uses_device,
+        "any_missed": uses_device and any(not s["complete"] for s in worked),
         "top_load": top_load,
         "rom_change_pct": rom_change_pct,
         "scores": {

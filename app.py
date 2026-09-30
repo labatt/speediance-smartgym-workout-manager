@@ -1195,8 +1195,16 @@ def _analyze_training(training_id):
         lib = {e['id']: e for e in client.get_library()}
         for ex in detail or []:
             g = lib.get(ex.get('actionLibraryGroupId'))
-            if g and not ex.get('mainMuscleGroupName'):
+            if not g:
+                continue
+            if not ex.get('mainMuscleGroupName'):
                 ex['mainMuscleGroupName'] = g.get('mainMuscleGroupName')
+            # Whether the movement uses the cables at all. 361 of the 1040 library entries
+            # are isUseDevice=0 — every Bodyweight, Stretch, Pilates-Mat, Warmup and HIIT
+            # movement — and the machine measures nothing for them: no reps, no telemetry,
+            # no form scores. The session payload does NOT carry this flag, so without the
+            # join a bodyweight squat read as "MISSED some reps" with None/5 scores.
+            ex['isUseDevice'] = g.get('isUseDevice')
     except Exception:
         pass  # names are a nicety; the region rollup works without them
     return progression.analyze_session(detail)

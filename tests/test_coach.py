@@ -16,10 +16,10 @@ SNAPSHOT = {
             "sets": [
                 {"done": 12, "target": 12, "load": 15.5, "power_trend_pct": 41.0, "skipped": False,
                  "seconds": 40, "rest": 90, "speed_trend_pct": 18.0,
-                 "left_reps": 12, "right_reps": 9},
+                 "left_reps": 12, "right_reps": 12},
                 {"done": 10, "target": 10, "load": 12, "power_trend_pct": 8.0, "skipped": False,
                  "seconds": 30, "rest": 60, "speed_trend_pct": 5.0,
-                 "left_reps": 10, "right_reps": 10},
+                 "left_reps": 10, "right_reps": 7},
             ],
             "scores": {"force_control": 4, "amplitude_stable": 3, "bilateral_balance": 5, "rating": 4},
         },
@@ -67,7 +67,7 @@ class TestBuildPrompt(unittest.TestCase):
 
     def test_uneven_sides_are_named_only_when_they_diverge(self):
         line = [l for l in self.p.splitlines() if l.startswith("- Standing Leg Curl")][0]
-        self.assertIn("uneven sides (12L/9R)", line)
+        self.assertIn("uneven sides (10L/7R)", line)
         vita = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
         self.assertNotIn("uneven", vita, "equal or absent counts are noise")
 
@@ -337,3 +337,56 @@ class TestBalanceScoreIsNotFabricated(unittest.TestCase):
     def test_a_one_sided_set_is_not_called_uneven(self):
         """A unilateral set is 15 left and 0 right by design, not an imbalance."""
         self.assertNotIn("uneven", self._line(0))
+
+
+class TestNonDeviceAndOpeningSetHandling(unittest.TestCase):
+    """Two ways the coach used to invent findings out of artefacts."""
+
+    def _ex(self, **over):
+        ex = {"name": "Bodyweight Sumo Squat", "region": "Legs", "kind": "timed",
+              "all_complete": True, "rom_change_pct": None, "uses_device": True,
+              "recorded": True, "sets": [],
+              "scores": {"force_control": None, "amplitude_stable": None,
+                         "bilateral_balance": None, "rating": None}}
+        ex.update(over)
+        return ex
+
+    def test_a_bodyweight_movement_is_not_accused_of_missing_reps(self):
+        """361 of the 1040 library exercises use no cables (isUseDevice=0).
+
+        The machine records nothing for them — no reps, no telemetry, no form scores — and
+        the line used to read "MISSED some reps. Sets . force None/5", which is three
+        falsehoods at once, after which the coach made load recommendations about an
+        exercise it had no data for.
+        """
+        line = coach._exercise_line(self._ex(uses_device=False), {}, {}, "lbs")
+        self.assertNotIn("MISSED", line)
+        self.assertNotIn("None/5", line)
+        self.assertIn("no reps, load or form data", line)
+        self.assertIn("do not make a load recommendation", line)
+
+    def test_a_planned_but_unperformed_exercise_reads_as_such(self):
+        """Different from a bodyweight movement: the cables could have measured it."""
+        line = coach._exercise_line(self._ex(name="Standing Leg Curl", kind="reps",
+                                             recorded=False), {}, {}, "lbs")
+        self.assertIn("planned and not performed", line)
+        self.assertNotIn("MISSED", line)
+
+    def test_an_opening_set_imbalance_is_discarded_as_a_mis_start(self):
+        """A big left/right split on set 1 is almost always a stray rep counted while
+        getting into position, not an asymmetry. Believing it had the coach reporting an
+        imbalance that never happened."""
+        sets = [{"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 6},
+                {"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 12}]
+        line = coach._exercise_line(self._ex(name="Row", kind="reps", sets=sets), {}, {}, "lbs")
+        self.assertNotIn("uneven", line)
+
+    def test_an_imbalance_in_a_working_set_is_still_reported(self):
+        sets = [{"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 12},
+                {"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 8}]
+        line = coach._exercise_line(self._ex(name="Row", kind="reps", sets=sets), {}, {}, "lbs")
+        self.assertIn("uneven sides (12L/8R)", line)

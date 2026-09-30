@@ -389,7 +389,8 @@ READING THE OBJECTIVE SIGNALS (use these when there is no felt rating):
 - REP SLOWDOWN within a set ("reps +40% slower by the end") is how much longer the closing reps took than the quickest one. Small single figures are normal pacing; 30-50% means the set got genuinely hard; over 60% means they were grinding the last reps out.
 - REST TAKEN is what they actually needed, not what was prescribed. Rest climbing set to set is a fatigue signal even when every rep was completed.
 - SPEED TREND (rope speed, peak->last within a set) is the best objective proxy for how close a set came to failure: roughly under 10% is comfortable, 10-20% is a working set, over 25-30% means they were near their limit. POWER TREND is noisier — one explosive rep skews it — so weight it below speed.
-- PER-SIDE REP COUNTS and the bilateral-balance score show whether they went uneven. A unilateral movement finishing 10 left and 7 right is a real finding worth naming.
+- PER-SIDE REP COUNTS and the bilateral-balance score show whether they went uneven. A movement finishing 10 left and 7 right is a real finding worth naming. Opening-set discrepancies are filtered out before you see them, so any imbalance reported here is from working sets and can be trusted.
+- SOME MOVEMENTS USE NO CABLES at all (bodyweight, stretching, mobility, HIIT). Those lines say so explicitly. The machine measures nothing for them: never call them missed reps, never score them, and never make a load recommendation about them. Mention them only as part of the session's shape if relevant.
 - RANGE OF MOTION shrinking across sets means they are compensating as they tire — usually a stronger reason to hold the load than any completion figure.
 - FORM SCORES (force control, amplitude stability, out of 5) are the machine's own read. Low scores with everything else healthy usually means technique, not load.
 - CONVERGING signals are what justify a recommendation. All reps completed + flat set durations + small speed loss + solid form = ready for more. Any of rising durations, rising rest, big speed loss, shrinking range, or falling form scores = hold, and say which one made you say so."""
@@ -445,6 +446,19 @@ def _exercise_line(e, notes, cmp_by=None, unit=""):
     the model guesses (it printed kg for lbs data). Vita levels are never given a unit."""
     cmp_by = cmp_by or {}
     felt = _felt_clause(notes, e["name"])
+
+    # Movements the cables cannot measure (bodyweight, stretching, mobility, HIIT — 361 of
+    # the 1040 library entries) record nothing at all. Saying "MISSED some reps. Sets .
+    # force None/5" about a bodyweight squat is three falsehoods in one line, and the coach
+    # then recommended things about an exercise it had no data for.
+    if not e.get("uses_device", True):
+        return (f"- {e['name']}: performed off the cables (bodyweight/mobility), so the machine "
+                f"records no reps, load or form data. Not assessable — do not treat as missed "
+                f"reps and do not make a load recommendation.{felt}")
+    if not e.get("recorded", True):
+        return (f"- {e['name']}: in the session but no sets were recorded — it appears to have "
+                f"been planned and not performed. Nothing to assess.{felt}")
+
     if e["kind"] == "level":
         sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
                          for s in e["sets"] if not s["skipped"])
@@ -473,8 +487,14 @@ def _exercise_line(e, notes, cmp_by=None, unit=""):
     if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
         rom = f", range {e['rom_change_pct']:+.0f}% across sets"
     # Per-side counts only when they actually diverged — equal counts are noise.
+    #
+    # The FIRST set is excluded. A big left/right split on the opening set is almost always
+    # a mis-start — a stray rep counted while getting into position — not a real asymmetry,
+    # and reporting it had the coach inventing an imbalance from a setup artefact. A genuine
+    # imbalance shows up once the athlete is actually working, so unevenness is only
+    # believed from set 2 onwards.
     uneven = ""
-    lopsided = [s for s in worked
+    lopsided = [s for s in worked[1:]
                 if s.get("left_reps") and s.get("right_reps")
                 and s["left_reps"] != s["right_reps"]]
     if lopsided:
