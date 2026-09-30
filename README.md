@@ -19,21 +19,84 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the release notes and
 **[docs/API-NOTES.md](docs/API-NOTES.md)** for the API's data model, including the traps that
 caused the bugs fixed here.
 
----
+> **Unofficial.** Not affiliated with or endorsed by Speediance. It uses the private API behind
+> the Speediance app, which can change without notice. Use at your own risk.
 
-## Notice from the Original Developer
-
-> This project is being discontinued as Speediance is implementing security upgrades to their API infrastructure. Official alternatives for custom template management and desktop workflows are currently under development by the vendor's team.
-> Thank you to everyone who contributed feedback, ideas, and support.
-
-*— [hbui3](https://github.com/hbui3/UnofficialSpeedianceWorkoutManager)*
-
-This fork may continue to function as long as the API remains accessible, but is subject to
-the same limitations. Use at your own risk.
+![dashboard](docs/img/dashboard.png)
 
 ---
 
 ## Features
+
+### Dashboard
+
+The landing page answers "what should I do today, and what happened lately" without opening
+four tabs.
+
+- **Streak and week-at-a-glance** — consecutive training days, plus sessions, volume, time and
+  calories against the previous seven days. Deltas only appear when there is a baseline to
+  compare against: "no data last week" is not "no change".
+- **14-day activity strip** — every day drawn, because a rest day is part of the pattern, not
+  missing data. Bar height is that day's share of the window's biggest. Machine sessions,
+  off-machine days and phone-health activity are distinguished.
+- **Personal bests** — heaviest weight and best-day volume, each card showing the number *and
+  what it beat*, because "1,210 lbs" alone says nothing about whether it was hard-won.
+  Computed from every session, day by day, over your whole history — see below for why that
+  is harder than it sounds.
+- **Muscle recovery** — which body parts are still recovering and roughly how long is left,
+  from Speediance's per-muscle fatigue read combined with when each part was last loaded.
+- **Today's plan and recent sessions**, each linking through to its own page.
+
+#### Why personal bests are computed the hard way
+
+Speediance's per-movement stat feed (`userActionStatPage`) looks daily — each row carries a
+real date — but it is **weekly**. Every `dayStr` is the Monday of a Sunday-to-Saturday week,
+so two sessions in one week are summed into a single row dated that Monday. Reading those rows
+as days produced a dashboard card reading *"3,600 lbs, +107% vs 1,740, yesterday"* when the
+real day was 1,800, up 3%.
+
+There is no daily variant of that route, so per-day numbers can only come from each session's
+own detail. Fetching all of it on every page load cost ~15 API calls and about three seconds,
+and bounded records to whatever window was worth paying for. So each session's per-exercise
+volume and top weight is derived once and cached locally: a load is now one API call and about
+0.2s, and records cover your whole history.
+
+The cache is a **derived** store, never a source of truth — every row is recomputable from
+Speediance, so a bad one is fixable by rebuilding. A weekly cron keeps it honest: it fills
+gaps, drops sessions you deleted in the app so they stop setting records, and re-derives
+everything if the volume logic changes. See
+[docs/session-stats-cron.md](docs/session-stats-cron.md).
+
+### Off-machine training
+
+Training away from the Gym Monster — hotel gyms, free weights, a garage rack — counts here.
+
+Speediance's own manual log makes the day count towards your streak, days trained, minutes and
+calories, but it stores **no exercises**, and they cannot be pushed in: the session-save route
+is an update into a row the machine itself creates, so a workout that never ran on the hardware
+cannot be written at all. The exercise detail therefore lives in your own store.
+
+![off-machine](docs/img/offmachine.png)
+
+- **Log a session at `/offmachine`** — enter it the way you'd write it down ("3 × 10 @ 40") and
+  it expands to one record per set. Backdating is fine, so a whole trip can be caught up at once.
+- **Movements resolve to the Speediance library**, which is what lets a hotel dumbbell press
+  count towards volume-by-muscle and set a personal best exactly like a machine set. A movement
+  Speediance doesn't stock is still logged, and flagged as unattributable rather than dropped.
+- **Counted everywhere it should be** — streak, days trained, the activity strip, week totals,
+  volume by muscle, personal bests, and as its own row in History with a per-set breakdown.
+- **Always labelled.** Off-machine work is never passed off as machine data; a day trained both
+  ways reads as "machine + off-machine".
+- **Unilateral sets are not doubled**, and bodyweight work is recorded rather than refused.
+
+Click a date to see exactly what was done, set by set:
+
+![off-machine detail](docs/img/offmachine-detail.png)
+
+In History, off-machine days sit in date order alongside machine sessions — and a day you also
+logged in the Speediance app appears once, not twice:
+
+![history with off-machine days](docs/img/history-offmachine.png)
 
 ### Workout history and performance insight
 
@@ -272,21 +335,78 @@ plan, and the old name sent people looking for scheduling in the wrong place.)
 
 ---
 
+## Companion project: speediance-mcp
+
+**[speediance-mcp](https://github.com/labatt/speediance-mcp)** is a separate, free MCP server
+that lets **Claude** read and manage the same training data — in Claude Desktop, Claude Code,
+or on claude.ai. The two projects are independent and each works alone.
+
+|  | This web app | speediance-mcp |
+|---|---|---|
+| Interface | Browser UI you click through | Conversation with Claude |
+| Best at | Charts, the workout builder, scanning history, schedule grids | Asking questions, planning, "log what I did at the hotel" |
+| Builds workouts | Visual builder + in-app AI generation | Claude creates and edits them for you |
+| Personal bests | Dashboard cards, all-time, cached | — (no records tool) |
+| Off-machine logging | `/offmachine` form | `log_off_machine_workout` in chat |
+| Coaching memory | Avoided exercises | Full curated facts: injuries, goals, schedule, equipment |
+| Runs as | A Flask site you host | A local process Claude launches, or a remote server |
+
+**You can run either on its own.** Neither imports the other and neither calls the other over
+the network.
+
+**If you run both, they share one SQLite file** at
+`~/.config/speediance-mcp/speediance-mcp.db`, so they can never disagree:
+
+- Exercises you mark **avoided** in one are respected by the other.
+- **Off-machine workouts** logged by Claude appear on this app's dashboard, history and
+  personal bests immediately — and vice versa.
+- Owned/unusable **equipment** and coaching preferences are shared.
+
+Each project declares the shared tables identically and a test fails if the two definitions
+ever drift. The web app is what populates the personal-best cache; the MCP server does not
+need it and works fine without it.
+
+> **Client types matter when running both.** Speediance allows one live session per *client
+> type*, so point the two at different types — e.g. this app on `bike` and the MCP on `nano` —
+> or signing in with one will sign the other out. See [Signing in](#signing-in) below.
+
+---
+
 ## Setup
 
-Copy the templates and fill them in — never commit the real files:
+**Requirements:** Python 3.10+ and a Speediance account.
+
+**1. Get the code and install dependencies** (a virtual environment keeps it off your system
+Python):
 
 ```bash
-cp config.example.json config.json     # or use the Settings page to log in
-cp .env.example .env
+git clone https://github.com/labatt/speediance-smartgym-workout-manager.git
+cd speediance-smartgym-workout-manager
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Install and run:
+**2. Create your config** — copy the templates and fill them in. **Never commit the real
+files**; both are gitignored:
 
 ```bash
-pip install -r requirements.txt
+cp config.example.json config.json     # or just use the Settings page to log in
+cp .env.example .env                   # only needed for the AI features
+```
+
+**3. Run it:**
+
+```bash
 python app.py                          # http://localhost:5001
 ```
+
+Then open <http://localhost:5001>, go to **Settings**, and sign in — read
+[Signing in](#signing-in) first, because the client type you choose decides whether you get
+signed out of your phone or your machine.
+
+**4. Optional — keep the personal-best cache current.** It fills itself as you use the app; a
+weekly cron also catches sessions deleted in the Speediance app. See
+[docs/session-stats-cron.md](docs/session-stats-cron.md).
 
 For a long-running deployment, serve the Flask app with a WSGI server rather than
 `python app.py` (which enables the debug server), and run a **single worker** — the app holds
