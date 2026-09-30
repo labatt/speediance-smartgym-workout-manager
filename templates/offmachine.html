@@ -63,6 +63,24 @@
     </div>
 </div>
 
+<!-- What was done on one day. Opened by clicking a date; the card keeps the summary. -->
+<div id="dayModal" role="dialog" aria-modal="true" aria-labelledby="dayModalTitle"
+     class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 rounded-lg shadow-xl border border-gray-700 w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-800">
+            <div>
+                <h3 id="dayModalTitle" class="text-lg font-bold text-white"></h3>
+                <p id="dayModalSub" class="text-xs text-gray-500 mt-0.5"></p>
+            </div>
+            <button type="button" id="dayModalClose" aria-label="Close"
+                    class="text-gray-500 hover:text-white p-1 -mr-1 flex-shrink-0">
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div id="dayModalBody" class="p-4 overflow-y-auto space-y-4"></div>
+    </div>
+</div>
+
 <datalist id="exerciseNames">
     {% for ex in exercises %}<option data-id="{{ ex.id }}" value="{{ ex.name }}"></option>{% endfor %}
 </datalist>
@@ -169,27 +187,96 @@ document.getElementById('logForm').addEventListener('submit', async (ev) => {
 
 const fmt = n => Math.round(n || 0).toLocaleString();
 
-function setSummary(ex) {
-    /* "3 x 10 @ 40" when the sets match, otherwise each set spelled out — collapsing
-       genuinely different sets into an average would hide the actual session. */
-    const reps = ex.finishedReps || [];
-    const load = s => (s.trainingInfoDetail.weights[0] ?? s.trainingInfoDetail.leftWeights[0]
-                       ?? s.trainingInfoDetail.rightWeights[0] ?? 0);
-    const same = reps.every(s => s.finishedCount === reps[0].finishedCount
-                                 && load(s) === load(reps[0]));
-    const suffix = w => w ? ` @ ${w} ${esc(UNIT)}` : ' bodyweight';
-    if (same && reps.length) {
-        return `${reps.length} x ${reps[0].finishedCount}${suffix(load(reps[0]))}`;
-    }
-    return reps.map(s => `${s.finishedCount}${suffix(load(s))}`).join(', ');
+/* A set's load, from whichever side array carries it. Off-machine sets put a two-handed
+   lift in `weights` and a single-arm one in the matching side array, so all three are
+   checked rather than assuming one. */
+const setLoad = s => (s.trainingInfoDetail.weights[0] ?? s.trainingInfoDetail.leftWeights[0]
+                      ?? s.trainingInfoDetail.rightWeights[0] ?? 0);
+
+const SIDE_LABEL = { 1: 'left', 2: 'right' };
+
+function exerciseVolume(ex) {
+    return (ex.finishedReps || []).reduce((total, s) => total + s.finishedCount * setLoad(s), 0);
 }
 
-function sideNote(ex) {
-    const sides = new Set((ex.finishedReps || []).map(s => s.leftRight));
-    if (sides.size === 1 && sides.has(1)) return ' <span class="text-cyan-400">left only</span>';
-    if (sides.size === 1 && sides.has(2)) return ' <span class="text-cyan-400">right only</span>';
-    return '';
+let SESSIONS_BY_DAY = new Map();
+let lastOpener = null;   // so focus returns where it came from when the modal closes
+
+function openDay(day) {
+    const s = SESSIONS_BY_DAY.get(day);
+    if (!s) return;
+    lastOpener = document.activeElement;
+
+    document.getElementById('dayModalTitle').textContent = day;
+    const bits = [`${s.exerciseCount} exercise${s.exerciseCount === 1 ? '' : 's'}`,
+                  `${s.setCount} set${s.setCount === 1 ? '' : 's'}`,
+                  `${fmt(s.volume)} ${UNIT} total`];
+    if (s.location) bits.push(s.location);
+    // textContent, not innerHTML: location is free text the user typed.
+    document.getElementById('dayModalSub').textContent = bits.join(' · ') + ' · off-machine';
+
+    /* Per-SET rows here rather than the card's collapsed "3 x 10 @ 40" — seeing the
+       individual sets is the reason to open this at all. */
+    document.getElementById('dayModalBody').innerHTML = (s.exercises || []).map(ex => {
+        const sets = ex.finishedReps || [];
+        const unilateral = sets.some(st => st.leftRight === 1 || st.leftRight === 2);
+        return `
+        <div>
+            <div class="flex items-baseline justify-between gap-3 mb-1.5">
+                <h4 class="text-sm font-semibold text-gray-100">${esc(ex.actionLibraryName)}${
+                    ex.actionLibraryGroupId === null
+                        ? ' <span class="text-[10px] font-normal text-amber-500" title="Not in the Speediance library, so it can&#39;t be attributed to muscles">unmatched</span>'
+                        : ''}</h4>
+                <span class="text-xs text-gray-500 whitespace-nowrap">${fmt(exerciseVolume(ex))} ${esc(UNIT)}</span>
+            </div>
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="text-gray-600 text-left">
+                        <th class="font-normal py-1 w-12">Set</th>
+                        <th class="font-normal py-1">Reps</th>
+                        <th class="font-normal py-1">Weight</th>
+                        ${unilateral ? '<th class="font-normal py-1">Side</th>' : ''}
+                    </tr>
+                </thead>
+                <tbody class="text-gray-300">
+                    ${sets.map((st, i) => `
+                        <tr class="border-t border-gray-800">
+                            <td class="py-1 text-gray-500">${i + 1}</td>
+                            <td class="py-1 tabular-nums">${st.finishedCount}</td>
+                            <td class="py-1 tabular-nums">${setLoad(st) ? `${fmt(setLoad(st))} ${esc(UNIT)}`
+                                                                        : '<span class="text-gray-500">bodyweight</span>'}</td>
+                            ${unilateral ? `<td class="py-1 text-cyan-400">${esc(SIDE_LABEL[st.leftRight] || 'both')}</td>` : ''}
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+            ${(ex.notes || []).length
+                ? `<p class="text-[11px] text-gray-500 mt-1.5">${(ex.notes || []).map(esc).join(' · ')}</p>`
+                : ''}
+        </div>`;
+    }).join('') || '<p class="text-sm text-gray-500">No exercises recorded for this day.</p>';
+
+    const modal = document.getElementById('dayModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('dayModalClose').focus();
 }
+
+function closeDay() {
+    const modal = document.getElementById('dayModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    if (lastOpener && lastOpener.isConnected) lastOpener.focus();
+    lastOpener = null;
+}
+
+document.getElementById('dayModalClose').addEventListener('click', closeDay);
+// Backdrop only — a click inside the panel must not dismiss it.
+document.getElementById('dayModal').addEventListener('click', ev => {
+    if (ev.target === ev.currentTarget) closeDay();
+});
+document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && !document.getElementById('dayModal').classList.contains('hidden')) closeDay();
+});
 
 async function loadLog() {
     const el = document.getElementById('log');
@@ -203,11 +290,17 @@ async function loadLog() {
                             past dates are fine, so you can backfill a trip.</p>`;
             return;
         }
+        // Keyed by day so the modal renders from the data, not by scraping the card back
+        // out of the DOM.
+        SESSIONS_BY_DAY = new Map(sessions.map(s => [s.day, s]));
+
         el.innerHTML = sessions.map(s => `
             <div class="rounded-lg border border-gray-800 bg-gray-900 p-3">
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
-                        <span class="text-sm font-semibold text-white">${esc(s.day)}</span>
+                        <button type="button" data-day="${esc(s.day)}"
+                                class="openDay text-sm font-semibold text-white hover:text-cyan-300 underline decoration-gray-700 decoration-dotted underline-offset-4 hover:decoration-cyan-400"
+                                title="See what was done on ${esc(s.day)}">${esc(s.day)}</button>
                         ${s.location ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-cyan-400 border border-gray-700">${esc(s.location)}</span>` : ''}
                         <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-900">off-machine</span>
                     </div>
@@ -217,17 +310,10 @@ async function loadLog() {
                         <button type="button" data-day="${esc(s.day)}" class="rmDay text-xs text-gray-600 hover:text-red-400">Delete</button>
                     </div>
                 </div>
-                <div class="divide-y divide-gray-800">
-                    ${(s.exercises || []).map(ex => `
-                        <div class="flex items-baseline justify-between gap-3 py-1.5">
-                            <span class="text-sm text-gray-200">${esc(ex.actionLibraryName)}${
-                                ex.actionLibraryGroupId === null
-                                    ? ' <span class="text-[10px] text-amber-500" title="Not in the Speediance library, so it can&#39;t be attributed to muscles">unmatched</span>'
-                                    : ''}${sideNote(ex)}</span>
-                            <span class="text-xs text-gray-400 whitespace-nowrap">${setSummary(ex)}</span>
-                        </div>`).join('')}
-                </div>
             </div>`).join('');
+
+        el.querySelectorAll('.openDay').forEach(btn =>
+            btn.addEventListener('click', () => openDay(btn.dataset.day)));
 
         el.querySelectorAll('.rmDay').forEach(btn => btn.addEventListener('click', async () => {
             if (btn.dataset.confirm !== '1') {
