@@ -234,7 +234,20 @@ class TestAssessmentSystemPrompt(unittest.TestCase):
         self.assertIn("outranks every sensor metric", s)
         self.assertIn("most sessions are not rated", s)
         self.assertIn("never invent", s)
-        self.assertIn("muscle region", s)
+
+    def test_organised_by_finding_not_by_body_part(self):
+        """The assessment reads "where you are strong" first, muscle groups nested under it.
+
+        Grouping by muscle region put a separate strong/improving/plateauing breakdown under
+        every body part, which buried the actual findings.
+        """
+        s = coach.ASSESSMENT_SYSTEM_PROMPT.lower()
+        self.assertIn("organise by finding, not by body part", s)
+        for section in ("### where you are strong", "### where you are improving",
+                        "### where you are plateauing or regressing",
+                        "### where you are weak or lagging", "### what to change next"):
+            self.assertIn(section, s)
+        self.assertIn("never put an exercise at the same level as its muscle group", s)
 
 
 class TestUnitLabelling(unittest.TestCase):
@@ -387,6 +400,31 @@ class TestNonDeviceAndOpeningSetHandling(unittest.TestCase):
         sets = [{"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
                  "rest": 60, "left_reps": 12, "right_reps": 12},
                 {"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 8}]
+        line = coach._exercise_line(self._ex(name="Row", kind="reps", sets=sets), {}, {}, "lbs")
+        self.assertIn("uneven sides (12L/8R)", line)
+
+    def test_alternating_unilateral_sets_are_not_called_an_imbalance(self):
+        """1L/11R then 11L/1R is one side per set, by design — not an asymmetry.
+
+        Seen live: the coach reported "severe side-to-side execution discrepancies" for a
+        cable kickback that was simply alternating sides. A real imbalance needs both sides
+        worked within the SAME set.
+        """
+        sets = [{"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 12, "right_reps": 12},
+                {"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 1, "right_reps": 11},
+                {"done": 12, "target": 12, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 11, "right_reps": 1}]
+        line = coach._exercise_line(self._ex(name="Kickback", kind="reps", sets=sets), {}, {}, "lbs")
+        self.assertNotIn("uneven", line)
+
+    def test_a_genuine_within_set_imbalance_still_reports(self):
+        """Both sides doing real work, but unequally — that is the finding worth keeping."""
+        sets = [{"done": 20, "target": 20, "load": 20, "skipped": False, "seconds": 40,
+                 "rest": 60, "left_reps": 10, "right_reps": 10},
+                {"done": 20, "target": 20, "load": 20, "skipped": False, "seconds": 40,
                  "rest": 60, "left_reps": 12, "right_reps": 8}]
         line = coach._exercise_line(self._ex(name="Row", kind="reps", sets=sets), {}, {}, "lbs")
         self.assertIn("uneven sides (12L/8R)", line)

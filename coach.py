@@ -493,10 +493,18 @@ def _exercise_line(e, notes, cmp_by=None, unit=""):
     # and reporting it had the coach inventing an imbalance from a setup artefact. A genuine
     # imbalance shows up once the athlete is actually working, so unevenness is only
     # believed from set 2 onwards.
+    #
+    # A SINGLE-SIDED SET is not an imbalance either. Alternating unilateral work records as
+    # 1L/11R on one set and 11L/1R on the next — one side per set, by design — and reporting
+    # that had the coach calling it "severe side-to-side execution discrepancies". A genuine
+    # imbalance needs BOTH sides worked in the SAME set, so a set where one side carries
+    # nearly everything is read as that side's set and skipped.
     uneven = ""
     lopsided = [s for s in worked[1:]
                 if s.get("left_reps") and s.get("right_reps")
-                and s["left_reps"] != s["right_reps"]]
+                and s["left_reps"] != s["right_reps"]
+                and min(s["left_reps"], s["right_reps"])
+                    >= 0.25 * (s["left_reps"] + s["right_reps"])]
     if lopsided:
         uneven = ", uneven sides (" + ", ".join(
             f"{s['left_reps']}L/{s['right_reps']}R" for s in lopsided) + ")"
@@ -559,13 +567,39 @@ Rules you must follow:
 - Judge trends only from the dated facts: an exercise's load or reps rising across sessions is improvement; falling or stalling with hard or failed sets is regression or a plateau.
 - Prefer 'hold' over churn — most exercises should stay put.
 
-Structure your assessment, grouped by muscle region, to cover:
-- Where the athlete is STRONG.
-- Where the athlete is WEAK or lagging.
-- Where they are IMPROVING (cite the dated trend).
-- Where they are REGRESSING or PLATEAUING.
-- Where to INCREASE weight or resistance next — name the exercise and the felt/factual basis.
-- Any other observations (imbalances, missed reps, form or range notes).
+STRUCTURE — organise by FINDING, not by body part. Use these sections in this order, as
+markdown headings, and inside each one list the muscle groups as top-level bullets with the
+exercises INDENTED BENEATH them. Follow this layout exactly:
+
+### Where you are strong
+- **Back & Traps**
+  - Seated Barbell Row: what the facts show, with the dates and numbers you relied on.
+  - Seated Barbell Lat Pulldown: ...
+- **Chest**
+  - Incline Barbell Bench Press: ...
+
+### Where you are improving
+(same shape — cite the dated trend that shows the improvement)
+
+### Where you are plateauing or regressing
+(same shape)
+
+### Where you are weak or lagging
+(same shape)
+
+### Other observations
+(imbalances, missed reps, form or range notes — same shape; omit the section if there is nothing worth saying)
+
+### What to change next
+1. **Exercise name** — the change, and the evidence behind it in one sentence.
+2. ...
+
+Formatting rules:
+- A section heading is a markdown heading (###), never a bullet.
+- A muscle group is a top-level bullet in **bold**; its exercises are indented two spaces beneath it.
+- Never put an exercise at the same level as its muscle group.
+- Omit any section that has nothing in it rather than padding it.
+- Keep "What to change next" to at most 3 numbered items, each naming an exercise.
 
 Be concise and specific. Cite exercises by name and cite the facts you rely on."""
 

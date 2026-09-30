@@ -21,8 +21,35 @@ function coachMarkdown(md) {
         /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line);
 
     const lines = (md || '').split('\n');
-    let html = '', listType = '';
-    const close = () => { if (listType) { html += `</${listType}>`; listType = ''; } };
+    let html = '';
+    // A STACK of open lists, so indented bullets actually nest. The old version matched
+    // `^\s*[-*+]\s+` and threw the indent away, so every sub-bullet rendered at the same
+    // level as its parent — which is why a section header and the exercises under it came
+    // out as one flat list.
+    const stack = [];            // [{ type: 'ul'|'ol', indent: <spaces> }]
+    const openList = type =>
+        `<${type} class="${type === 'ul' ? 'list-disc' : 'list-decimal'} ml-5 space-y-0.5 mb-1">`;
+    const close = () => {
+        while (stack.length) { html += `</li></${stack.pop().type}>`; }
+    };
+    const indentOf = line => line.match(/^[ \t]*/)[0].replace(/\t/g, '    ').length;
+    const item = (type, indent, content) => {
+        while (stack.length && indent < stack[stack.length - 1].indent) {
+            html += `</li></${stack.pop().type}>`;
+        }
+        const top = stack[stack.length - 1];
+        if (!top || indent > top.indent) {
+            // Deeper: the parent <li> stays open and the nested list lives inside it.
+            html += openList(type);
+            stack.push({ type, indent });
+        } else if (top.type !== type) {
+            html += `</li></${stack.pop().type}>` + openList(type);
+            stack.push({ type, indent });
+        } else {
+            html += '</li>';     // same level: close the previous item
+        }
+        html += `<li>${inline(content)}`;   // left open so a child list can nest inside
+    };
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].replace(/\s+$/, '');
@@ -53,14 +80,8 @@ function coachMarkdown(md) {
         if (/^---+$/.test(trimmed)) { close(); html += '<hr class="border-gray-700 my-2">'; continue; }
         let m;
         if ((m = line.match(/^(#{1,4})\s+(.*)$/))) { close(); html += `<div class="font-bold text-indigo-100 mt-2 mb-1">${inline(m[2])}</div>`; continue; }
-        if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {
-            if (listType !== 'ul') { close(); html += '<ul class="list-disc ml-5 space-y-0.5 mb-1">'; listType = 'ul'; }
-            html += `<li>${inline(m[1])}</li>`; continue;
-        }
-        if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
-            if (listType !== 'ol') { close(); html += '<ol class="list-decimal ml-5 space-y-0.5 mb-1">'; listType = 'ol'; }
-            html += `<li>${inline(m[1])}</li>`; continue;
-        }
+        if ((m = line.match(/^[ \t]*[-*+]\s+(.*)$/))) { item('ul', indentOf(line), m[1]); continue; }
+        if ((m = line.match(/^[ \t]*\d+\.\s+(.*)$/))) { item('ol', indentOf(line), m[1]); continue; }
         close();
         html += `<p class="mb-1.5">${inline(line)}</p>`;
     }
