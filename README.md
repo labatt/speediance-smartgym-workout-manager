@@ -1,4 +1,7 @@
-# Unofficial SmartGym Workout Manager
+# SmartGym Workout Manager for Speediance
+
+> **Unofficial.** Not affiliated with or endorsed by Speediance. It uses the private API behind
+> the Speediance app, which can change without notice. Use at your own risk.
 
 A desktop/web manager for the Speediance Gym Monster: browse the exercise library, build and
 edit custom workouts, schedule them, generate workouts with an AI assistant, and review your
@@ -18,9 +21,6 @@ This fork exists to do two things:
 See **[CHANGELOG.md](CHANGELOG.md)** for the release notes and
 **[docs/API-NOTES.md](docs/API-NOTES.md)** for the API's data model, including the traps that
 caused the bugs fixed here.
-
-> **Unofficial.** Not affiliated with or endorsed by Speediance. It uses the private API behind
-> the Speediance app, which can change without notice. Use at your own risk.
 
 ![dashboard](docs/img/dashboard.png)
 
