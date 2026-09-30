@@ -139,6 +139,13 @@
     let historyData = null;
     let currentDetailPayload = null;
 
+    // This page builds most of its DOM with innerHTML. Values are not trusted: exercise
+    // names come from Speediance, workout titles are written by Claude through the MCP
+    // server, and off-machine exercise names are typed by hand. Anything interpolated
+    // into markup goes through esc() — the same helper dashboard.html and progress.html use.
+    const esc = s => String(s ?? '').replace(/[&<>"']/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
     // Type labels and detail endpoint mapping
     const TYPE_MAP = {
         1: { label: 'Free Lift', color: 'text-gray-400', detailType: 'free' },
@@ -901,12 +908,33 @@
                 renderCardioPanel(session);   // fills #detailExercises with stats (+ trend in Task 6)
                 return;
             }
+            // An off-machine session isn't missing detail because of its type — Speediance
+            // simply stores none for a manual log. Say that, and offer the way to add it,
+            // rather than the generic "only Program and Custom" line.
+            if (data.note) {
+                container.innerHTML = `
+                    <div class="text-center py-6 text-gray-500">
+                        <p class="text-sm">${esc(data.note)}</p>
+                        <a href="/offmachine" class="inline-block mt-3 px-3 py-1.5 rounded text-xs
+                           bg-gray-800 border border-gray-700 text-cyan-400 hover:text-white">Log the exercises</a>
+                    </div>`;
+                return;
+            }
             container.innerHTML = `
                 <div class="text-center py-6 text-gray-500">
                     <p>No exercise breakdown available for this session type.</p>
                     <p class="text-xs mt-1">Detailed data is available for Program and Custom workouts.</p>
                 </div>`;
             return;
+        }
+
+        // Detail that came from our own off-machine log, not the machine. Never let it
+        // pass as recorded machine data.
+        if (data.source === 'offmachine') {
+            container.innerHTML = `
+                <div class="mb-3 rounded border border-cyan-900 bg-cyan-950/40 px-3 py-2 text-xs text-cyan-300">
+                    ${esc(data.note || 'Exercise detail from your off-machine log.')}
+                </div>`;
         }
 
         exercises.forEach(ex => {
@@ -1083,7 +1111,7 @@
                 <div class="p-3 flex items-center gap-3 border-b border-gray-700/50">
                     <div class="flex-grow">
                         <div class="flex items-center">
-                            <span class="font-bold text-sm text-white">${name}</span>
+                            <span class="font-bold text-sm text-white">${esc(name)}</span>
                             ${ratingHtml}
                         </div>
                         <div class="flex gap-3 mt-0.5">

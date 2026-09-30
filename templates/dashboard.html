@@ -279,7 +279,7 @@ const whenLabel = d => d === 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`;
 function renderRecords(records) {
     const cards = [];
     records.forEach(r => (r.kinds || []).forEach(k =>
-        cards.push({ exercise: r.exercise, groupId: r.groupId, ...k })));
+        cards.push({ exercise: r.exercise, groupId: r.groupId, offMachine: r.offMachine, ...k })));
     if (!cards.length) return;
     cards.sort((a, b) => a.daysAgo - b.daysAgo);
 
@@ -304,6 +304,7 @@ function renderRecords(records) {
                 <span class="text-[10px] px-1.5 py-0.5 rounded ${style.chip}">${esc(style.short)}</span>
             </div>
             <p class="text-xs font-semibold text-white leading-snug line-clamp-2">${esc(c.exercise)}</p>
+            ${c.offMachine ? '<p class="text-[9px] text-cyan-400 -mt-1">off-machine</p>' : ''}
             <div class="mt-auto">
                 <p class="text-lg font-bold text-white leading-none tabular-nums">${esc(value)}</p>
                 ${beat}

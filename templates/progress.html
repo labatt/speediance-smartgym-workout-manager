@@ -316,7 +316,12 @@ async function load(days) {
         status.className = 'text-sm text-gray-400 mb-4';
         return;
     }
-    status.textContent = `${data.sessions} session${data.sessions === 1 ? '' : 's'} in the last ${days} days.`;
+    // Off-machine days are counted separately from machine sessions rather than folded in:
+    // they are real training, but they are not sessions the machine recorded.
+    const offDays = data.offMachineDays
+        ? ` Plus ${data.offMachineDays} off-machine day${data.offMachineDays === 1 ? '' : 's'} (${data.offMachineSets} set${data.offMachineSets === 1 ? '' : 's'}).`
+        : '';
+    status.textContent = `${data.sessions} session${data.sessions === 1 ? '' : 's'} in the last ${days} days.${offDays}`;
     panel.classList.remove('hidden');
 
     drawFigure(document.getElementById('figFront'), FRONT, volumes, peak, data.unit);

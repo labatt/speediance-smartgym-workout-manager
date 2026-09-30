@@ -1,0 +1,259 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="mb-4">
+        <h1 class="text-2xl font-bold text-white">Off-machine training</h1>
+        <p class="text-xs text-gray-500 mt-1">Hotel gyms, free weights, anywhere that isn't the Gym Monster.</p>
+    </div>
+
+    <div class="rounded border border-gray-800 bg-gray-900/60 p-3 mb-5 text-xs text-gray-400 leading-relaxed">
+        Speediance's own manual log already counts these days towards your
+        <span class="text-gray-200">streak, days trained, minutes and calories</span> — but it stores no
+        exercises, so there's nothing to show and nothing to beat. Log the movements here and they
+        join <span class="text-gray-200">volume by muscle</span> and
+        <span class="text-gray-200">personal bests</span> like any machine set.
+        Off-machine work stays labelled everywhere it appears.
+    </div>
+
+    <!-- ── entry ───────────────────────────────────────────────────────────── -->
+    <form id="logForm" class="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <label class="block">
+                <span class="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">Date</span>
+                <input type="date" id="day" required
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100">
+            </label>
+            <label class="block">
+                <span class="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">Where <span class="text-gray-600 normal-case">(optional)</span></span>
+                <input type="text" id="location" placeholder="hotel, garage, park…" maxlength="60"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100">
+            </label>
+            <label class="block">
+                <span class="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">Speediance session id <span class="text-gray-600 normal-case">(optional)</span></span>
+                <input type="number" id="trainingId" placeholder="link to a manual log"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100">
+            </label>
+        </div>
+
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-gray-200">Exercises</h2>
+            <span class="text-[11px] text-gray-500">Weights in {{ unit }}</span>
+        </div>
+
+        {# One row is "3 x 10 @ 40" — how a workout is actually written down. Add a second
+           row for the same movement when the sets weren't identical. #}
+        <div id="rows" class="space-y-2"></div>
+
+        <div class="flex flex-wrap items-center gap-2 mt-3">
+            <button type="button" id="addRow"
+                    class="px-3 py-1.5 rounded text-sm border border-gray-700 bg-gray-800 text-gray-300 hover:text-white">+ Add exercise</button>
+            <button type="submit" id="saveBtn"
+                    class="px-4 py-1.5 rounded text-sm bg-green-600 hover:bg-green-700 text-white font-semibold">Save workout</button>
+            <span id="formMsg" class="text-xs"></span>
+        </div>
+    </form>
+
+    <!-- ── logged ──────────────────────────────────────────────────────────── -->
+    <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-bold text-white">Logged off-machine work</h2>
+        <button type="button" id="reload" class="text-xs text-gray-500 hover:text-white">Refresh</button>
+    </div>
+    <div id="log" class="space-y-3">
+        <p class="text-sm text-gray-500">Loading…</p>
+    </div>
+</div>
+
+<datalist id="exerciseNames">
+    {% for ex in exercises %}<option data-id="{{ ex.id }}" value="{{ ex.name }}"></option>{% endfor %}
+</datalist>
+
+<script>
+// Values here are NOT trusted: exercise names come from Speediance, and the location and
+// notes are free text that round-trips through storage. Everything interpolated into
+// innerHTML goes through esc().
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const UNIT = {{ unit | tojson }};
+
+// name -> groupId, from the cached library. A name that isn't here is still loggable; it
+// just carries no group id, so it counts as trained but can't be attributed to muscles.
+const GROUP_IDS = new Map();
+document.querySelectorAll('#exerciseNames option').forEach(o =>
+    GROUP_IDS.set(o.value.toLowerCase(), Number(o.dataset.id)));
+
+const rowsEl = document.getElementById('rows');
+const msgEl = document.getElementById('formMsg');
+
+function addRow() {
+    const row = document.createElement('div');
+    row.className = 'offRow grid grid-cols-12 gap-2 items-center';
+    row.innerHTML = `
+        <input type="text" list="exerciseNames" placeholder="Exercise" required
+               class="exName col-span-12 sm:col-span-4 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100">
+        <input type="number" min="1" max="50" value="3" required title="Sets"
+               class="exSets col-span-3 sm:col-span-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 text-center">
+        <input type="number" min="1" max="500" value="10" required title="Reps per set"
+               class="exReps col-span-3 sm:col-span-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 text-center">
+        <input type="number" min="0" step="0.5" value="0" title="Weight (${esc(UNIT)}) — 0 for bodyweight"
+               class="exWeight col-span-3 sm:col-span-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100 text-center">
+        <select title="Side"
+                class="exSide col-span-3 sm:col-span-2 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-100">
+            <option value="both">Both</option>
+            <option value="left">Left only</option>
+            <option value="right">Right only</option>
+        </select>
+        <button type="button" class="rmRow col-span-12 sm:col-span-1 text-xs text-gray-500 hover:text-red-400">Remove</button>`;
+    row.querySelector('.rmRow').addEventListener('click', () => {
+        row.remove();
+        if (!rowsEl.children.length) addRow();
+    });
+    rowsEl.appendChild(row);
+}
+
+document.getElementById('addRow').addEventListener('click', addRow);
+
+/* "3 sets of 10" is one row on screen and three rows in the store: the store keeps one
+   record per SET, which is what lets a per-set personal best and per-set display work. */
+function collectSets() {
+    const out = [];
+    for (const row of rowsEl.querySelectorAll('.offRow')) {
+        const name = row.querySelector('.exName').value.trim();
+        if (!name) continue;
+        const count = Math.max(1, parseInt(row.querySelector('.exSets').value, 10) || 1);
+        const reps = parseInt(row.querySelector('.exReps').value, 10);
+        const weight = parseFloat(row.querySelector('.exWeight').value) || 0;
+        const side = row.querySelector('.exSide').value;
+        const groupId = GROUP_IDS.get(name.toLowerCase()) ?? null;
+        for (let i = 0; i < count; i++) out.push({ name, groupId, reps, weight, side });
+    }
+    return out;
+}
+
+document.getElementById('logForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const sets = collectSets();
+    if (!sets.length) {
+        msgEl.className = 'text-xs text-amber-400';
+        msgEl.textContent = 'Add at least one exercise.';
+        return;
+    }
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    msgEl.className = 'text-xs text-gray-400';
+    msgEl.textContent = 'Saving…';
+    try {
+        const resp = await fetch('/api/offmachine', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                day: document.getElementById('day').value,
+                location: document.getElementById('location').value.trim(),
+                trainingId: document.getElementById('trainingId').value || null,
+                sets,
+            }),
+        });
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.error || 'Could not save.');
+        msgEl.className = 'text-xs text-green-400';
+        msgEl.textContent = `Saved ${body.count} set${body.count === 1 ? '' : 's'}.`;
+        rowsEl.innerHTML = '';
+        addRow();
+        loadLog();
+    } catch (e) {
+        msgEl.className = 'text-xs text-red-400';
+        msgEl.textContent = e.message;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+const fmt = n => Math.round(n || 0).toLocaleString();
+
+function setSummary(ex) {
+    /* "3 x 10 @ 40" when the sets match, otherwise each set spelled out — collapsing
+       genuinely different sets into an average would hide the actual session. */
+    const reps = ex.finishedReps || [];
+    const load = s => (s.trainingInfoDetail.weights[0] ?? s.trainingInfoDetail.leftWeights[0]
+                       ?? s.trainingInfoDetail.rightWeights[0] ?? 0);
+    const same = reps.every(s => s.finishedCount === reps[0].finishedCount
+                                 && load(s) === load(reps[0]));
+    const suffix = w => w ? ` @ ${w} ${esc(UNIT)}` : ' bodyweight';
+    if (same && reps.length) {
+        return `${reps.length} x ${reps[0].finishedCount}${suffix(load(reps[0]))}`;
+    }
+    return reps.map(s => `${s.finishedCount}${suffix(load(s))}`).join(', ');
+}
+
+function sideNote(ex) {
+    const sides = new Set((ex.finishedReps || []).map(s => s.leftRight));
+    if (sides.size === 1 && sides.has(1)) return ' <span class="text-cyan-400">left only</span>';
+    if (sides.size === 1 && sides.has(2)) return ' <span class="text-cyan-400">right only</span>';
+    return '';
+}
+
+async function loadLog() {
+    const el = document.getElementById('log');
+    try {
+        const resp = await fetch('/api/offmachine');
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.error || 'Could not load.');
+        const sessions = body.sessions || [];
+        if (!sessions.length) {
+            el.innerHTML = `<p class="text-sm text-gray-500">Nothing logged yet. Add a workout above —
+                            past dates are fine, so you can backfill a trip.</p>`;
+            return;
+        }
+        el.innerHTML = sessions.map(s => `
+            <div class="rounded-lg border border-gray-800 bg-gray-900 p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold text-white">${esc(s.day)}</span>
+                        ${s.location ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-cyan-400 border border-gray-700">${esc(s.location)}</span>` : ''}
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-900">off-machine</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-gray-500">${s.exerciseCount} exercise${s.exerciseCount === 1 ? '' : 's'} ·
+                              ${s.setCount} set${s.setCount === 1 ? '' : 's'} · ${fmt(s.volume)} ${esc(UNIT)}</span>
+                        <button type="button" data-day="${esc(s.day)}" class="rmDay text-xs text-gray-600 hover:text-red-400">Delete</button>
+                    </div>
+                </div>
+                <div class="divide-y divide-gray-800">
+                    ${(s.exercises || []).map(ex => `
+                        <div class="flex items-baseline justify-between gap-3 py-1.5">
+                            <span class="text-sm text-gray-200">${esc(ex.actionLibraryName)}${
+                                ex.actionLibraryGroupId === null
+                                    ? ' <span class="text-[10px] text-amber-500" title="Not in the Speediance library, so it can&#39;t be attributed to muscles">unmatched</span>'
+                                    : ''}${sideNote(ex)}</span>
+                            <span class="text-xs text-gray-400 whitespace-nowrap">${setSummary(ex)}</span>
+                        </div>`).join('')}
+                </div>
+            </div>`).join('');
+
+        el.querySelectorAll('.rmDay').forEach(btn => btn.addEventListener('click', async () => {
+            if (btn.dataset.confirm !== '1') {
+                btn.dataset.confirm = '1';
+                btn.textContent = 'Really delete?';
+                btn.className = 'rmDay text-xs text-red-400 font-semibold';
+                return;
+            }
+            await fetch(`/api/offmachine/day/${encodeURIComponent(btn.dataset.day)}`, { method: 'DELETE' });
+            loadLog();
+        }));
+    } catch (e) {
+        el.innerHTML = `<p class="text-sm text-red-400">${esc(e.message)}</p>`;
+    }
+}
+
+document.getElementById('reload').addEventListener('click', loadLog);
+/* The LOCAL date, deliberately not toISOString(): that returns UTC, so any evening
+   workout west of Greenwich would default to tomorrow and be filed on the wrong day. */
+const today = new Date();
+document.getElementById('day').value = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+].join('-');
+addRow();
+loadLog();
+</script>
+{% endblock %}

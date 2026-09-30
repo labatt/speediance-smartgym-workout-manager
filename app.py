@@ -15,6 +15,8 @@ from accessories import dedupe_accessories
 from profile_view import profile_summary
 import equipment_store
 import facts_store
+import offmachine
+import offmachine_store
 import cardio_page
 import dashboard as dashboard_calc
 import connections_store
@@ -285,9 +287,33 @@ def api_dashboard_records():
             rows = payload.get('data')
             if isinstance(rows, list) and rows:
                 stats[name] = rows
+        # Off-machine work can set a personal best too, so its stats rows are merged in
+        # before the scan rather than after: a day trained both on and off the machine
+        # has to become ONE row, or the scan sees the same day twice and reports half of
+        # it as the record and half as what it beat.
+        off_sets = offmachine_store.list_sets(client.credentials,
+                                              (today - datetime.timedelta(days=365)).isoformat(),
+                                              today.isoformat())
+        off_stats = offmachine.stat_rows(off_sets)
+        # A movement done off the machine may have machine history that this scan has not
+        # fetched, because `movements` only covers the last few sessions. Merging without
+        # it would compare an off-machine best against a partial baseline and announce a
+        # record the machine history disproves. So pull the real history for exactly the
+        # off-machine movements we are about to merge, by the group id the set carries.
+        for name, gid in offmachine.group_ids(off_sets).items():
+            if name in stats or gid is None or len(stats) >= PR_MAX_EXERCISES * 2:
+                continue
+            payload = client.get_user_action_stats(gid) or {}
+            rows = payload.get('data')
+            if isinstance(rows, list) and rows:
+                stats[name] = rows
+        stats = offmachine.merge_stats(stats, off_stats)
         found = dashboard_calc.personal_records(stats, today=today)
         for row in found:
             row["groupId"] = movements.get(row["exercise"])
+            # Name the source so a hotel best is never shown as machine data.
+            sources = {k.get("source") for k in off_stats.get(row["exercise"], [])}
+            row["offMachine"] = bool(sources)
         return jsonify({"records": found})
     except Exception as e:
         if _is_auth_error(e):
@@ -2160,11 +2186,20 @@ def api_progress_muscles():
                     raise
                 continue  # one unreadable session must not empty the whole page
             exercises.extend(detail or [])
+        # Off-machine sets are adapted into the same session-detail shape, so they land
+        # in the same attribution pass. A hotel dumbbell press counts towards chest
+        # volume exactly like a machine set — Speediance cannot hold this detail
+        # (a manual session's freeTrainingDetail is empty), so it lives in our store.
+        off_sets = offmachine_store.list_sets(client.credentials, start.isoformat(),
+                                              end.isoformat())
+        exercises.extend(offmachine.as_exercises(off_sets))
         spread = attribute(exercises, index)
         by_muscle = spread["byMuscle"]
         return jsonify({
             "windowDays": days,
             "sessions": len(records),
+            "offMachineSets": len(off_sets),
+            "offMachineDays": len({r["day"] for r in off_sets}),
             "unit": _unit_label(),
             "attribution": "main muscle 100%, assisting muscle 50%",
             "byMuscle": [{"muscle": m, "volume": v} for m, v in
@@ -2206,13 +2241,112 @@ def api_session_rowing(training_id):
             return jsonify({"error": str(e)}), 401
         return jsonify({"error": str(e)}), 500
 
+@app.route('/offmachine')
+def offmachine_page():
+    """Log training done away from the machine, with the exercise detail Speediance drops.
+
+    The exercise list is handed to the page from the cached library, so picking a movement
+    costs no API call and yields its GROUP ID — which is what makes a hotel set count
+    towards volume-by-muscle and personal bests instead of being an inert note.
+    """
+    picker = []
+    try:
+        for raw in (client.get_library() or []):
+            if raw.get('id') and raw.get('name'):
+                picker.append({"id": int(raw['id']), "name": raw['name']})
+    except Exception as e:
+        if _is_auth_error(e):
+            # The local log still works without the API; only the picker degrades, so the
+            # page loads with free-text entry rather than bouncing to /settings.
+            pass
+        else:
+            print(f"Off-machine picker unavailable: {e}")
+    picker.sort(key=lambda ex: ex["name"])
+    return render_template('offmachine.html', exercises=picker, unit=_unit_label())
+
+
+# ---------------------------------------------------------------------------
+# Off-machine training.
+#
+# These routes deliberately do NOT require a Speediance token: the store is local and
+# needs no API call, so a hotel workout can still be logged while the token is expired
+# (which is exactly when someone is travelling). Access control is unchanged — nginx
+# basic auth sits in front of the whole app.
+
+OFFMACHINE_DEFAULT_WINDOW_DAYS = 120
+
+
+@app.route('/api/offmachine', methods=['GET', 'POST'])
+def api_offmachine():
+    """List or record off-machine sets — the exercise detail Speediance cannot store."""
+    if request.method == 'GET':
+        today = datetime.date.today()
+        start = request.args.get('start') or (
+            today - datetime.timedelta(days=OFFMACHINE_DEFAULT_WINDOW_DAYS)).isoformat()
+        end = request.args.get('end') or today.isoformat()
+        try:
+            sets = offmachine_store.list_sets(client.credentials, start, end)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        return jsonify({"sets": sets, "sessions": offmachine.sessions(sets),
+                        "unit": _unit_label()})
+
+    body = request.get_json(silent=True) or {}
+    try:
+        stored = offmachine_store.add_sets(
+            client.credentials, body.get('day'), body.get('sets') or [],
+            training_id=body.get('trainingId'), location=body.get('location') or '')
+    except ValueError as e:
+        # A rejected set is a 400, not a 500: the input was understood and refused.
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"sets": stored, "count": len(stored)})
+
+
+@app.route('/api/offmachine/<int:set_id>', methods=['DELETE'])
+def api_offmachine_delete_set(set_id):
+    if not offmachine_store.delete_set(client.credentials, set_id):
+        return jsonify({"error": "No such set."}), 404
+    return jsonify({"deleted": 1})
+
+
+@app.route('/api/offmachine/day/<day>', methods=['DELETE'])
+def api_offmachine_delete_day(day):
+    try:
+        removed = offmachine_store.delete_day(client.credentials, day)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"deleted": removed})
+
+
 @app.route('/api/history/detail/<int:training_id>')
 def api_history_detail(training_id):
     """Returns detailed info for a completed training session."""
     if not client.credentials.get("token"):
         return jsonify({"error": "Unauthorized"}), 401
-    training_type = request.args.get('type', 'custom')  # 'course' | 'custom' | 'ai' | 'free'
+    training_type = request.args.get('type', 'custom')  # 'course' | 'custom' | 'ai' | 'free' | 'manual'
     try:
+        if training_type == 'manual':
+            # Speediance stores no exercises for a manual session — freeTrainingDetail
+            # returns []. Whatever detail exists is ours, so serve that instead of an
+            # empty breakdown, and say plainly where it came from.
+            session_info = {}
+            try:
+                session_info = client.get_training_session_info(training_id) or {}
+            except Exception as se:
+                if _is_auth_error(se):
+                    raise
+            day = str(session_info.get("startTime") or "")[:10] or None
+            sets = offmachine_store.list_for_session(client.credentials,
+                                                     training_id=training_id, day=day)
+            return jsonify({"detail": offmachine.as_exercises(sets),
+                            "session": session_info,
+                            "source": "offmachine" if sets else "none",
+                            "note": ("Logged off the machine. Speediance holds the day, "
+                                     "duration and calories; the exercise breakdown is "
+                                     "from your own off-machine log.") if sets else
+                                    ("Logged off the machine through the Speediance app, "
+                                     "which stores no exercise detail. Add the movements "
+                                     "to see them here.")})
         detail = _session_detail(training_id, training_type)
         # Session info (name/duration/calories) is an optional summary fetched from a
         # course-specific endpoint that 403s for some Custom workouts. It must never take
