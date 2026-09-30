@@ -64,7 +64,21 @@ def _set_facts(kind, s):
     detail = s.get("trainingInfoDetail") or {}
     done = s.get("finishedCount") or 0
     target = s.get("targetCount") or 0
+    # Objective effort signals, present whether or not the athlete rated anything.
+    #
+    # NOTE ON `time`: for a rep-based set the API's `time` field is NOT a duration — it is
+    # equal to finishedCount in every set checked (31/31 on a real session). Feeding it as
+    # seconds made "10 reps in 10s" look like a pace, so a set with fewer reps read as
+    # faster. Real durations come from the per-rep FinishedTimes series instead, below.
+    fact_common = {
+        "rest": s.get("breakTime") or 0,
+        # Per-side rep counts: a unilateral movement that finishes 10 left and 7 right went
+        # uneven, which no single total can show.
+        "left_reps": s.get("leftCount") or 0,
+        "right_reps": s.get("rightCount") or 0,
+    }
     fact = {
+        **fact_common,
         "done": done,
         "target": target,
         "complete": done >= target and done > 0,
@@ -72,9 +86,9 @@ def _set_facts(kind, s):
     }
 
     if kind == "level":
-        # For Vita the "weight" the user set is the level; done/target are reps in a window.
-        levels = _nums(detail.get("weights"))  # 0s here; level lives elsewhere in save,
-        fact["seconds"] = s.get("time") or 0    # but the read side exposes time + counts.
+        # For Vita the "weight" the user set is the level; done/target are reps in a window,
+        # and here `time` IS the window the athlete was given, so it is meaningful.
+        fact["seconds"] = s.get("time") or 0
         fact["load"] = None
         return fact
 
@@ -99,6 +113,38 @@ def _set_facts(kind, s):
     else:
         fact["power_trend_pct"] = None
         fact["power_peak"] = None
+
+    # How long each rep actually took. This is the honest "are they slowing down" signal:
+    # `seconds` is the set's real working time, and `rep_slowdown_pct` is how much slower
+    # the closing reps were than the quickest one. Measured against the FASTEST rep rather
+    # than the first, because rep 1 is a ramp-in on this machine and would otherwise make a
+    # warming-up set look like it started slow.
+    rep_times = [t for t in _side_series(detail, "FinishedTimes") if t > 0]
+    if rep_times:
+        fact["seconds"] = round(sum(rep_times))
+        if len(rep_times) >= 4:
+            quickest = min(rep_times)
+            last2 = statistics.mean(rep_times[-2:])
+            fact["rep_slowdown_pct"] = (round((last2 - quickest) / quickest * 100, 1)
+                                        if quickest else None)
+        else:
+            fact["rep_slowdown_pct"] = None
+    else:
+        fact["seconds"] = 0
+        fact["rep_slowdown_pct"] = None
+
+    # Rope speed peak->last. Velocity loss within a set is the standard objective proxy for
+    # proximity to failure, and unlike power it is not skewed by one explosive rep to the
+    # same degree — but it is still only a trend, never a verdict. Same peak->last basis as
+    # power, for the same reason: rep 1 is a ramp-in, so first->last reads warming up as
+    # getting faster.
+    speeds = [v for v in _side_series(detail, "RopeSpeeds") if v > 0]
+    if len(speeds) >= 4:
+        peak = max(speeds)
+        last2 = statistics.mean(speeds[-2:])
+        fact["speed_trend_pct"] = round((peak - last2) / peak * 100, 1) if peak else None
+    else:
+        fact["speed_trend_pct"] = None
 
     roms = [a for a in _side_series(detail, "Amplitudes") if a > 0]
     fact["rom"] = round(statistics.mean(roms), 3) if roms else None

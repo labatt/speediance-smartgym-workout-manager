@@ -369,19 +369,71 @@ FEEL_WORDS = {
 
 SYSTEM_PROMPT = """You are a strength coach reading one training session on a Speediance cable machine.
 
+MOST SESSIONS ARE NOT RATED. The athlete rarely records how an exercise felt, and that is
+expected, not a problem. Your job is to make the best assessment you can from the objective
+data, which is always present. Never refuse to assess, never pad the answer with requests for
+information you don't have, and never say "without knowing how it felt I can't tell". You can
+tell a great deal — say what the data supports and how confident you are.
+
 Rules you must follow:
 - Use ONLY the facts given below. Never invent a number, a weight, or a rep count. If you cite a figure, it must appear in the facts.
-- The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort: a small muscle worked to a burn shows low flat power yet feels hard, and one explosive rep can look like fatigue. When a felt rating and a metric disagree, trust the felt rating and say so.
-- Recommend adding weight ONLY where the evidence agrees: every rep completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form scores are low or range is shrinking, say hold and fix form first, regardless of the numbers.
+- A felt rating, WHEN PRESENT, outranks every sensor metric. A power/velocity sensor cannot measure effort: a small muscle worked to a burn shows low flat power yet feels hard, and one explosive rep can look like fatigue. When a felt rating and a metric disagree, trust the felt rating and say so. When there is no rating, work from the objective signals below and say what you inferred.
 - For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
 - Loads are given in the athlete's own unit (labelled in the facts). Use that exact unit and never convert between kg and lb, and never assume a unit that is not stated.
-- Where an exercise was not rated, say what you'd want to know rather than guessing.
 - Be concise and specific. Group your read by muscle region. Prefer 'hold' over churn — most exercises should stay put most weeks.
-- End with at most 2-3 concrete suggestions, each naming the exercise and the felt/factual basis."""
+- End with at most 2-3 concrete suggestions, each naming the exercise and the evidence behind it.
+
+READING THE OBJECTIVE SIGNALS (use these when there is no felt rating):
+- REP COMPLETION is the strongest single signal. Every rep completed across every set means the load was manageable. Missed reps in the last set mean they reached their limit; missed reps in the FIRST set mean the load was too heavy from the start, which is a different problem.
+- SET DURATION is the real working time; compare it against the reps done, and across sets. More seconds for the same reps means they are grinding.
+- REP SLOWDOWN within a set ("reps +40% slower by the end") is how much longer the closing reps took than the quickest one. Small single figures are normal pacing; 30-50% means the set got genuinely hard; over 60% means they were grinding the last reps out.
+- REST TAKEN is what they actually needed, not what was prescribed. Rest climbing set to set is a fatigue signal even when every rep was completed.
+- SPEED TREND (rope speed, peak->last within a set) is the best objective proxy for how close a set came to failure: roughly under 10% is comfortable, 10-20% is a working set, over 25-30% means they were near their limit. POWER TREND is noisier — one explosive rep skews it — so weight it below speed.
+- PER-SIDE REP COUNTS and the bilateral-balance score show whether they went uneven. A unilateral movement finishing 10 left and 7 right is a real finding worth naming.
+- RANGE OF MOTION shrinking across sets means they are compensating as they tire — usually a stronger reason to hold the load than any completion figure.
+- FORM SCORES (force control, amplitude stability, out of 5) are the machine's own read. Low scores with everything else healthy usually means technique, not load.
+- CONVERGING signals are what justify a recommendation. All reps completed + flat set durations + small speed loss + solid form = ready for more. Any of rising durations, rising rest, big speed loss, shrinking range, or falling form scores = hold, and say which one made you say so."""
 
 
 def _feel(notes, name):
     return FEEL_WORDS.get((notes.get("exercises") or {}).get(name))
+
+
+def _felt_clause(notes, name):
+    """' Felt: hard.' when the athlete rated it, otherwise nothing at all.
+
+    Deliberately EMPTY when unrated. Printing 'Felt: not rated' on every line put the
+    absence in front of the model twenty times in one prompt, and it answered accordingly —
+    asking for ratings instead of reading the data it did have. Silence reads as normal,
+    which is what an unrated exercise is.
+    """
+    felt = (notes.get("exercises") or {}).get(name)
+    return f" Felt: {FEEL_WORDS[felt]}." if felt else ""
+
+
+def _set_clause(st, unit=""):
+    """One set as the coach sees it: what was done, how long it took, what it cost.
+
+    Duration and rest are always shown, because they are the signals that work without a
+    felt rating — the same reps taking longer, or needing more rest, is fatigue the machine
+    recorded without asking anyone.
+    """
+    u = f" {unit}" if unit else ""
+    parts = [f"{st['done']}/{st['target']} @ {st['load']:g}{u}"]
+    if st.get("seconds"):
+        parts.append(f"in {st['seconds']}s")
+    trends = []
+    if st.get("rep_slowdown_pct") is not None:
+        trends.append(f"reps {st['rep_slowdown_pct']:+.0f}% slower by the end")
+    if st.get("speed_trend_pct") is not None:
+        trends.append(f"speed {-st['speed_trend_pct']:+.0f}%")
+    if st.get("power_trend_pct") is not None:
+        trends.append(f"power {-st['power_trend_pct']:+.0f}%")
+    if st.get("rest"):
+        trends.append(f"rest {st['rest']}s")
+    if trends:
+        parts.append("(" + ", ".join(trends) + ")")
+    return " ".join(parts)
 
 
 def _exercise_line(e, notes, cmp_by=None, unit=""):
@@ -392,28 +444,47 @@ def _exercise_line(e, notes, cmp_by=None, unit=""):
     athlete's display unit, so this only LABELS them — it never converts. Without a label
     the model guesses (it printed kg for lbs data). Vita levels are never given a unit."""
     cmp_by = cmp_by or {}
-    felt = _feel(notes, e["name"])
+    felt = _felt_clause(notes, e["name"])
     if e["kind"] == "level":
         sets = ", ".join(f"{s['done']}/{s['target']} in {s.get('seconds','?')}s"
                          for s in e["sets"] if not s["skipped"])
-        return f"- {e['name']} (Vita, level-based): sets {sets}. Felt: {felt}."
+        return f"- {e['name']} (Vita, level-based): sets {sets}.{felt}"
     u = f" {unit}" if unit else ""
-    sets = ", ".join(
-        f"{s['done']}/{s['target']} @ {s['load']:g}{u}"
-        + (f" (power {s['power_trend_pct']:+.0f}% peak->last)" if s.get("power_trend_pct") is not None else "")
-        for s in e["sets"] if not s["skipped"]
-    )
+    worked = [s for s in e["sets"] if not s["skipped"]]
+    sets = ", ".join(_set_clause(s, unit) for s in worked)
+
     sc = e["scores"]
-    score_str = f"force {sc.get('force_control')}/5, amplitude-stability {sc.get('amplitude_stable')}/5"
+    score_bits = [f"force {sc.get('force_control')}/5",
+                  f"amplitude-stability {sc.get('amplitude_stable')}/5"]
+    # Balance is collected by the machine and was never shown to the coach, which left it
+    # unable to see the one thing it is asked about most: did they go uneven.
+    #
+    # A ZERO is "not applicable", not "catastrophic". Checked against live data: 0 appears
+    # only on unilateral movements (isLeftRight=1), which train one side at a time and have
+    # no left-vs-right balance to score; genuine bilateral movements score 2-5. Passing the
+    # 0 through had the coach reporting a severe imbalance that does not exist — the same
+    # mistake as printing "Felt: not rated", an absence dressed up as a measurement.
+    if sc.get("bilateral_balance"):
+        score_bits.append(f"left/right balance {sc['bilateral_balance']}/5")
+    score_str = ", ".join(score_bits)
+
     complete = "all reps completed" if e["all_complete"] else "MISSED some reps"
     rom = ""
     if e.get("rom_change_pct") is not None and abs(e["rom_change_pct"]) >= 8:
         rom = f", range {e['rom_change_pct']:+.0f}% across sets"
+    # Per-side counts only when they actually diverged — equal counts are noise.
+    uneven = ""
+    lopsided = [s for s in worked
+                if s.get("left_reps") and s.get("right_reps")
+                and s["left_reps"] != s["right_reps"]]
+    if lopsided:
+        uneven = ", uneven sides (" + ", ".join(
+            f"{s['left_reps']}L/{s['right_reps']}R" for s in lopsided) + ")"
     cmp = cmp_by.get(e["name"])
     vs = ""
     if cmp and cmp.get("load_delta") not in (None, 0):
         vs = f", top load {cmp['load_delta']:+g}{u} vs last session"
-    return f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{vs}. Felt: {felt}."
+    return f"- {e['name']}: {complete}. Sets {sets}. {score_str}{rom}{uneven}{vs}.{felt}"
 
 
 def build_prompt(snapshot, notes, comparison=None, unit=""):
@@ -424,8 +495,9 @@ def build_prompt(snapshot, notes, comparison=None, unit=""):
     notes = notes or {}
     lines = []
 
-    overall = FEEL_WORDS.get(notes.get("overall"))
-    lines.append(f"Overall the athlete rated the whole session: {overall}.")
+    if notes.get("overall"):
+        lines.append("Overall the athlete rated the whole session: "
+                     f"{FEEL_WORDS[notes['overall']]}.")
     if unit:
         lines.append(f"All loads are in {unit} (the athlete's unit). Use {unit}; do not convert.")
     if notes.get("note"):
@@ -440,8 +512,18 @@ def build_prompt(snapshot, notes, comparison=None, unit=""):
             lines.append(_exercise_line(e, notes, cmp_by, unit))
         lines.append("")
 
-    lines.append("Note: 'power peak->last' is a raw sensor trend, NOT a measure of effort or difficulty. "
-                 "Weight it far below the athlete's felt rating and rep completion.")
+    lines.append("Note: 'power' and 'speed' peak->last are raw sensor trends, NOT direct measures "
+                 "of effort. Weight them below rep completion, set duration and rest taken.")
+
+    # Say the rating thing ONCE, at the end, and only when something is actually unrated —
+    # never per exercise, and never instead of an assessment.
+    rated = set((notes.get("exercises") or {}).keys())
+    unrated = [e["name"] for e in snapshot["exercises"] if e["name"] not in rated]
+    if unrated:
+        lines.append(f"Note: {len(unrated)} of {len(snapshot['exercises'])} exercises were not "
+                     "rated by the athlete, which is normal. Assess them from the objective data "
+                     "above. You may close with ONE short line inviting them to rate exercises "
+                     "next time for a sharper read — do not raise it anywhere else.")
     return "\n".join(lines)
 
 
@@ -449,8 +531,9 @@ ASSESSMENT_SYSTEM_PROMPT = """You are a strength coach reviewing several trainin
 
 Rules you must follow:
 - Use ONLY the facts given below. Never invent a number, a weight, or a rep count. If you cite a figure, it must appear in the facts.
-- The athlete's own FELT rating outranks every sensor metric. A power/velocity sensor cannot measure effort. When a felt rating and a metric disagree, trust the felt rating and say so.
-- Recommend adding weight or resistance ONLY where the evidence agrees across the period: reps consistently completed AND the athlete felt it easy/too-easy AND the device's form scores are solid (roughly 4-5 of 5). If form is low or range is shrinking, say hold and fix form first.
+- MOST SESSIONS ARE NOT RATED, and that is expected. Assess from the objective data — rep completion, set durations, rest taken, speed and power trends, range of motion, left/right balance and the device's form scores. Never refuse to assess for want of a rating, and never pad the answer with requests for one.
+- A felt rating, WHEN PRESENT, outranks every sensor metric. A power/velocity sensor cannot measure effort. When a felt rating and a metric disagree, trust the felt rating and say so.
+- Recommend adding weight or resistance where the evidence agrees across the period: reps consistently completed, set durations and rest steady rather than creeping up, speed loss modest, and the device's form scores solid (roughly 4-5 of 5). A felt rating of easy/too-easy strengthens the case but is not required. If form is low, range is shrinking, or durations and rest are climbing, say hold and fix that first.
 - For "level" exercises (Vita), talk in LEVELS and seconds, never weight.
 - Loads are given in the athlete's own unit (labelled in the facts). Use that exact unit and never convert between kg and lb, and never assume a unit that is not stated.
 - Judge trends only from the dated facts: an exercise's load or reps rising across sessions is improvement; falling or stalling with hard or failed sets is regression or a plateau.

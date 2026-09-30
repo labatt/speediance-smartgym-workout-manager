@@ -14,10 +14,14 @@ SNAPSHOT = {
             "name": "Standing Leg Curl", "region": "Legs", "kind": "reps",
             "all_complete": True, "top_load": 15.5, "rom_change_pct": 2.0,
             "sets": [
-                {"done": 12, "target": 12, "load": 15.5, "power_trend_pct": 41.0, "skipped": False},
-                {"done": 10, "target": 10, "load": 12, "power_trend_pct": 8.0, "skipped": False},
+                {"done": 12, "target": 12, "load": 15.5, "power_trend_pct": 41.0, "skipped": False,
+                 "seconds": 40, "rest": 90, "speed_trend_pct": 18.0,
+                 "left_reps": 12, "right_reps": 9},
+                {"done": 10, "target": 10, "load": 12, "power_trend_pct": 8.0, "skipped": False,
+                 "seconds": 30, "rest": 60, "speed_trend_pct": 5.0,
+                 "left_reps": 10, "right_reps": 10},
             ],
-            "scores": {"force_control": 4, "amplitude_stable": 3, "bilateral_balance": None, "rating": 4},
+            "scores": {"force_control": 4, "amplitude_stable": 3, "bilateral_balance": 5, "rating": 4},
         },
         {
             "name": "Vita Pull", "region": "Core", "kind": "level",
@@ -39,8 +43,33 @@ class TestBuildPrompt(unittest.TestCase):
         self.assertIn("Felt: easy", self.p)
         self.assertIn("just right", self.p)
 
-    def test_unrated_exercise_marked_not_rated(self):
-        self.assertIn("Felt: not rated", self.p)
+    def test_an_unrated_exercise_says_nothing_about_feel(self):
+        """Silence, not "not rated".
+
+        Most sessions are never rated. Printing "Felt: not rated" on every line put the
+        absence in front of the model once per exercise, and it answered by asking for
+        ratings instead of reading the data it did have. An unrated exercise is the normal
+        case, so it reads as normal.
+        """
+        vita = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
+        self.assertNotIn("Felt", vita)
+        exercise_lines = [l for l in self.p.splitlines() if l.startswith("- ")]
+        self.assertFalse([l for l in exercise_lines if "not rated" in l],
+                         "the absence must not be repeated on every exercise line")
+
+    def test_objective_effort_signals_reach_the_model(self):
+        """Without a felt rating these are all the coach has, so they must be in the brief."""
+        line = [l for l in self.p.splitlines() if l.startswith("- Standing Leg Curl")][0]
+        self.assertIn("in 40s", line, "set duration — the same reps taking longer is fatigue")
+        self.assertIn("rest 90s", line, "rest actually taken, not what was prescribed")
+        self.assertIn("speed", line, "velocity loss is the best objective proximity-to-failure proxy")
+        self.assertIn("left/right balance 5/5", line, "the machine's own unevenness read")
+
+    def test_uneven_sides_are_named_only_when_they_diverge(self):
+        line = [l for l in self.p.splitlines() if l.startswith("- Standing Leg Curl")][0]
+        self.assertIn("uneven sides (12L/9R)", line)
+        vita = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
+        self.assertNotIn("uneven", vita, "equal or absent counts are noise")
 
     def test_vita_spoken_in_levels_not_weight(self):
         vita_line = [l for l in self.p.splitlines() if l.startswith("- Vita Pull")][0]
@@ -48,15 +77,29 @@ class TestBuildPrompt(unittest.TestCase):
         self.assertNotIn("@", vita_line)
 
     def test_power_trend_labelled_as_unreliable(self):
-        self.assertIn("NOT a measure of effort", self.p)
+        self.assertIn("NOT direct measures of effort", self.p)
 
 
 class TestSystemPromptGuardrails(unittest.TestCase):
     def test_encodes_the_core_lesson(self):
         s = coach.SYSTEM_PROMPT.lower()
-        self.assertIn("felt rating outranks", s)
+        self.assertIn("outranks every sensor metric", s)
         self.assertIn("never invent", s)
         self.assertIn("cannot measure effort", s)
+
+    def test_tells_the_coach_to_assess_without_a_felt_rating(self):
+        """The prompt used to make a rating a precondition for any recommendation.
+
+        "Recommend adding weight ONLY where ... the athlete felt it easy/too-easy AND ..."
+        is an AND that can never be satisfied when nothing is rated, so the coach was
+        structurally barred from saying anything useful about a normal session.
+        """
+        s = coach.SYSTEM_PROMPT.lower()
+        self.assertIn("most sessions are not rated", s)
+        self.assertIn("never refuse to assess", s)
+        for signal in ("rep completion", "set duration", "rest taken", "speed trend",
+                       "range of motion", "form scores"):
+            self.assertIn(signal, s, f"{signal} is a signal that works without a rating")
 
 
 class TestEndpointAllowlist(unittest.TestCase):
@@ -188,7 +231,8 @@ class TestAssessmentPrompt(unittest.TestCase):
 class TestAssessmentSystemPrompt(unittest.TestCase):
     def test_encodes_guardrails(self):
         s = coach.ASSESSMENT_SYSTEM_PROMPT.lower()
-        self.assertIn("felt rating outranks", s)
+        self.assertIn("outranks every sensor metric", s)
+        self.assertIn("most sessions are not rated", s)
         self.assertIn("never invent", s)
         self.assertIn("muscle region", s)
 
@@ -261,3 +305,35 @@ class TestWorkoutGeneratorConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBalanceScoreIsNotFabricated(unittest.TestCase):
+    """A zero balance score means "not applicable", and must not be reported as a finding.
+
+    Verified against live data: bilateralBalanceScore is 0 only on unilateral movements
+    (isLeftRight=1), which train one side at a time and so have no left-vs-right balance to
+    measure. Bilateral movements score 2-5. Passing the 0 through made the coach report a
+    severe imbalance that did not exist.
+    """
+
+    def _line(self, balance):
+        ex = {"name": "Standing Cable External Rotation", "region": "Shoulders", "kind": "reps",
+              "all_complete": True, "rom_change_pct": None,
+              "sets": [{"done": 15, "target": 15, "load": 8, "skipped": False,
+                        "seconds": 30, "rest": 45, "left_reps": 15, "right_reps": 0}],
+              "scores": {"force_control": 5, "amplitude_stable": 4,
+                         "bilateral_balance": balance, "rating": None}}
+        return coach._exercise_line(ex, {}, {}, "lbs")
+
+    def test_zero_is_omitted_not_reported_as_a_failing_score(self):
+        self.assertNotIn("balance", self._line(0))
+
+    def test_none_is_omitted(self):
+        self.assertNotIn("balance", self._line(None))
+
+    def test_a_real_score_is_reported(self):
+        self.assertIn("left/right balance 3/5", self._line(3))
+
+    def test_a_one_sided_set_is_not_called_uneven(self):
+        """A unilateral set is 15 left and 0 right by design, not an imbalance."""
+        self.assertNotIn("uneven", self._line(0))
