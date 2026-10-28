@@ -23,9 +23,11 @@ with actionList[].setList[].summary; free_training_to_detail converts it. Pure: 
 DETAIL_KINDS = {1: "free", 6: "free", 7: "free", 2: "course", 3: "custom", 5: "custom",
                 4: "ai", 9: "ai", 10: "manual"}
 
-# Free Lift set figures come back x2.2 on kg accounts (pookey) and unscaled on lb accounts
-# (verified live on this lb account), so reconcile against the session's own total instead
-# of assuming either way.
+# Free Lift set CAPACITIES come back x2.2 on kg accounts and unscaled on lb accounts, so
+# reconcile against the session's own total instead of assuming either way. Only the capacity
+# (and rawRepList weights) carry the factor: `summary.weight` is already in the display unit —
+# a 22 kg set has weight 22, capacity 22 x 2.2 x reps (verified live on a kg account,
+# 2026-10-26, speediance-mcp PR #11; the lb path was verified live on this account).
 KG_LB_SCALE = 2.2
 SCALE_TOLERANCE = 0.01
 
@@ -66,16 +68,14 @@ def free_training_to_detail(payload):
     """
     if not isinstance(payload, dict) or not payload.get("actionList"):
         return [], None
-    scale, warning = _scale(payload)
+    _, warning = _scale(payload)
     detail = []
     for action in payload["actionList"]:
         finished = []
         for st in action.get("setList") or []:
             s = st.get("summary") or {}
             done = int(_num(s.get("finishedCount")))
-            weight = s.get("weight")
-            if weight is not None and scale != 1.0:
-                weight = round(_num(weight) / scale, 1)
+            weight = s.get("weight")  # already in the display unit on both kg and lb accounts
             finished.append({
                 "finishedCount": done,
                 "targetCount": done,

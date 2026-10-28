@@ -54,10 +54,13 @@ class TestFreeTrainingToDetail(unittest.TestCase):
         self.assertEqual(first["trainingInfoDetail"]["weights"], [100])
         self.assertEqual(skipped["finishedCount"], 0)
 
-    def test_kg_account_scale_is_removed(self):
-        detail, warning = session_detail.free_training_to_detail(free_lift(454.55, 1000.0, 100))
+    def test_kg_account_weight_is_not_divided(self):
+        # kg account as the live route returns it: the set weight is already kg (45) but its
+        # capacity is 45 x 2.2 x 10 reps = 990, so the sets sum to 2.2x the session total (450).
+        # Only the capacity carries the factor; dividing the weight too showed 45 kg as 20.5.
+        detail, warning = session_detail.free_training_to_detail(free_lift(450.0, 990.0, 45))
         self.assertIsNone(warning)
-        self.assertEqual(detail[0]["finishedReps"][0]["trainingInfoDetail"]["weights"], [45.5])
+        self.assertEqual(detail[0]["finishedReps"][0]["trainingInfoDetail"]["weights"], [45])
 
     def test_unreconciled_keeps_raw_and_warns(self):
         detail, warning = session_detail.free_training_to_detail(free_lift(700.0, 1000.0, 100))
